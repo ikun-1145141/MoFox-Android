@@ -1,0 +1,58 @@
+# ───────── Flutter / Dart ─────────
+**/.dart_tool/
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/pubspec.lock.bak
+**/coverage/
+**/.fvm/
+
+# ───────── 生成代码 ─────────
+**/*.freezed.dart
+**/*.g.dart
+**/*.gr.dart
+**/*.config.dart
+
+# ───────── Android ─────────
+app/android/.gradle/
+app/android/local.properties
+app/android/captures/
+app/android/key.properties
+app/android/**/GeneratedPluginRegistrant.*
+app/android/app/release/
+app/android/app/debug/
+app/android/app/profile/
+**/*.jks
+**/*.keystore
+
+# ───────── iOS / macOS（保留占位但默认不构建）─────────
+app/ios/Pods/
+app/ios/.symlinks/
+app/ios/Flutter/Flutter.framework/
+app/ios/Flutter/Flutter.podspec
+app/ios/Flutter/Generated.xcconfig
+app/ios/Flutter/flutter_export_environment.sh
+app/macos/Pods/
+
+# ───────── IDE / 工具 ─────────
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.DS_Store
+Thumbs.db
+
+# ───────── 内嵌 Termux runtime 资产（大文件，发版前由脚本下载/拉取）─────────
+app/assets/runtime/bootstrap-*.zip
+app/assets/runtime/wheels/*.whl
+
+# ───────── 本地工具产物 ─────────
+/dist/
+*.log
+*.pid
+*.swp
+.envrc

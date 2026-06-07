@@ -1,0 +1,36 @@
+# Build / 工具
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+generated_plugin_registrant.dart
+pubspec.lock
+
+# 平台中间产物
+android/.gradle/
+android/captures/
+android/local.properties
+android/key.properties
+android/app/release/
+android/app/debug/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 大体积资源（运行时 bootstrap）下载后再注入，不进版本库
+assets/runtime/bootstrap-*.zip
+assets/runtime/wheels/
+
+# 生成的 i18n
+lib/l10n/generated/

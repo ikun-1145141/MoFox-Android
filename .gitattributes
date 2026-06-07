@@ -1,0 +1,33 @@
+# 行尾自动统一为 LF；Windows 批处理 / PowerShell 保留 CRLF
+* text=auto eol=lf
+
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.ps1        text eol=crlf
+
+# Dart / Kotlin / Java / 配置
+*.dart       text eol=lf
+*.kt         text eol=lf
+*.kts        text eol=lf
+*.java       text eol=lf
+*.gradle     text eol=lf
+*.yaml       text eol=lf
+*.yml        text eol=lf
+*.json       text eol=lf
+*.toml       text eol=lf
+*.md         text eol=lf
+
+# 二进制
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.webp       binary
+*.ico        binary
+*.zip        binary
+*.so         binary
+*.aar        binary
+*.jar        binary
+*.keystore   binary
+*.jks        binary
+*.whl        binary
