@@ -6,9 +6,11 @@ import '../../../app/router/app_router.dart';
 import '../application/oobe_flow_notifier.dart';
 import '../application/oobe_status_provider.dart';
 import '../domain/oobe_step.dart';
-import 'widgets/napcat_qr_step.dart';
+import 'widgets/keepalive_step.dart';
+import 'widgets/system_check_step.dart';
+import 'widgets/welcome_step.dart';
 
-/// MD3 标准 onboarding wizard：顶部进度指示 + 卡片化步骤内容 + 底部双按钮。
+/// OOBE 一次性引导：欢迎 → 体检 → 保活 → 完成。
 class OobePage extends ConsumerWidget {
   const OobePage({super.key});
 
@@ -26,15 +28,11 @@ class OobePage extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: scheme.surface,
-      appBar: AppBar(
-        title: const Text('MoFox 安装向导'),
-        automaticallyImplyLeading: false,
-      ),
       body: SafeArea(
         child: Column(
           children: <Widget>[
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -42,17 +40,19 @@ class OobePage extends ConsumerWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: <Widget>[
                       Text(
-                        '第 ${currentIndex + 1} 步',
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                              color: scheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        isLast ? '全部完成' : '第 ${currentIndex + 1} 步',
+                        style:
+                            Theme.of(context).textTheme.labelLarge?.copyWith(
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
                       ),
                       Text(
                         '共 $totalSteps 步',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
+                        style:
+                            Theme.of(context).textTheme.labelMedium?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
                       ),
                     ],
                   ),
@@ -114,71 +114,30 @@ class OobePage extends ConsumerWidget {
   }
 
   Widget _stepBody(OobeStep step, {Key? key}) {
-    return switch (step) {
-      OobeStep.napcatLogin => NapcatQrStep(key: key),
-      OobeStep.done => _DoneCard(key: key),
-      _ => _PlaceholderStep(key: key, step: step),
-    };
+    return KeyedSubtree(
+      key: key,
+      child: switch (step) {
+        OobeStep.welcome => const WelcomeStep(),
+        OobeStep.systemCheck => const SystemCheckStep(),
+        OobeStep.keepalivePerm => const KeepaliveStep(),
+        OobeStep.done => const _DoneCard(),
+      },
+    );
   }
 
   String _primaryLabel(OobeStep step) => switch (step) {
         OobeStep.welcome => '同意并继续',
-        OobeStep.done => '进入主界面',
+        OobeStep.done => '开始使用',
         _ => '下一步',
       };
 }
 
-class _PlaceholderStep extends StatelessWidget {
-  const _PlaceholderStep({required this.step, super.key});
-  final OobeStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: scheme.primaryContainer,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _stepIcon(step),
-              size: 36,
-              color: scheme.onPrimaryContainer,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            stepTitle(step),
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  color: scheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            stepDescription(step),
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                  height: 1.5,
-                ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _DoneCard extends StatelessWidget {
-  const _DoneCard({super.key});
+  const _DoneCard();
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -198,59 +157,23 @@ class _DoneCard extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            '部署完成',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            '一切就绪',
+            style: text.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurface,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
-            '一切就绪，可以开始使用 MoFox 了。',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+            '点击下方按钮进入主界面，创建你的第一个 Bot 实例。',
+            style: text.bodyLarge?.copyWith(
+              color: scheme.onSurfaceVariant,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 }
-
-IconData _stepIcon(OobeStep s) => switch (s) {
-      OobeStep.welcome => Icons.waving_hand_outlined,
-      OobeStep.systemCheck => Icons.health_and_safety_outlined,
-      OobeStep.extractRootfs => Icons.unarchive_outlined,
-      OobeStep.keepalivePerm => Icons.battery_saver_outlined,
-      OobeStep.installRuntimeDeps => Icons.download_outlined,
-      OobeStep.napcatLogin => Icons.qr_code_2_outlined,
-      OobeStep.fetchNeoMofox => Icons.cloud_download_outlined,
-      OobeStep.generateConfig => Icons.settings_outlined,
-      OobeStep.fillFormAndStart => Icons.edit_note_outlined,
-      OobeStep.done => Icons.check_circle_outline,
-    };
-
-String stepTitle(OobeStep s) => switch (s) {
-      OobeStep.welcome => '欢迎使用 MoFox',
-      OobeStep.systemCheck => '系统体检',
-      OobeStep.extractRootfs => '解压内嵌运行时',
-      OobeStep.keepalivePerm => '配置后台保活',
-      OobeStep.installRuntimeDeps => '安装运行时依赖',
-      OobeStep.napcatLogin => '登录 QQ',
-      OobeStep.fetchNeoMofox => '拉取 Neo-MoFox',
-      OobeStep.generateConfig => '生成默认配置',
-      OobeStep.fillFormAndStart => '填写信息并启动',
-      OobeStep.done => '完成',
-    };
-
-String stepDescription(OobeStep s) => switch (s) {
-      OobeStep.welcome => '阅读并同意用户协议，开始一键部署。',
-      OobeStep.systemCheck => '检查 ABI、剩余空间与内存是否满足要求。',
-      OobeStep.extractRootfs => '把内嵌的 Termux rootfs 解压到 App 私有目录。',
-      OobeStep.keepalivePerm => '跳到系统设置开启自启动 / 耗电不限制 / 后台锁定。',
-      OobeStep.installRuntimeDeps => '在 rootfs 中安装 python / git / uv。',
-      OobeStep.napcatLogin => '安装 Napcat 并展示登录二维码，用 QQ 扫码完成登录。',
-      OobeStep.fetchNeoMofox => 'git clone Neo-MoFox 并 uv sync 同步依赖。',
-      OobeStep.generateConfig => '首次启动 Bot 让其写出默认 toml，然后优雅停止。',
-      OobeStep.fillFormAndStart => '填写主人 QQ / 模型 API Key / 端口，写入配置后启动。',
-      OobeStep.done => '一切就绪。',
-    };

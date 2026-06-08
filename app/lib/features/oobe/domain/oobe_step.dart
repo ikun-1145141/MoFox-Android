@@ -1,17 +1,10 @@
-/// OOBE 9 步状态机的步骤枚举。
+/// OOBE 4 步：用户 + 设备的一次性引导。
 ///
-/// 每一步对应 ARCHITECTURE.md §5.1 中的一个幂等子任务，
-/// 顺序与文档保持一致。
+/// 实例创建走 `features/wizard`（独立路由），不在 OOBE 里。
 enum OobeStep {
   welcome, // 1. 欢迎 + EULA
   systemCheck, // 2. 系统体检（ABI / 空间 / 内存）
-  extractRootfs, // 3. 解压内嵌 Termux rootfs
-  keepalivePerm, // 4. 保活授权引导
-  installRuntimeDeps, // 5. 装 python / git / uv
-  napcatLogin, // 6. 安装 Napcat + 扫码登录
-  fetchNeoMofox, // 7. git clone + uv sync
-  generateConfig, // 8. 首跑生成默认 toml
-  fillFormAndStart, // 9. 表单填写 + 启动 Bot
+  keepalivePerm, // 3. 保活授权引导
   done; // 哨兵：全部完成
 
   bool get isTerminal => this == OobeStep.done;

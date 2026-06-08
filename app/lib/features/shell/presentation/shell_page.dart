@@ -5,7 +5,7 @@ import '../../../app/router/app_router.dart';
 
 /// 顶层壳：底部 NavigationBar（< 600 dp）+ 侧边 NavigationRail（≥ 600 dp）。
 ///
-/// 标题与 leading 由各 page 自己管，shell 只负责导航容器。
+/// Tab 顺序：管理（实例 dashboard）→ 终端 → 设置。
 class ShellPage extends StatelessWidget {
   const ShellPage({required this.child, super.key});
   final Widget child;
@@ -81,16 +81,16 @@ class ShellPage extends StatelessWidget {
   }
 
   int _tabFromLocation(String loc) {
-    if (loc.startsWith('/${AppRoute.terminal}')) return 1;
-    if (loc.startsWith('/${AppRoute.settings}')) return 2;
-    return 0;
+    if (loc.startsWith(AppRoute.terminal)) return 1;
+    if (loc.startsWith(AppRoute.settings)) return 2;
+    return 0; // dashboard / webview / 其它默认归 0
   }
 
   void _go(BuildContext context, int i) {
     final route = switch (i) {
-      1 => '/${AppRoute.terminal}',
-      2 => '/${AppRoute.settings}',
-      _ => '/${AppRoute.webview}',
+      1 => AppRoute.terminal,
+      2 => AppRoute.settings,
+      _ => AppRoute.dashboard,
     };
     context.go(route);
   }
