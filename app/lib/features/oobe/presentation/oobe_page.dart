@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
-import '../../../core/theme/app_theme.dart';
 import '../application/oobe_flow_notifier.dart';
 import '../application/oobe_status_provider.dart';
 import '../domain/oobe_step.dart';
 import 'widgets/napcat_qr_step.dart';
 
+/// MD3 标准 onboarding wizard：顶部进度指示 + 卡片化步骤内容 + 底部双按钮。
 class OobePage extends ConsumerWidget {
   const OobePage({super.key});
 
@@ -16,106 +16,159 @@ class OobePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final flow = ref.watch(oobeFlowProvider);
     final notifier = ref.read(oobeFlowProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
+
+    final totalSteps = OobeStep.values.length - 1;
+    final currentIndex = OobeStep.values.indexOf(flow.current);
+    final progress = (currentIndex + 1) / totalSteps;
+    final isFirst = flow.current == OobeStep.welcome;
+    final isLast = flow.current == OobeStep.done;
 
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(gradient: BrandColors.primaryGradient),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                _Header(step: flow.current),
-                const SizedBox(height: 24),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 250),
-                    child: _stepBody(flow.current, key: ValueKey(flow.current)),
+      backgroundColor: scheme.surface,
+      appBar: AppBar(
+        title: const Text('MoFox 安装向导'),
+        automaticallyImplyLeading: false,
+      ),
+      body: SafeArea(
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      Text(
+                        '第 ${currentIndex + 1} 步',
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                      Text(
+                        '共 $totalSteps 步',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                _BottomBar(
-                  flow: flow,
-                  onPrimary: () async {
-                    if (flow.current == OobeStep.done) {
-                      await markOobeDone(ref);
-                      if (context.mounted) context.go(AppRoute.shell);
-                      return;
-                    }
-                    notifier.completeStep();
-                  },
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: progress.clamp(0, 1),
+                      minHeight: 6,
+                      backgroundColor: scheme.surfaceContainerHighest,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: _stepBody(flow.current, key: ValueKey(flow.current)),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+              child: Row(
+                children: <Widget>[
+                  if (!isFirst && !isLast)
+                    OutlinedButton(
+                      onPressed: () => notifier.jumpTo(
+                        OobeStep.values[currentIndex - 1],
+                      ),
+                      child: const Text('上一步'),
+                    ),
+                  if (!isFirst && !isLast) const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        if (isLast) {
+                          await markOobeDone(ref);
+                          if (context.mounted) context.go(AppRoute.shell);
+                          return;
+                        }
+                        notifier.completeStep();
+                      },
+                      child: Text(_primaryLabel(flow.current)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _stepBody(OobeStep step, {Key? key}) {
-    switch (step) {
-      case OobeStep.napcatLogin:
-        return NapcatQrStep(key: key);
-      case OobeStep.done:
-        return _DoneCard(key: key);
-      default:
-        return _PlaceholderStep(key: key, step: step);
-    }
+    return switch (step) {
+      OobeStep.napcatLogin => NapcatQrStep(key: key),
+      OobeStep.done => _DoneCard(key: key),
+      _ => _PlaceholderStep(key: key, step: step),
+    };
   }
-}
 
-class _Header extends StatelessWidget {
-  const _Header({required this.step});
-  final OobeStep step;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          'MoFox 安装向导',
-          style: Theme.of(context)
-              .textTheme
-              .titleLarge
-              ?.copyWith(color: scheme.onPrimary, fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '第 ${OobeStep.values.indexOf(step) + 1} 步 / 共 ${OobeStep.values.length - 1} 步',
-          style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.85)),
-        ),
-      ],
-    );
-  }
+  String _primaryLabel(OobeStep step) => switch (step) {
+        OobeStep.welcome => '同意并继续',
+        OobeStep.done => '进入主界面',
+        _ => '下一步',
+      };
 }
 
 class _PlaceholderStep extends StatelessWidget {
-  const _PlaceholderStep({super.key, required this.step});
+  const _PlaceholderStep({required this.step, super.key});
   final OobeStep step;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      color: scheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(stepTitle(step),
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
-            Text(
-              stepDescription(step),
-              style: Theme.of(context).textTheme.bodyMedium,
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
+            child: Icon(
+              _stepIcon(step),
+              size: 36,
+              color: scheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            stepTitle(step),
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  color: scheme.onSurface,
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            stepDescription(step),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                  height: 1.5,
+                ),
+          ),
+        ],
       ),
     );
   }
@@ -125,50 +178,56 @@ class _DoneCard extends StatelessWidget {
   const _DoneCard({super.key});
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: Theme.of(context).colorScheme.surface,
-      child: const Padding(
-        padding: EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(Icons.check_circle, size: 64),
-            SizedBox(height: 16),
-            Text('部署完成，进入主界面。'),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomBar extends StatelessWidget {
-  const _BottomBar({required this.flow, required this.onPrimary});
-  final OobeFlowState flow;
-  final VoidCallback onPrimary;
-
-  @override
-  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final label = switch (flow.current) {
-      OobeStep.welcome => '同意并继续',
-      OobeStep.done => '进入主界面',
-      _ => '下一步',
-    };
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton(
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          backgroundColor: scheme.surface,
-          foregroundColor: scheme.primary,
-        ),
-        onPressed: onPrimary,
-        child: Text(label),
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 96,
+            height: 96,
+            decoration: BoxDecoration(
+              color: scheme.primaryContainer,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.check_rounded,
+              size: 56,
+              color: scheme.onPrimaryContainer,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            '部署完成',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '一切就绪，可以开始使用 MoFox 了。',
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+          ),
+        ],
       ),
     );
   }
 }
+
+IconData _stepIcon(OobeStep s) => switch (s) {
+      OobeStep.welcome => Icons.waving_hand_outlined,
+      OobeStep.systemCheck => Icons.health_and_safety_outlined,
+      OobeStep.extractRootfs => Icons.unarchive_outlined,
+      OobeStep.keepalivePerm => Icons.battery_saver_outlined,
+      OobeStep.installRuntimeDeps => Icons.download_outlined,
+      OobeStep.napcatLogin => Icons.qr_code_2_outlined,
+      OobeStep.fetchNeoMofox => Icons.cloud_download_outlined,
+      OobeStep.generateConfig => Icons.settings_outlined,
+      OobeStep.fillFormAndStart => Icons.edit_note_outlined,
+      OobeStep.done => Icons.check_circle_outline,
+    };
 
 String stepTitle(OobeStep s) => switch (s) {
       OobeStep.welcome => '欢迎使用 MoFox',

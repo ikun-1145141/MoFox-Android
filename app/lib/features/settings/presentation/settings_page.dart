@@ -8,48 +8,93 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: const <Widget>[
-          _SectionHeader('外观'),
-          ListTile(
-            leading: Icon(Icons.color_lens_outlined),
-            title: Text('主题模式'),
-            subtitle: Text('跟随系统'),
+          _Section(
+            title: '外观',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(Icons.palette_outlined),
+                title: '主题模式',
+                subtitle: '跟随系统',
+                trailing: Icon(Icons.chevron_right),
+              ),
+              _Divider(),
+              _SettingTile(
+                leading: Icon(Icons.format_color_fill_outlined),
+                title: '动态取色',
+                subtitle: '使用系统壁纸生成 Material You 颜色',
+                trailing: Switch(value: true, onChanged: null),
+              ),
+            ],
           ),
-          _SectionHeader('运行时'),
-          ListTile(
-            leading: Icon(Icons.play_circle_outline),
-            title: Text('Bot 进程'),
-            subtitle: Text('已停止'),
+          SizedBox(height: 16),
+          _Section(
+            title: '运行时',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(Icons.smart_toy_outlined),
+                title: 'Bot 进程',
+                subtitle: '已停止',
+                trailing: _StatusDot(active: false),
+              ),
+              _Divider(),
+              _SettingTile(
+                leading: Icon(Icons.qr_code_2_outlined),
+                title: 'Napcat',
+                subtitle: '已停止',
+                trailing: _StatusDot(active: false),
+              ),
+            ],
           ),
-          ListTile(
-            leading: Icon(Icons.qr_code_2_outlined),
-            title: Text('Napcat'),
-            subtitle: Text('已停止'),
+          SizedBox(height: 16),
+          _Section(
+            title: '保活体检',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(Icons.shield_outlined),
+                title: '查看保活状态',
+                subtitle: '前台服务 / 电池白名单 / 自启动',
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ],
           ),
-          _SectionHeader('保活体检'),
-          ListTile(
-            leading: Icon(Icons.shield_outlined),
-            title: Text('查看保活状态'),
+          SizedBox(height: 16),
+          _Section(
+            title: '备份与导出',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(Icons.archive_outlined),
+                title: '一键打包导出',
+                subtitle: 'toml + Napcat 登录态 + 最近 N 天日志',
+                trailing: Icon(Icons.chevron_right),
+              ),
+              _Divider(),
+              _SettingTile(
+                leading: Icon(Icons.tune_outlined),
+                title: '选择性导出',
+                subtitle: '单独导出 core.toml / model.toml / napcat / 日志',
+                trailing: Icon(Icons.chevron_right),
+              ),
+              _Divider(),
+              _SettingTile(
+                leading: Icon(Icons.unarchive_outlined),
+                title: '从备份导入',
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ],
           ),
-          _SectionHeader('备份与导出'),
-          ListTile(
-            leading: Icon(Icons.archive_outlined),
-            title: Text('一键打包导出'),
-            subtitle: Text('toml + Napcat 登录态 + 最近 N 天日志'),
-          ),
-          ListTile(
-            leading: Icon(Icons.tune_outlined),
-            title: Text('选择性导出'),
-            subtitle: Text('单独导出 core.toml / model.toml / napcat config / 日志'),
-          ),
-          ListTile(
-            leading: Icon(Icons.unarchive_outlined),
-            title: Text('从备份导入'),
-          ),
-          _SectionHeader('关于'),
-          ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('版本与开源许可'),
+          SizedBox(height: 16),
+          _Section(
+            title: '关于',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(Icons.info_outline),
+                title: '版本与开源许可',
+                subtitle: 'MoFox 0.1.0 (1)',
+                trailing: Icon(Icons.chevron_right),
+              ),
+            ],
           ),
         ],
       ),
@@ -57,23 +102,86 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
+class _Section extends StatelessWidget {
+  const _Section({required this.title, required this.children});
   final String title;
+  final List<Widget> children;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
-      child: Text(
-        title,
-        style: TextStyle(
-          color: scheme.primary,
-          fontWeight: FontWeight.w600,
-          fontSize: 13,
-          letterSpacing: 0.5,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: scheme.primary,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.4,
+                ),
+          ),
         ),
+        Card(child: Column(children: children)),
+      ],
+    );
+  }
+}
+
+class _SettingTile extends StatelessWidget {
+  const _SettingTile({
+    required this.leading,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+  });
+  final Widget leading;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: leading,
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      trailing: trailing,
+      shape: const RoundedRectangleBorder(),
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 72),
+      child: Divider(
+        height: 1,
+        thickness: 1,
+        color: Theme.of(context).colorScheme.outlineVariant,
+      ),
+    );
+  }
+}
+
+class _StatusDot extends StatelessWidget {
+  const _StatusDot({required this.active});
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? scheme.primary : scheme.outline,
       ),
     );
   }
