@@ -34,10 +34,12 @@ class PlatformGatewayPlugin {
                     }
                     "startForegroundService" -> {
                         val intent = Intent(ctx, MoFoxForegroundService::class.java)
+                        MoFoxForegroundService.setKeepaliveEnabled(ctx, true)
                         ctx.startForegroundService(intent)
                         result.success(null)
                     }
                     "stopForegroundService" -> {
+                        MoFoxForegroundService.setKeepaliveEnabled(ctx, false)
                         ctx.stopService(Intent(ctx, MoFoxForegroundService::class.java))
                         result.success(null)
                     }

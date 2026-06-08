@@ -56,5 +56,20 @@ class MoFoxForegroundService : Service() {
     companion object {
         const val CHANNEL_ID = "mofox.keepalive"
         const val NOTIF_ID = 1001
+
+        private const val PREFS_NAME = "mofox_keepalive"
+        private const val KEY_ENABLED = "enabled"
+
+        fun isKeepaliveEnabled(context: Context): Boolean {
+            return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_ENABLED, false)
+        }
+
+        fun setKeepaliveEnabled(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_ENABLED, enabled)
+                .apply()
+        }
     }
 }
