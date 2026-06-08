@@ -22,6 +22,14 @@ class PlatformGateway {
   Future<void> openVendorAutostart() =>
       _channel.invokeMethod<void>('openVendorAutostart');
 
+  /// 请求加入系统电池优化白名单；已授权时返回 true。
+  Future<bool> requestIgnoreBatteryOptimizations() async {
+    return await _channel.invokeMethod<bool>(
+          'requestIgnoreBatteryOptimizations',
+        ) ??
+        false;
+  }
+
   Future<void> startForegroundService() =>
       _channel.invokeMethod<void>('startForegroundService');
 

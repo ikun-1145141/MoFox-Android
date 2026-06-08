@@ -3,6 +3,9 @@ package com.mofox.android.platform
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,7 +25,13 @@ class PlatformGatewayPlugin {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "exportToSaf" -> result.success(null)
-                    "openVendorAutostart" -> result.success(false)
+                    "openVendorAutostart" -> {
+                        openVendorAutostart(activity)
+                        result.success(null)
+                    }
+                    "requestIgnoreBatteryOptimizations" -> {
+                        result.success(requestIgnoreBatteryOptimizations(activity))
+                    }
                     "startForegroundService" -> {
                         val intent = Intent(ctx, MoFoxForegroundService::class.java)
                         ctx.startForegroundService(intent)
@@ -35,5 +44,35 @@ class PlatformGatewayPlugin {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun requestIgnoreBatteryOptimizations(activity: Activity): Boolean {
+        val packageName = activity.packageName
+        val powerManager = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (powerManager.isIgnoringBatteryOptimizations(packageName)) return true
+
+        val requestIntent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        return activity.startActivitySafely(requestIntent)
+    }
+
+    private fun openVendorAutostart(activity: Activity) {
+        val packageName = activity.packageName
+        val attempts = listOf(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            },
+            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+            Intent(Settings.ACTION_SETTINGS),
+        )
+        attempts.firstOrNull { activity.startActivitySafely(it) }
+    }
+
+    private fun Activity.startActivitySafely(intent: Intent): Boolean {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching {
+            startActivity(intent)
+        }.isSuccess
     }
 }
