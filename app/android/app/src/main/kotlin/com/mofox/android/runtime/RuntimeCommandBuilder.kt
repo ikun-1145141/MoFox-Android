@@ -23,37 +23,7 @@ class RuntimeCommandBuilder(private val installer: BootstrapInstaller) {
     }
 
     fun scriptCommand(script: File): List<String> {
-        val proot = File(prefix, "bin/proot")
         val bash = File(prefix, "bin/bash").takeIf { it.exists() } ?: File(prefix, "bin/sh")
-        val mountedScript = "/mofox-scripts/${script.name}"
-        return if (proot.exists()) {
-            listOf(
-                proot.absolutePath,
-                "-0",
-                "-r",
-                prefix.absolutePath,
-                "-b",
-                "${home.absolutePath}:/root",
-                "-b",
-                "${File(prefix, "tmp").absolutePath}:/tmp",
-                "-b",
-                "/proc",
-                "-b",
-                "/dev",
-                "-b",
-                "${installer.scriptsDir.absolutePath}:/mofox-scripts",
-                "/usr/bin/env",
-                "-i",
-                "HOME=/root",
-                "PREFIX=/usr",
-                "PATH=/usr/bin:/usr/bin/applets:/bin",
-                "TMPDIR=/tmp",
-                "LANG=C.UTF-8",
-                "/bin/bash",
-                mountedScript,
-            )
-        } else {
-            listOf(bash.absolutePath, script.absolutePath)
-        }
+        return listOf(bash.absolutePath, script.absolutePath)
     }
 }

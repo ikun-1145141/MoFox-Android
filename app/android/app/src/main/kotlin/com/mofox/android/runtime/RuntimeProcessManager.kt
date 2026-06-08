@@ -64,15 +64,18 @@ class RuntimeProcessManager(
         val process = builder.start()
         val logs = mutableListOf<String>()
         var qrPayload: String? = null
+        events.emit("install", mapOf("task" to task, "line" to "[run] native task $task started"))
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
                 logs += line
+                events.emit("install", mapOf("task" to task, "line" to line))
                 if (line.startsWith("MOFOX_QR_PAYLOAD=")) {
                     qrPayload = line.substringAfter("=")
                 }
             }
         }
         val code = process.waitFor()
+        events.emit("install", mapOf("task" to task, "line" to "[exit] native task $task exited with $code"))
         return InstallTaskResult(code == 0, logs, qrPayload, if (code == 0) null else "Task $task exited with $code")
     }
 

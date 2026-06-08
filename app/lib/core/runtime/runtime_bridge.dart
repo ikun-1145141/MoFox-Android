@@ -7,8 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 class RuntimeBridge {
   RuntimeBridge._();
 
-    static const MethodChannel _channel = MethodChannel('mofox/runtime');
-    static const EventChannel _events = EventChannel('mofox/runtime/events');
+  static const MethodChannel _channel = MethodChannel('mofox/runtime');
+  static const EventChannel _events = EventChannel('mofox/runtime/events');
 
   /// rootfs 是否已解压完成。
   Future<bool> isBootstrapped() async {
@@ -24,8 +24,8 @@ class RuntimeBridge {
         .receiveBroadcastStream(<String, Object?>{'topic': 'bootstrap'})
         .where(_isBootstrapEvent)
         .map((event) => (event as Map<Object?, Object?>)['payload'])
-      .where((value) => value is num)
-      .cast<num>()
+        .where((value) => value is num)
+        .cast<num>()
         .map((value) => value.toDouble());
   }
 
@@ -39,6 +39,24 @@ class RuntimeBridge {
       <String, Object>{'task': task, 'args': args},
     );
     return RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
+  }
+
+  /// 原生安装任务实时日志。
+  Stream<String> installTaskLogs(String task) {
+    return _events
+        .receiveBroadcastStream(<String, Object?>{'topic': 'install'})
+        .where(
+          (event) =>
+              event is Map<Object?, Object?> && event['topic'] == 'install',
+        )
+        .map((event) => (event as Map<Object?, Object?>)['payload'])
+        .where(
+          (payload) =>
+              payload is Map<Object?, Object?> && payload['task'] == task,
+        )
+        .cast<Map<Object?, Object?>>()
+        .map((payload) => payload['line']?.toString() ?? '')
+        .where((line) => line.isNotEmpty);
   }
 
   /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, napcat}.
@@ -60,7 +78,7 @@ class RuntimeBridge {
   /// 拉一份当前各托管进程的状态快照。
   Future<Map<String, String>> processStatus() async {
     final result =
-      await _channel.invokeMethod<Map<Object?, Object?>>('processStatus');
+        await _channel.invokeMethod<Map<Object?, Object?>>('processStatus');
     return result?.map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')) ??
         const <String, String>{};
   }

@@ -79,10 +79,12 @@ class WizardState {
   /// 整体进度 0..1。
   double get overallProgress {
     final total = InstallTask.values.length;
-    final done = taskStatus.values.where(
-      (s) =>
-          s == InstallTaskStatus.success || s == InstallTaskStatus.skipped,
-    ).length;
+    final done = taskStatus.values
+        .where(
+          (s) =>
+              s == InstallTaskStatus.success || s == InstallTaskStatus.skipped,
+        )
+        .length;
     return (done + taskProgress) / total;
   }
 }
@@ -157,8 +159,7 @@ class WizardNotifier extends Notifier<WizardState> {
         _markStatus(task, InstallTaskStatus.skipped);
         continue;
       }
-      if (task == InstallTask.writeNapcatConfig &&
-          !state.draft.installNapcat) {
+      if (task == InstallTask.writeNapcatConfig && !state.draft.installNapcat) {
         _markStatus(task, InstallTaskStatus.skipped);
         continue;
       }
@@ -174,11 +175,21 @@ class WizardNotifier extends Notifier<WizardState> {
       final nativeTask = _nativeTaskName(task);
       if (nativeTask != null) {
         state = state.copyWith(taskProgress: 0.35);
+        final streamedLogs = <String>[];
+        final logSubscription = runtime.installTaskLogs(nativeTask).listen(
+          (line) {
+            streamedLogs.add(line);
+            _appendLog(line);
+          },
+        );
         final result = await runtime.runInstallTask(
           nativeTask,
           args: _runtimeArgs(),
         );
-        _appendLogs(result.logs);
+        await logSubscription.cancel();
+        if (streamedLogs.isEmpty) {
+          _appendLogs(result.logs);
+        }
         if (!result.success) {
           _markStatus(task, InstallTaskStatus.failed);
           final message = result.error ?? '${task.label} 执行失败';
