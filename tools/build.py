@@ -6,6 +6,7 @@
     python tools/build.py --release    # release APK (未签名)
     python tools/build.py --clean      # 先 flutter clean 再构建
     python tools/build.py --no-pub-get # 跳过 pub get
+    python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 输出:
     g:/MoFox-Android/dist/mofox-<flavor>-<timestamp>.apk
@@ -105,6 +106,8 @@ def main() -> int:
     parser.add_argument("--clean", action="store_true", help="构建前 flutter clean")
     parser.add_argument("--no-pub-get", action="store_true", help="跳过 flutter pub get")
     parser.add_argument("--split-per-abi", action="store_true", help="按 ABI 拆分 APK")
+    parser.add_argument("--target-platform", help="传给 flutter build apk 的目标平台，例如 android-arm64")
+    parser.add_argument("--artifact-label", help="追加到 dist APK 文件名中的标签，例如 arm64-v8a")
     args = parser.parse_args()
 
     if not APP_DIR.exists():
@@ -135,6 +138,8 @@ def main() -> int:
     build_cmd = [flutter, "build", "apk", f"--{flavor}"]
     if args.split_per_abi:
         build_cmd.append("--split-per-abi")
+    if args.target_platform:
+        build_cmd.extend(["--target-platform", args.target_platform])
     rc = stream_run(build_cmd, cwd=APP_DIR)
     if rc != 0:
         print(f"[ERR] flutter build apk --{flavor} 失败 (exit={rc})", file=sys.stderr)
@@ -163,6 +168,8 @@ def main() -> int:
         size = apk.stat().st_size
         # 命名: mofox-<flavor>-<原文件后缀>-<时间戳>.apk
         suffix = apk.stem.replace(f"app-{flavor}", "").lstrip("-") or "universal"
+        if args.artifact_label:
+            suffix = args.artifact_label if suffix == "universal" else f"{args.artifact_label}-{suffix}"
         out_name = f"mofox-{flavor}-{suffix}-{ts}.apk"
         dest = DIST_DIR / out_name
         shutil.copy2(apk, dest)

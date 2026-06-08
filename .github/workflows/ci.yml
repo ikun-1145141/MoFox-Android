@@ -42,12 +42,28 @@ jobs:
         run: flutter test
 
   build:
-    name: Build APK
+    name: Build APK (${{ matrix.abi }})
     needs: analyze
     runs-on: ubuntu-latest
     timeout-minutes: 60
     # PR 不构建 APK，避免和 push 双跑；fork PR 也拿不到 secrets
     if: github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            flutter_target: android-arm64
+            bootstrap_file: bootstrap-aarch64.zip
+            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-aarch64.zip
+          - abi: armeabi-v7a
+            flutter_target: android-arm
+            bootstrap_file: bootstrap-arm.zip
+            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-arm.zip
+          - abi: x86_64
+            flutter_target: android-x64
+            bootstrap_file: bootstrap-x86_64.zip
+            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-x86_64.zip
 
     steps:
       - name: Checkout
@@ -76,8 +92,16 @@ jobs:
         working-directory: app
         run: flutter pub get
 
+      - name: Fetch Termux bootstrap (${{ matrix.abi }})
+        run: |
+          set -euo pipefail
+          rm -f app/assets/runtime/bootstrap-*.zip app/assets/runtime/bootstrap.sha256
+          curl --fail --location --retry 3 --output "app/assets/runtime/${{ matrix.bootstrap_file }}" "${{ matrix.bootstrap_url }}"
+          (cd app/assets/runtime && sha256sum "${{ matrix.bootstrap_file }}" > bootstrap.sha256)
+          cat app/assets/runtime/bootstrap.sha256
+
       - name: Build APK
-        run: python tools/build.py --no-pub-get
+        run: python tools/build.py --no-pub-get --target-platform ${{ matrix.flutter_target }} --artifact-label ${{ matrix.abi }}
 
       - name: List artifacts
         run: ls -lh dist/
@@ -85,7 +109,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mofox-android-debug-${{ github.run_number }}-${{ github.sha }}
+          name: mofox-android-debug-${{ matrix.abi }}-${{ github.run_number }}-${{ github.sha }}
           path: dist/*.apk
           if-no-files-found: error
           retention-days: 14

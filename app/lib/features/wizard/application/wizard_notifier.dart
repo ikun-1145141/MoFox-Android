@@ -162,6 +162,11 @@ class WizardNotifier extends Notifier<WizardState> {
         _markStatus(task, InstallTaskStatus.skipped);
         continue;
       }
+      if (task == InstallTask.installWebui && !state.draft.installWebui) {
+        _markStatus(task, InstallTaskStatus.skipped);
+        _appendLog('[skip] 已跳过 WebUI 安装');
+        continue;
+      }
 
       _markStatus(task, InstallTaskStatus.running);
       _appendLog('[run] ${task.label}…');
@@ -188,16 +193,9 @@ class WizardNotifier extends Notifier<WizardState> {
         }
       }
 
-      // NapCat 扫码：发出二维码 + 等 1.5s 模拟"用户扫描"
       if (task == InstallTask.napcatLogin) {
-        state = state.copyWith(
-          napcatQrPayload: state.napcatQrPayload ??
-              'mofox://napcat/login/${DateTime.now().millisecondsSinceEpoch}',
-        );
-        _appendLog('[info] 等待用户扫码…');
-        await Future<void>.delayed(const Duration(seconds: 2));
+        _appendLog('[info] NapCat 登录需要通过 NapCat WebUI 完成');
         state = state.copyWith(napcatQrPayload: null);
-        _appendLog('[ok] 扫码登录成功');
       }
 
       // 注册实例：真正写入仓库
@@ -240,6 +238,7 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.writeCore => 'writeCore',
         InstallTask.writeModel => 'writeModel',
         InstallTask.writeAdapter => 'writeAdapter',
+        InstallTask.installWebui => 'installWebui',
         InstallTask.installNapcat => 'installNapcat',
         InstallTask.napcatLogin => 'napcatLogin',
         InstallTask.writeNapcatConfig => 'writeNapcatConfig',

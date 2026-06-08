@@ -48,6 +48,7 @@ Thumbs.db
 
 # ───────── 内嵌 Termux runtime 资产（大文件，发版前由脚本下载/拉取）─────────
 app/assets/runtime/bootstrap-*.zip
+app/assets/runtime/bootstrap.sha256
 app/assets/runtime/wheels/*.whl
 
 # ───────── 本地工具产物 ─────────

@@ -30,6 +30,7 @@ ios/Flutter/flutter_export_environment.sh
 
 # 大体积资源（运行时 bootstrap）下载后再注入，不进版本库
 assets/runtime/bootstrap-*.zip
+assets/runtime/bootstrap.sha256
 assets/runtime/wheels/
 
 # 生成的 i18n

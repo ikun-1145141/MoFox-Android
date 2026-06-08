@@ -107,6 +107,7 @@ enum InstallTask {
   writeCore, // 写 core.toml
   writeModel, // 写 model.toml
   writeAdapter, // 写 adapter.toml
+  installWebui, // 装 WebUI
   installNapcat, // 装 Napcat
   napcatLogin, // Napcat 扫码（弹 BottomSheet）
   writeNapcatConfig, // 写 onebot11
@@ -121,6 +122,7 @@ enum InstallTask {
         InstallTask.writeCore => '写入 core.toml',
         InstallTask.writeModel => '写入 model.toml',
         InstallTask.writeAdapter => '写入 adapter.toml',
+        InstallTask.installWebui => '安装 WebUI',
         InstallTask.installNapcat => '安装 NapCat',
         InstallTask.napcatLogin => 'NapCat 扫码登录',
         InstallTask.writeNapcatConfig => '写入 NapCat 配置',
