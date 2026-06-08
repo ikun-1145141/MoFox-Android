@@ -32,10 +32,10 @@ flutter run                       # 连真机
 
 ## 内嵌 Termux runtime
 
-`app/assets/runtime/bootstrap-*.zip` 不入仓，由 `tools/fetch-bootstrap.ps1`（待加）从
-[termux/termux-packages releases](https://github.com/termux/termux-packages/releases) 拉取并校验 SHA-256。
-首次构建 release 包前必须先跑这个脚本，否则 OOBE 第 3 步会缺资产。
+`app/assets/runtime/bootstrap-*.zip` 不入仓，由 CI / nightly 在构建前从
+[termux/termux-packages releases](https://github.com/termux/termux-packages/releases) 按 ABI 下载并校验 SHA-256。
+本地手动构建 APK 时也需要先把对应架构的 bootstrap zip 放进 `app/assets/runtime/`，否则 OOBE 运行时安装步骤会缺资产。
 
 ## 许可
 
-GPLv3，详见 [LICENSE](LICENSE)。内嵌的 Termux bootstrap 沿用其上游 GPLv3 / 各包原 LICENSE。
+本项目采用 GNU Affero General Public License v3.0（AGPL-3.0），详见 [LICENSE](LICENSE)。内嵌的 Termux bootstrap 沿用其上游 GPLv3 / 各包原 LICENSE。
