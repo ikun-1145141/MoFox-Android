@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/runtime/runtime_bridge.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
 import '../domain/wizard_step.dart';
@@ -129,11 +130,12 @@ class WizardNotifier extends Notifier<WizardState> {
     return true;
   }
 
-  // ---- 安装执行（Mock）----
+  // ---- 安装执行 ----
 
-  /// 启动 mock 安装流程。每个 task 大约 600ms，napcatLogin 等待 3s 后自动通过。
+  /// 启动安装流程。原生层负责 rootfs/proot/脚本执行，Flutter 负责状态编排。
   Future<void> startInstall() async {
     _runner?.cancel();
+    final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
       taskStatus: <InstallTask, InstallTaskStatus>{
         for (final t in InstallTask.values) t: InstallTaskStatus.pending,
@@ -164,16 +166,33 @@ class WizardNotifier extends Notifier<WizardState> {
       _markStatus(task, InstallTaskStatus.running);
       _appendLog('[run] ${task.label}…');
 
-      // 进度模拟
-      for (var i = 1; i <= 5; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 120));
-        state = state.copyWith(taskProgress: i / 5);
+      final nativeTask = _nativeTaskName(task);
+      if (nativeTask != null) {
+        state = state.copyWith(taskProgress: 0.35);
+        final result = await runtime.runInstallTask(
+          nativeTask,
+          args: _runtimeArgs(),
+        );
+        _appendLogs(result.logs);
+        if (!result.success) {
+          _markStatus(task, InstallTaskStatus.failed);
+          final message = result.error ?? '${task.label} 执行失败';
+          state = state.copyWith(errorMessage: message, taskProgress: 0);
+          _appendLog('[error] $message');
+          return;
+        }
+        state = state.copyWith(taskProgress: 1);
+
+        if (result.qrPayload != null) {
+          state = state.copyWith(napcatQrPayload: result.qrPayload);
+        }
       }
 
       // NapCat 扫码：发出二维码 + 等 1.5s 模拟"用户扫描"
       if (task == InstallTask.napcatLogin) {
         state = state.copyWith(
-          napcatQrPayload: 'mofox://napcat/login/${DateTime.now().millisecondsSinceEpoch}',
+          napcatQrPayload: state.napcatQrPayload ??
+              'mofox://napcat/login/${DateTime.now().millisecondsSinceEpoch}',
         );
         _appendLog('[info] 等待用户扫码…');
         await Future<void>.delayed(const Duration(seconds: 2));
@@ -212,6 +231,38 @@ class WizardNotifier extends Notifier<WizardState> {
     _appendLog('[done] 安装全部完成');
   }
 
+  String? _nativeTaskName(InstallTask task) => switch (task) {
+        InstallTask.extractRootfs => 'extractRootfs',
+        InstallTask.installRuntimeDeps => 'installRuntimeDeps',
+        InstallTask.cloneRepo => 'cloneRepo',
+        InstallTask.syncDeps => 'syncDeps',
+        InstallTask.genConfig => 'genConfig',
+        InstallTask.writeCore => 'writeCore',
+        InstallTask.writeModel => 'writeModel',
+        InstallTask.writeAdapter => 'writeAdapter',
+        InstallTask.installNapcat => 'installNapcat',
+        InstallTask.napcatLogin => 'napcatLogin',
+        InstallTask.writeNapcatConfig => 'writeNapcatConfig',
+        InstallTask.registerInstance => null,
+      };
+
+  Map<String, String> _runtimeArgs() {
+    final draft = state.draft;
+    return <String, String>{
+      'name': draft.name,
+      'botQq': draft.botQq,
+      'botNickname': draft.botNickname,
+      'ownerQq': draft.ownerQq,
+      'apiKey': draft.apiKey,
+      'apiBaseUrl': draft.apiBaseUrl,
+      'wsPort': draft.wsPort.toString(),
+      'channel': draft.channel,
+      'webuiApiKey': draft.webuiApiKey,
+      'installNapcat': draft.installNapcat.toString(),
+      'installWebui': draft.installWebui.toString(),
+    };
+  }
+
   void _markStatus(InstallTask task, InstallTaskStatus status) {
     final next = <InstallTask, InstallTaskStatus>{...state.taskStatus};
     next[task] = status;
@@ -220,6 +271,11 @@ class WizardNotifier extends Notifier<WizardState> {
 
   void _appendLog(String line) {
     state = state.copyWith(logs: <String>[...state.logs, line]);
+  }
+
+  void _appendLogs(List<String> lines) {
+    if (lines.isEmpty) return;
+    state = state.copyWith(logs: <String>[...state.logs, ...lines]);
   }
 }
 
