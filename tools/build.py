@@ -7,6 +7,8 @@
     python tools/build.py --clean      # 先 flutter clean 再构建
     python tools/build.py --no-pub-get # 跳过 pub get
     python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
+    python tools/build.py --fetch-bootstrap                  # 构建前下载缺失的 bootstrap zip
+    python tools/build.py --fetch-bootstrap-only             # 只下载，不构建
 
 输出:
     g:/MoFox-Android/dist/mofox-<flavor>-<timestamp>.apk
@@ -19,11 +21,30 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 APP_DIR = REPO_ROOT / "app"
 DIST_DIR = REPO_ROOT / "dist"
+RUNTIME_ASSETS_DIR = APP_DIR / "assets" / "runtime"
+
+# Termux bootstrap pin。要换版本时只动这里 + RUNTIME_ASSETS_DIR/README.md。
+BOOTSTRAP_TAG = "bootstrap-2026.06.07-r1+apt.android-7"
+BOOTSTRAP_RELEASE_URL = (
+    "https://github.com/termux/termux-packages/releases/download/"
+    + urllib.request.quote(BOOTSTRAP_TAG, safe="")
+)
+BOOTSTRAP_ZIPS = (
+    "bootstrap-aarch64.zip",
+    "bootstrap-arm.zip",
+    "bootstrap-x86_64.zip",
+)
+TARGET_PLATFORM_TO_ZIP = {
+    "android-arm64": "bootstrap-aarch64.zip",
+    "android-arm": "bootstrap-arm.zip",
+    "android-x64": "bootstrap-x86_64.zip",
+}
 
 
 def find_flutter() -> str:
@@ -100,6 +121,68 @@ def human_size(n: int) -> str:
     return f"{n:.1f}TB"
 
 
+def _is_valid_bootstrap_zip(path: Path) -> bool:
+    """README.md 占位符通常 < 4KB；真 zip 至少几 MB 且头 4 字节是 PK\\x03\\x04。"""
+    if not path.is_file():
+        return False
+    if path.stat().st_size < 1024 * 1024:
+        return False
+    with path.open("rb") as fh:
+        head = fh.read(4)
+    return len(head) >= 4 and head[0:2] == b"PK" and head[2] in (3, 5, 7)
+
+
+def fetch_bootstrap_zips(zips: list[str], force: bool = False) -> int:
+    """从 termux-packages 下载缺失的 bootstrap zip 到 app/assets/runtime/。"""
+    RUNTIME_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    for name in zips:
+        dest = RUNTIME_ASSETS_DIR / name
+        if not force and _is_valid_bootstrap_zip(dest):
+            print(f"[INFO] {name} 已存在 ({human_size(dest.stat().st_size)})，跳过。")
+            continue
+
+        url = f"{BOOTSTRAP_RELEASE_URL}/{name}"
+        tmp = dest.with_suffix(dest.suffix + ".part")
+        print(f"[INFO] 下载 {name}\n        {url}")
+        try:
+            with urllib.request.urlopen(url) as resp, tmp.open("wb") as out:
+                total = int(resp.headers.get("Content-Length") or 0)
+                read = 0
+                last_print = 0.0
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    read += len(chunk)
+                    now = time.time()
+                    if total and now - last_print > 0.5:
+                        pct = read / total * 100
+                        sys.stdout.write(
+                            f"\r        {human_size(read)} / {human_size(total)} ({pct:.1f}%)"
+                        )
+                        sys.stdout.flush()
+                        last_print = now
+                if total:
+                    sys.stdout.write("\n")
+        except Exception as exc:  # noqa: BLE001
+            tmp.unlink(missing_ok=True)
+            print(f"[ERR] 下载 {name} 失败: {exc}", file=sys.stderr)
+            return 1
+
+        if not _is_valid_bootstrap_zip(tmp):
+            size = tmp.stat().st_size if tmp.exists() else 0
+            tmp.unlink(missing_ok=True)
+            print(
+                f"[ERR] 下载到的 {name} 不是合法 zip (size={size})。",
+                file=sys.stderr,
+            )
+            return 1
+        tmp.replace(dest)
+        print(f"        -> {dest}  {human_size(dest.stat().st_size)}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="MoFox-Android 一键打包")
     parser.add_argument("--release", action="store_true", help="构建 release APK (未签名)")
@@ -108,11 +191,40 @@ def main() -> int:
     parser.add_argument("--split-per-abi", action="store_true", help="按 ABI 拆分 APK")
     parser.add_argument("--target-platform", help="传给 flutter build apk 的目标平台，例如 android-arm64")
     parser.add_argument("--artifact-label", help="追加到 dist APK 文件名中的标签，例如 arm64-v8a")
+    parser.add_argument(
+        "--fetch-bootstrap",
+        action="store_true",
+        help="构建前下载缺失的 bootstrap zip 到 app/assets/runtime/",
+    )
+    parser.add_argument(
+        "--fetch-bootstrap-only",
+        action="store_true",
+        help="只下载 bootstrap zip 然后退出，不构建",
+    )
+    parser.add_argument(
+        "--force-fetch-bootstrap",
+        action="store_true",
+        help="强制重新下载，即使本地已有 zip",
+    )
     args = parser.parse_args()
 
     if not APP_DIR.exists():
         print(f"[ERR] 找不到 Flutter 工程目录: {APP_DIR}", file=sys.stderr)
         return 1
+
+    # 决定需要哪些 zip：指定 --target-platform 时只下对应那一个，否则下全套。
+    if args.target_platform and args.target_platform in TARGET_PLATFORM_TO_ZIP:
+        zips_needed = [TARGET_PLATFORM_TO_ZIP[args.target_platform]]
+    else:
+        zips_needed = list(BOOTSTRAP_ZIPS)
+
+    if args.fetch_bootstrap or args.fetch_bootstrap_only:
+        rc = fetch_bootstrap_zips(zips_needed, force=args.force_fetch_bootstrap)
+        if rc != 0:
+            return rc
+        if args.fetch_bootstrap_only:
+            print("[INFO] --fetch-bootstrap-only 完成，跳过构建。")
+            return 0
 
     flutter = find_flutter()
     print(f"[INFO] 使用 flutter: {flutter}")

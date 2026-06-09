@@ -50,7 +50,12 @@ class RuntimeProcessManager(
 
     fun runInstallTask(task: String, args: Map<String, String>): InstallTaskResult {
         if (task == "extractRootfs") {
-            val logs = installer.install { value -> events.emit("bootstrap", value) }
+            events.emit("install", mapOf("task" to task, "line" to "[run] extracting runtime bootstrap…"))
+            val logs = installer.install(
+                onProgress = { value -> events.emit("bootstrap", value) },
+                onLog = { line -> events.emit("install", mapOf("task" to task, "line" to line)) },
+            )
+            events.emit("install", mapOf("task" to task, "line" to "[exit] extractRootfs done"))
             return InstallTaskResult(true, logs, null, null)
         }
         if (!installer.isBootstrapped()) {

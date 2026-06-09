@@ -22,18 +22,35 @@ class BootstrapInstaller(private val context: Context) {
         File(prefixDir, "tmp").mkdirs()
     }
 
-    fun install(progress: (Double) -> Unit): List<String> {
+    fun install(
+        onProgress: (Double) -> Unit,
+        onLog: (String) -> Unit = {},
+    ): List<String> {
         ensureBaseDirectories()
         if (isBootstrapped()) {
-            progress(1.0)
-            return listOf("[runtime] bootstrap already installed: ${prefixDir.absolutePath}")
+            onProgress(1.0)
+            val msg = "[runtime] bootstrap already installed: ${prefixDir.absolutePath}"
+            onLog(msg)
+            return listOf(msg)
         }
 
         val assetName = bootstrapAssetName()
-        val logs = mutableListOf("[runtime] extracting $assetName")
+        val assetPath = "flutter_assets/assets/runtime/$assetName"
+        val logs = mutableListOf<String>()
+        fun log(line: String) {
+            logs += line
+            onLog(line)
+        }
+
+        // 预检：确认 zip 真的存在且不是 0 字节占位符。否则 UI 会停在 3% 看不出失败。
+        validateBootstrapAsset(assetName, assetPath, ::log)
+
+        log("[runtime] extracting $assetName")
+        onProgress(0.05)
+
         val symlinks = mutableListOf<BootstrapSymlink>()
         try {
-            context.assets.open("flutter_assets/assets/runtime/$assetName").use { input ->
+            context.assets.open(assetPath).use { input ->
                 ZipInputStream(input.buffered()).use { zip ->
                     var entry: ZipEntry? = zip.nextEntry
                     var count = 0
@@ -44,25 +61,34 @@ class BootstrapInstaller(private val context: Context) {
                             extractEntry(zip, entry)
                         }
                         count += 1
-                        if (count % 100 == 0) {
-                            progress(0.15 + (count % 700) / 1000.0)
+                        if (count % 200 == 0) {
+                            log("[runtime] extracted $count entries (current: ${entry.name})")
+                            // 没法预先知道总条目数，给个缓慢逼近 0.9 的估值。
+                            val ratio = 1.0 - (1.0 / (1.0 + count / 800.0))
+                            onProgress(0.05 + 0.85 * ratio)
                         }
                         zip.closeEntry()
                         entry = zip.nextEntry
                     }
+                    log("[runtime] extracted $count entries total")
                 }
             }
-        } catch (error: java.io.FileNotFoundException) {
+        } catch (error: java.util.zip.ZipException) {
             throw RuntimeException(
-                "Missing runtime asset $assetName. Put bootstrap zip in app/assets/runtime before running install.",
+                "Runtime asset $assetName is not a valid zip: ${error.message}. " +
+                    "Re-download bootstrap from termux/termux-packages and place it at app/assets/runtime/$assetName.",
                 error,
             )
         }
 
+        log("[runtime] creating ${symlinks.size} symlinks")
+        onProgress(0.93)
         createSymlinks(symlinks)
+        log("[runtime] marking executables")
+        onProgress(0.97)
         markExecutables(prefixDir)
-        progress(1.0)
-        logs += "[runtime] bootstrap installed: ${prefixDir.absolutePath}"
+        onProgress(1.0)
+        log("[runtime] bootstrap installed: ${prefixDir.absolutePath}")
         return logs
     }
 
@@ -140,6 +166,51 @@ class BootstrapInstaller(private val context: Context) {
             abi.contains("x86_64") -> "bootstrap-x86_64.zip"
             else -> "bootstrap-aarch64.zip"
         }
+    }
+
+    private fun validateBootstrapAsset(
+        assetName: String,
+        assetPath: String,
+        log: (String) -> Unit,
+    ) {
+        // openFd 拿不到长度（assets 里 zip 是 stored，无 fd 窗口大小），所以直接读头 4 字节验 magic。
+        val head: ByteArray
+        try {
+            head = context.assets.open(assetPath).use { input ->
+                val buf = ByteArray(4)
+                var read = 0
+                while (read < buf.size) {
+                    val n = input.read(buf, read, buf.size - read)
+                    if (n <= 0) break
+                    read += n
+                }
+                buf.copyOf(read)
+            }
+        } catch (error: java.io.FileNotFoundException) {
+            throw RuntimeException(
+                "Runtime asset $assetName is missing from the APK. " +
+                    "Place bootstrap zip at app/assets/runtime/$assetName before building. " +
+                    "See app/assets/runtime/README.md for the upstream link.",
+                error,
+            )
+        }
+        if (head.size < 4) {
+            throw RuntimeException(
+                "Runtime asset $assetName is empty (read ${head.size} bytes). " +
+                    "Replace app/assets/runtime/$assetName with a real bootstrap zip from termux-packages.",
+            )
+        }
+        val isZip = head[0] == 0x50.toByte() &&
+            head[1] == 0x4B.toByte() &&
+            (head[2] == 0x03.toByte() || head[2] == 0x05.toByte() || head[2] == 0x07.toByte())
+        if (!isZip) {
+            val hex = head.joinToString("") { String.format("%02X", it) }
+            throw RuntimeException(
+                "Runtime asset $assetName has invalid zip magic (got $hex). " +
+                    "The file at app/assets/runtime/$assetName is not a real bootstrap zip.",
+            )
+        }
+        log("[runtime] asset $assetName ok (zip magic verified)")
     }
 }
 

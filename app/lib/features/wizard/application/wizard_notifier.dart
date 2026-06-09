@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/runtime/runtime_bridge.dart';
@@ -242,9 +243,30 @@ class WizardNotifier extends Notifier<WizardState> {
 
       state = state.copyWith(installFinished: true);
       _appendLog('[done] 安装全部完成');
+    } catch (error, stack) {
+      // 任意一步抛出未处理异常（典型例子：原生侧 PlatformException——比如 bootstrap zip
+      // 没打进 APK，context.assets.open 抛 FileNotFoundException）。如果不在这里 catch，
+      // state 会永远停在 running + taskProgress: 0.35，UI 看上去就是"卡在 3% 不动"。
+      final running = state.currentTask;
+      if (running != null) {
+        _markStatus(running, InstallTaskStatus.failed);
+      }
+      final message = _formatError(error);
+      state = state.copyWith(errorMessage: message, taskProgress: 0);
+      _appendLog('[error] $message');
+      _appendLog('[trace] $stack');
     } finally {
       await logSubscription.cancel();
     }
+  }
+
+  String _formatError(Object error) {
+    if (error is PlatformException) {
+      final code = error.code;
+      final msg = error.message ?? '';
+      return msg.isEmpty ? '原生错误 ($code)' : '$msg ($code)';
+    }
+    return error.toString();
   }
 
   String? _nativeTaskName(InstallTask task) => switch (task) {

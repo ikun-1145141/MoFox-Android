@@ -27,7 +27,15 @@ class RuntimeBridgePlugin {
                 when (call.method) {
                     "isBootstrapped" -> result.success(installer.isBootstrapped())
                     "installBootstrap" -> runAsync(result) {
-                        installer.install { value -> events.emit("bootstrap", value) }
+                        installer.install(
+                            onProgress = { value -> events.emit("bootstrap", value) },
+                            onLog = { line ->
+                                events.emit(
+                                    "install",
+                                    mapOf("task" to "extractRootfs", "line" to line),
+                                )
+                            },
+                        )
                         null
                     }
                     "runInstallTask" -> runAsync(result) {
