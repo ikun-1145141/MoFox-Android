@@ -148,96 +148,103 @@ class WizardNotifier extends Notifier<WizardState> {
       installFinished: false,
     );
 
-    for (final task in InstallTask.values) {
-      // 跳过：用户没勾选 NapCat / WebUI 时
-      if (task == InstallTask.installNapcat && !state.draft.installNapcat) {
-        _markStatus(task, InstallTaskStatus.skipped);
-        _appendLog('[skip] 已跳过 NapCat 安装');
-        continue;
-      }
-      if (task == InstallTask.napcatLogin && !state.draft.installNapcat) {
-        _markStatus(task, InstallTaskStatus.skipped);
-        continue;
-      }
-      if (task == InstallTask.writeNapcatConfig && !state.draft.installNapcat) {
-        _markStatus(task, InstallTaskStatus.skipped);
-        continue;
-      }
-      if (task == InstallTask.installWebui && !state.draft.installWebui) {
-        _markStatus(task, InstallTaskStatus.skipped);
-        _appendLog('[skip] 已跳过 WebUI 安装');
-        continue;
-      }
+    // 整个安装流程订阅一次原生事件流，按 task 字段累积日志。
+    // 这样可以避免 task 切换瞬间 sink 被 detach 导致 emit 丢日志。
+    final perTaskLogs = <String, List<String>>{};
+    final logSubscription = runtime.installEvents().listen((event) {
+      perTaskLogs.putIfAbsent(event.task, () => <String>[]).add(event.line);
+      _appendLog(event.line);
+    });
 
-      _markStatus(task, InstallTaskStatus.running);
-      _appendLog('[run] ${task.label}…');
-
-      final nativeTask = _nativeTaskName(task);
-      if (nativeTask != null) {
-        state = state.copyWith(taskProgress: 0.35);
-        final streamedLogs = <String>[];
-        final logSubscription = runtime.installTaskLogs(nativeTask).listen(
-          (line) {
-            streamedLogs.add(line);
-            _appendLog(line);
-          },
-        );
-        final result = await runtime.runInstallTask(
-          nativeTask,
-          args: _runtimeArgs(),
-        );
-        await logSubscription.cancel();
-        if (streamedLogs.isEmpty) {
-          _appendLogs(result.logs);
+    try {
+      for (final task in InstallTask.values) {
+        // 跳过：用户没勾选 NapCat / WebUI 时
+        if (task == InstallTask.installNapcat && !state.draft.installNapcat) {
+          _markStatus(task, InstallTaskStatus.skipped);
+          _appendLog('[skip] 已跳过 NapCat 安装');
+          continue;
         }
-        if (!result.success) {
-          _markStatus(task, InstallTaskStatus.failed);
-          final message = result.error ?? '${task.label} 执行失败';
-          state = state.copyWith(errorMessage: message, taskProgress: 0);
-          _appendLog('[error] $message');
-          return;
+        if (task == InstallTask.napcatLogin && !state.draft.installNapcat) {
+          _markStatus(task, InstallTaskStatus.skipped);
+          continue;
         }
-        state = state.copyWith(taskProgress: 1);
-
-        if (result.qrPayload != null) {
-          state = state.copyWith(napcatQrPayload: result.qrPayload);
+        if (task == InstallTask.writeNapcatConfig &&
+            !state.draft.installNapcat) {
+          _markStatus(task, InstallTaskStatus.skipped);
+          continue;
         }
+        if (task == InstallTask.installWebui && !state.draft.installWebui) {
+          _markStatus(task, InstallTaskStatus.skipped);
+          _appendLog('[skip] 已跳过 WebUI 安装');
+          continue;
+        }
+
+        _markStatus(task, InstallTaskStatus.running);
+        _appendLog('[run] ${task.label}…');
+
+        final nativeTask = _nativeTaskName(task);
+        if (nativeTask != null) {
+          state = state.copyWith(taskProgress: 0.35);
+          final result = await runtime.runInstallTask(
+            nativeTask,
+            args: _runtimeArgs(),
+          );
+          // 流为空时（极端 race 或事件被 framework 丢弃）回退到 result.logs。
+          final streamed = perTaskLogs[nativeTask] ?? const <String>[];
+          if (streamed.isEmpty) {
+            _appendLogs(result.logs);
+          }
+          if (!result.success) {
+            _markStatus(task, InstallTaskStatus.failed);
+            final message = result.error ?? '${task.label} 执行失败';
+            state = state.copyWith(errorMessage: message, taskProgress: 0);
+            _appendLog('[error] $message');
+            return;
+          }
+          state = state.copyWith(taskProgress: 1);
+
+          if (result.qrPayload != null) {
+            state = state.copyWith(napcatQrPayload: result.qrPayload);
+          }
+        }
+
+        if (task == InstallTask.napcatLogin) {
+          _appendLog('[info] NapCat 登录需要通过 NapCat WebUI 完成');
+          state = state.copyWith(napcatQrPayload: null);
+        }
+
+        // 注册实例：真正写入仓库
+        if (task == InstallTask.registerInstance) {
+          final repo = await ref.read(instanceRepositoryProvider.future);
+          final draft = state.draft;
+          await repo.add(
+            Instance(
+              id: 'inst-${DateTime.now().millisecondsSinceEpoch}',
+              name: draft.name.isEmpty ? '未命名实例' : draft.name,
+              botQq: draft.botQq,
+              botNickname: draft.botNickname,
+              ownerQq: draft.ownerQq,
+              wsPort: draft.wsPort,
+              channel: draft.channel,
+              installNapcat: draft.installNapcat,
+              installWebui: draft.installWebui,
+              createdAt: DateTime.now(),
+            ),
+          );
+          ref.invalidate(instancesProvider);
+          _appendLog('[ok] 实例已注册到本地');
+        }
+
+        _markStatus(task, InstallTaskStatus.success);
+        state = state.copyWith(taskProgress: 0);
+        _appendLog('[ok] ${task.label} 完成');
       }
 
-      if (task == InstallTask.napcatLogin) {
-        _appendLog('[info] NapCat 登录需要通过 NapCat WebUI 完成');
-        state = state.copyWith(napcatQrPayload: null);
-      }
-
-      // 注册实例：真正写入仓库
-      if (task == InstallTask.registerInstance) {
-        final repo = await ref.read(instanceRepositoryProvider.future);
-        final draft = state.draft;
-        await repo.add(
-          Instance(
-            id: 'inst-${DateTime.now().millisecondsSinceEpoch}',
-            name: draft.name.isEmpty ? '未命名实例' : draft.name,
-            botQq: draft.botQq,
-            botNickname: draft.botNickname,
-            ownerQq: draft.ownerQq,
-            wsPort: draft.wsPort,
-            channel: draft.channel,
-            installNapcat: draft.installNapcat,
-            installWebui: draft.installWebui,
-            createdAt: DateTime.now(),
-          ),
-        );
-        ref.invalidate(instancesProvider);
-        _appendLog('[ok] 实例已注册到本地');
-      }
-
-      _markStatus(task, InstallTaskStatus.success);
-      state = state.copyWith(taskProgress: 0);
-      _appendLog('[ok] ${task.label} 完成');
+      state = state.copyWith(installFinished: true);
+      _appendLog('[done] 安装全部完成');
+    } finally {
+      await logSubscription.cancel();
     }
-
-    state = state.copyWith(installFinished: true);
-    _appendLog('[done] 安装全部完成');
   }
 
   String? _nativeTaskName(InstallTask task) => switch (task) {

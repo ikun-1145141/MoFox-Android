@@ -1,5 +1,7 @@
 package com.mofox.android.runtime
 
+import android.os.Handler
+import android.os.Looper
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -106,12 +108,18 @@ data class InstallTaskResult(
 class RuntimeEventBus {
     @Volatile
     private var sink: io.flutter.plugin.common.EventChannel.EventSink? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     fun attach(sink: io.flutter.plugin.common.EventChannel.EventSink?) {
         this.sink = sink
     }
 
     fun emit(topic: String, payload: Any?) {
-        sink?.success(mapOf("topic" to topic, "payload" to payload))
+        val event = mapOf("topic" to topic, "payload" to payload)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            sink?.success(event)
+        } else {
+            mainHandler.post { sink?.success(event) }
+        }
     }
 }

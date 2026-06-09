@@ -41,8 +41,19 @@ class RuntimeBridge {
     return RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
   }
 
-  /// 原生安装任务实时日志。
+  /// 原生安装任务实时日志（按 task 过滤）。
   Stream<String> installTaskLogs(String task) {
+    return installEvents()
+        .where((event) => event.task == task)
+        .map((event) => event.line);
+  }
+
+  /// 原生安装事件流（不区分 task）。每个事件包含 task 名与一行日志。
+  ///
+  /// Wizard 应在整个安装流程开始时订阅一次，按事件中的 [InstallEvent.task] 自行分发，
+  /// 安装结束（成功/失败）再 cancel。这样可以避免在 task 切换瞬间 sink 被 detach
+  /// 导致原生端 emit 的事件被丢掉。
+  Stream<InstallEvent> installEvents() {
     return _events
         .receiveBroadcastStream(<String, Object?>{'topic': 'install'})
         .where(
@@ -50,13 +61,14 @@ class RuntimeBridge {
               event is Map<Object?, Object?> && event['topic'] == 'install',
         )
         .map((event) => (event as Map<Object?, Object?>)['payload'])
-        .where(
-          (payload) =>
-              payload is Map<Object?, Object?> && payload['task'] == task,
-        )
+        .where((payload) => payload is Map<Object?, Object?>)
         .cast<Map<Object?, Object?>>()
-        .map((payload) => payload['line']?.toString() ?? '')
-        .where((line) => line.isNotEmpty);
+        .map((payload) {
+          final task = payload['task']?.toString() ?? '';
+          final line = payload['line']?.toString() ?? '';
+          return InstallEvent(task: task, line: line);
+        })
+        .where((event) => event.task.isNotEmpty && event.line.isNotEmpty);
   }
 
   /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, napcat}.
@@ -159,3 +171,10 @@ class RuntimeTaskResult {
 }
 
 final runtimeBridgeProvider = Provider<RuntimeBridge>((_) => RuntimeBridge._());
+
+class InstallEvent {
+  const InstallEvent({required this.task, required this.line});
+
+  final String task;
+  final String line;
+}
