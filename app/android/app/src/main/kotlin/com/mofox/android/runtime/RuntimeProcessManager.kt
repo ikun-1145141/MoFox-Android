@@ -1,20 +1,21 @@
 package com.mofox.android.runtime
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.io.BufferedReader
-import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 class RuntimeProcessManager(
-    private val installer: BootstrapInstaller,
+    context: Context,
+    private val installer: RootfsInstaller,
     private val events: RuntimeEventBus,
 ) {
     private val executor = Executors.newCachedThreadPool()
-    private val commandBuilder = RuntimeCommandBuilder(installer)
-    private val scripts = RuntimeScripts(installer)
+    private val commandBuilder = RuntimeCommandBuilder(context, installer)
+    private val scripts = RuntimeScripts(installer, commandBuilder)
     private val processes = ConcurrentHashMap<String, ManagedProcess>()
 
     fun status(): Map<String, String> {
@@ -50,18 +51,36 @@ class RuntimeProcessManager(
 
     fun runInstallTask(task: String, args: Map<String, String>): InstallTaskResult {
         if (task == "extractRootfs") {
-            events.emit("install", mapOf("task" to task, "line" to "[run] extracting runtime bootstrap…"))
-            val logs = installer.install(
-                onProgress = { value -> events.emit("bootstrap", value) },
-                onLog = { line -> events.emit("install", mapOf("task" to task, "line" to line)) },
-            )
-            events.emit("install", mapOf("task" to task, "line" to "[exit] extractRootfs done"))
-            return InstallTaskResult(true, logs, null, null)
+            events.emit("install", mapOf("task" to task, "line" to "[run] staging rootfs tarball from assets…"))
+            val stageLogs = try {
+                installer.install(
+                    onProgress = { value -> events.emit("bootstrap", value) },
+                    onLog = { line -> events.emit("install", mapOf("task" to task, "line" to line)) },
+                )
+            } catch (error: Throwable) {
+                val msg = error.message ?: "staging failed"
+                events.emit("install", mapOf("task" to task, "line" to "[error] $msg"))
+                return InstallTaskResult(false, emptyList(), null, msg)
+            }
+            val shellResult = runShellTask(task, args)
+            val mergedLogs = stageLogs + shellResult.logs
+            if (!shellResult.success) {
+                return shellResult.copy(logs = mergedLogs)
+            }
+            if (!installer.isBootstrapped()) {
+                val msg = "rootfs extracted but ${installer.ubuntuPath} still missing /usr/bin/env or /etc/os-release (Debian 13 trixie)"
+                events.emit("install", mapOf("task" to task, "line" to "[error] $msg"))
+                return InstallTaskResult(false, mergedLogs, null, msg)
+            }
+            return shellResult.copy(logs = mergedLogs)
         }
         if (!installer.isBootstrapped()) {
             return InstallTaskResult(false, emptyList(), null, "Runtime bootstrap is not installed")
         }
+        return runShellTask(task, args)
+    }
 
+    private fun runShellTask(task: String, args: Map<String, String>): InstallTaskResult {
         val script = scripts.scriptFor(task, args)
         val builder = ProcessBuilder(commandBuilder.scriptCommand(script))
             .directory(installer.homeDir)

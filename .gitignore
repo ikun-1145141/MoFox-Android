@@ -46,7 +46,12 @@ app/macos/Pods/
 .DS_Store
 Thumbs.db
 
-# ───────── 内嵌 Termux runtime 资产（大文件，发版前由脚本下载/拉取）─────────
+# ───────── Debian 13 (trixie) rootfs（大文件，CI 用 build.py --fetch-rootfs 拉取）─────────
+app/assets/rootfs/*.tar.xz
+app/assets/rootfs/*.tar.xz.part
+app/assets/rootfs/*.sha256
+
+# ───────── 旧版 Termux runtime 资产（架构已迁移，保留忽略防止误提交）─────────
 app/assets/runtime/bootstrap-*.zip
 app/assets/runtime/bootstrap.sha256
 app/assets/runtime/wheels/*.whl

@@ -23,6 +23,7 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="false"
+        android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
@@ -47,7 +48,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Bot 前台服务：拉起 Termux 运行时并 ping /webui/api/health -->
+        <!-- Bot 前台服务：拉起 proot Linux 运行时并 ping /webui/api/health -->
         <service
             android:name=".keepalive.MoFoxForegroundService"
             android:exported="false"

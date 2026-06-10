@@ -54,16 +54,6 @@ jobs:
         include:
           - abi: arm64-v8a
             flutter_target: android-arm64
-            bootstrap_file: bootstrap-aarch64.zip
-            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-aarch64.zip
-          - abi: armeabi-v7a
-            flutter_target: android-arm
-            bootstrap_file: bootstrap-arm.zip
-            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-arm.zip
-          - abi: x86_64
-            flutter_target: android-x64
-            bootstrap_file: bootstrap-x86_64.zip
-            bootstrap_url: https://github.com/termux/termux-packages/releases/download/bootstrap-2026.06.07-r1%2Bapt.android-7/bootstrap-x86_64.zip
 
     steps:
       - name: Checkout
@@ -96,16 +86,8 @@ jobs:
         working-directory: app
         run: flutter pub get
 
-      - name: Fetch Termux bootstrap (${{ matrix.abi }})
-        run: |
-          set -euo pipefail
-          rm -f app/assets/runtime/bootstrap-*.zip app/assets/runtime/bootstrap.sha256
-          curl --fail --location --retry 3 --output "app/assets/runtime/${{ matrix.bootstrap_file }}" "${{ matrix.bootstrap_url }}"
-          (cd app/assets/runtime && sha256sum "${{ matrix.bootstrap_file }}" > bootstrap.sha256)
-          cat app/assets/runtime/bootstrap.sha256
-
       - name: Build APK
-        run: python tools/build.py --no-pub-get --target-platform ${{ matrix.flutter_target }} --artifact-label ${{ matrix.abi }}
+        run: python tools/build.py --no-pub-get --fetch-rootfs --target-platform ${{ matrix.flutter_target }} --artifact-label ${{ matrix.abi }}
 
       - name: List artifacts
         run: ls -lh dist/

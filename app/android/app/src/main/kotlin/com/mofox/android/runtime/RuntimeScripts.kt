@@ -2,291 +2,534 @@ package com.mofox.android.runtime
 
 import java.io.File
 
-class RuntimeScripts(private val installer: BootstrapInstaller) {
+/**
+ * 生成 host 层 shell 脚本（由 [RuntimeCommandBuilder.scriptCommand] 用 libbash.so 直接执行）。
+ *
+ * 设计：
+ * - 每个 InstallTask 对应一个一次性脚本：先注入 helpers（install_ubuntu / change_ubuntu_source /
+ *   setup_fake_sysdata / login_ubuntu），再附加任务体。
+ * - 除 `extractRootfs` 之外的任务，任务体都是 `login_ubuntu "..."`，进 Ubuntu 里执行命令。
+ * - `args` 里的字符串通过 [shellQuote] 用单引号转义注入，避免命令注入。
+ *
+ * Debian 13 codename = `trixie`。变量名仍叫 UBUNTU_*，纯标识符，不影响行为。
+ */
+class RuntimeScripts(
+    private val installer: RootfsInstaller,
+    private val commandBuilder: RuntimeCommandBuilder,
+) {
     fun scriptFor(task: String, args: Map<String, String>): File {
         installer.ensureBaseDirectories()
-        val script = File(installer.scriptsDir, "$task.sh")
-        script.writeText(contentFor(task, args))
-        script.setExecutable(true, false)
-        return script
+        val file = File(installer.scriptsDir, "$task.sh")
+        val body = bodyFor(task, args)
+        val content = buildString {
+            append("#!/system/bin/sh\n")
+            append("set -e\n")
+            append(commonHeader())
+            append('\n')
+            append(body)
+            append('\n')
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
     }
 
+    /** bot / napcat 长进程脚本，用 login_ubuntu 跑 /root/start-*.sh。 */
     fun processScript(name: String): File {
+        val script = when (name) {
+            "bot" -> "cd /root/Neo-MoFox && bash /root/Neo-MoFox/start.sh"
+            "napcat" -> "cd /root/napcat && bash /root/napcat/napcat.sh start ${'$'}BOT_QQ"
+            else -> error("Unknown process: $name")
+        }
         installer.ensureBaseDirectories()
-        val script = File(installer.scriptsDir, "start-$name.sh")
-        script.writeText(
-            when (name) {
-                "bot" -> botStartScript()
-                "napcat" -> napcatStartScript()
-                else -> error("Unknown process: $name")
-            },
-        )
-        script.setExecutable(true, false)
-        return script
+        val file = File(installer.scriptsDir, "process-$name.sh")
+        val content = buildString {
+            append("#!/system/bin/sh\n")
+            append("set -e\n")
+            append(commonHeader())
+            append('\n')
+            append("login_ubuntu ${shellQuote(script)}\n")
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
     }
 
-    private fun contentFor(task: String, args: Map<String, String>): String {
-        val botQq = shellQuote(args["botQq"].orEmpty())
-        val botQqRaw = args["botQq"].orEmpty()
-        val botNickname = shellQuote(args["botNickname"].orEmpty())
-        val ownerQqRaw = args["ownerQq"].orEmpty()
-        val apiKey = shellQuote(args["apiKey"].orEmpty())
-        val apiBaseUrl = shellQuote(args["apiBaseUrl"].orEmpty())
-        val wsPortRaw = args["wsPort"].orEmpty().ifBlank { "8095" }
-        val channel = shellQuote(args["channel"].orEmpty().ifBlank { "main" })
-        val webuiApiKey = shellQuote(args["webuiApiKey"].orEmpty())
+    private fun bodyFor(task: String, args: Map<String, String>): String {
         return when (task) {
-            "installRuntimeDeps" -> commonHeader() + """
-echo "[termux] installing proot-distro and helpers"
-if command -v pkg >/dev/null 2>&1; then
-    pkg update -y
-    pkg install -y proot-distro proot git curl wget nano
-else
-    echo "[termux] pkg command not found"
-    exit 1
-fi
-
-ensure_ubuntu
-
-echo "[ubuntu] installing base packages"
-proot-distro login ubuntu -- bash -s <<'MOFOX_UBUNTU'
-set -eu
-export DEBIAN_FRONTEND=noninteractive
-apt update
-apt install -y sudo git curl ca-certificates python3 python3-pip python3-venv build-essential screen xvfb
-python3 -m pip install -U uv --break-system-packages -i https://repo.huaweicloud.com/repository/pypi/simple || python3 -m pip install -U uv --break-system-packages
-grep -q 'export PATH="${'$'}HOME/.local/bin:${'$'}PATH"' "${'$'}HOME/.bashrc" 2>/dev/null || echo 'export PATH="${'$'}HOME/.local/bin:${'$'}PATH"' >> "${'$'}HOME/.bashrc"
-MOFOX_UBUNTU
-echo "[ubuntu] base runtime ready"
-"""
-            "cloneRepo" -> ubuntuScript("""
-CHANNEL=$channel
-BRANCH="main"
-if [ "${'$'}CHANNEL" = "dev" ]; then
-    BRANCH="dev"
-fi
-mkdir -p "${'$'}HOME/Neo-MoFox_Deployment"
-cd "${'$'}HOME/Neo-MoFox_Deployment"
-if [ ! -d Neo-MoFox ]; then
-    clone_with_fallback "Neo-MoFox" "${'$'}BRANCH" \
-        "https://github.com/MoFox-Studio/Neo-MoFox.git" \
-        "https://github.ikun114.top/https://github.com/MoFox-Studio/Neo-MoFox.git"
-else
-    echo "[git] Neo-MoFox already exists; pulling latest ${'$'}BRANCH"
-    cd Neo-MoFox
-    git fetch --all --prune || true
-    git checkout "${'$'}BRANCH" || true
-    git pull --ff-only || true
-fi
-""")
-            "syncDeps" -> ubuntuScript("""
-cd "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox"
-if [ ! -f pyproject.toml ]; then
-    echo "[uv] pyproject.toml not found"
-    exit 1
-fi
-uv venv
-uv sync
-uv pip install pillow
-echo "[uv] dependencies installed"
-""")
-            "genConfig" -> ubuntuScript("""
-cd "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox"
-mkdir -p config
-if [ -f config/core.toml ] && [ -f config/model.toml ]; then
-    echo "[config] existing config files detected"
-else
-    echo "[config] generating default config via first startup"
-    set +e
-    timeout 60s uv run main.py
-    STATUS=${'$'}?
-    set -e
-    if [ ! -f config/core.toml ] || [ ! -f config/model.toml ]; then
-        echo "[config] first startup exited with ${'$'}STATUS and did not create required config files"
-        exit 1
-    fi
-fi
-echo "[config] default config directory prepared"
-""")
-            "writeCore" -> ubuntuScript("""
-mkdir -p "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config"
-cat > "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config/core.toml" <<EOF
-[permissions]
-owner_list = ["qq:$ownerQqRaw"]
-
-[http_router]
-enable_http_router = true
-http_router_host = "127.0.0.1"
-http_router_port = 8000
-api_keys = [$webuiApiKey]
-EOF
-echo "[config] core.toml written"
-""")
-            "writeModel" -> ubuntuScript("""
-mkdir -p "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config"
-cat > "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config/model.toml" <<EOF
-[[api_providers]]
-name = "SiliconFlow"
-api_key = $apiKey
-base_url = $apiBaseUrl
-EOF
-echo "[config] model.toml written"
-""")
-            "writeAdapter" -> ubuntuScript("""
-mkdir -p "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config/plugins/napcat_adapter"
-cat > "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/config/plugins/napcat_adapter/config.toml" <<EOF
-[plugin]
-enabled = true
-config_version = "2.0.0"
-
-[bot]
-qq_id = $botQq
-qq_nickname = $botNickname
-
-[napcat_server]
-mode = "reverse"
-host = "localhost"
-port = $wsPortRaw
-EOF
-echo "[config] napcat_adapter config written"
-""")
-            "installNapcat" -> ubuntuScript("""
-cd "${'$'}HOME"
-if [ -d /root/Napcat ]; then
-    echo "[napcat] existing /root/Napcat detected"
-else
-    echo "[napcat] running official installer"
-    curl -L -o napcat.sh https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh
-    bash napcat.sh --docker n --cli y
-fi
-""")
-            "napcatLogin" -> ubuntuScript("""
-echo "[napcat] login requires NapCat WebUI"
-echo "[napcat] start command: xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox"
-echo "[napcat] WebUI token is under /root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config/webui.json after startup"
-""")
-            "writeNapcatConfig" -> ubuntuScript("""
-mkdir -p "/root/Napcat/config"
-cat > "/root/Napcat/config/onebot11_$botQqRaw.json" <<EOF
-{
-    "network": {
-        "httpServers": [],
-        "httpClients": [],
-        "websocketServers": [],
-        "websocketClients": [
-            {
-                "name": "neo-mofox-ws-client",
-                "enable": true,
-                "url": "ws://127.0.0.1:$wsPortRaw",
-                "messagePostFormat": "array",
-                "reportSelfMessage": false,
-                "reconnectInterval": 3000,
-                "token": ""
+            "extractRootfs" -> extractRootfsBody()
+            "installRuntimeDeps" -> loginBody(
+                """
+                apt-get update -y
+                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+                    python3 python3-pip python3-venv git curl ca-certificates xz-utils locales
+                sed -i 's/^# *\(zh_CN.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+                sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
+                locale-gen zh_CN.UTF-8 en_US.UTF-8 || true
+                update-locale LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 || true
+                cat > /etc/default/locale <<'MOFOX_LOCALE_EOF'
+                LANG=zh_CN.UTF-8
+                LC_ALL=zh_CN.UTF-8
+                MOFOX_LOCALE_EOF
+                curl -LsSf https://astral.sh/uv/install.sh | sh || true
+                . /root/.local/bin/env 2>/dev/null || true
+                python3 --version
+                git --version
+                """.trimIndent(),
+            )
+            "cloneRepo" -> {
+                val repoUrl = args["repoUrl"] ?: "https://github.com/MoFox-Studio/Neo-MoFox.git"
+                val target = args["target"] ?: "/root/Neo-MoFox"
+                loginBody(
+                    """
+                    if [ -d ${shellQuote(target)}/.git ]; then
+                      echo "[runtime] repo already cloned at $target, pulling latest"
+                      cd ${shellQuote(target)} && git pull --ff-only || true
+                    else
+                      git clone --depth=1 ${shellQuote(repoUrl)} ${shellQuote(target)}
+                    fi
+                    """.trimIndent(),
+                )
             }
-        ]
-    },
-    "musicSignUrl": "",
-    "enableLocalFile2Url": false,
-    "parseMultMsg": false
-}
-EOF
-cat > "/root/Napcat/config/napcat_$botQqRaw.json" <<EOF
-{
-    "fileLog": true,
-    "consoleLog": true,
-    "fileLogLevel": "info",
-    "consoleLogLevel": "info"
-}
-EOF
-echo "[napcat] config written"
-""")
-            "installWebui" -> ubuntuScript("""
-mkdir -p "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/plugins"
-cd "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox/plugins"
-if [ -d webui_backend ]; then
-    echo "[webui] webui_backend already exists"
-else
-    clone_with_fallback "webui_backend" "webui-dist" \
-        "https://github.com/MoFox-Studio/MoFox-Core-Webui.git" \
-        "https://github.ikun114.top/https://github.com/MoFox-Studio/MoFox-Core-Webui.git"
-fi
-""")
-            else -> commonHeader() + "echo \"[task] $task has no native script yet; skipped\"\n"
+            "syncDeps" -> {
+                val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+                loginBody(
+                    """
+                    cd ${shellQuote(repoPath)}
+                    export PATH="/root/.local/bin:${'$'}PATH"
+                    if command -v uv >/dev/null 2>&1; then
+                      uv sync
+                    else
+                      python3 -m venv .venv
+                      . .venv/bin/activate
+                      pip install -r requirements.txt
+                    fi
+                    """.trimIndent(),
+                )
+            }
+            "genConfig" -> {
+                val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+                loginBody(
+                    """
+                    cd ${shellQuote(repoPath)}
+                    mkdir -p config
+                    if [ ! -f config/bot_config.toml ]; then
+                      python3 -m mofox.config.generate || true
+                    fi
+                    """.trimIndent(),
+                )
+            }
+            "writeCore" -> writeCoreBody(args)
+            "writeModel" -> writeModelBody(args)
+            "writeAdapter" -> writeAdapterBody(args)
+            "installWebui" -> {
+                val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+                val webuiKey = args["webuiApiKey"].orEmpty()
+                loginBody(
+                    """
+                    cd ${shellQuote(repoPath)}
+                    if [ -d webui ]; then
+                      cd webui && (npm install --omit=dev || true) && (npm run build || true)
+                    fi
+                    echo "[webui] api_key=${shellQuote(webuiKey)}"
+                    """.trimIndent(),
+                )
+            }
+            "installNapcat" -> loginBody(
+                """
+                mkdir -p /root/napcat
+                cd /root/napcat
+                if [ ! -f napcat.sh ]; then
+                  curl -LsSf https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh -o install.sh
+                  bash install.sh --tui || true
+                fi
+                """.trimIndent(),
+            )
+            "napcatLogin" -> {
+                val botQq = args["botQq"].orEmpty()
+                loginBody(
+                    """
+                    cd /root/napcat
+                    export BOT_QQ=${shellQuote(botQq)}
+                    bash napcat.sh start "${'$'}BOT_QQ" >/tmp/napcat-login.log 2>&1 &
+                    NAPCAT_PID=${'$'}!
+                    for i in ${'$'}(seq 1 60); do
+                      sleep 1
+                      QR=${'$'}(grep -oE 'qrlogin[^ ]*' /tmp/napcat-login.log | head -1 || true)
+                      if [ -n "${'$'}QR" ]; then
+                        echo "MOFOX_QR_PAYLOAD=${'$'}QR"
+                        break
+                      fi
+                    done
+                    wait ${'$'}NAPCAT_PID || true
+                    """.trimIndent(),
+                )
+            }
+            "writeNapcatConfig" -> writeNapcatConfigBody(args)
+            "registerInstance" -> {
+                val instanceName = args["instanceName"].orEmpty()
+                val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+                loginBody(
+                    """
+                    mkdir -p /root/.mofox
+                    cat > /root/.mofox/instance.toml <<'MOFOX_EOF'
+                    name = "$instanceName"
+                    path = "$repoPath"
+                    MOFOX_EOF
+                    echo "[runtime] instance $instanceName registered"
+                    """.trimIndent(),
+                )
+            }
+            else -> error("Unknown task: $task")
         }
     }
 
-    private fun botStartScript(): String = ubuntuScript("""
-cd "${'$'}HOME/Neo-MoFox_Deployment/Neo-MoFox"
-if [ -f .venv/bin/python ]; then
-    exec .venv/bin/python main.py
-fi
-if command -v uv >/dev/null 2>&1; then
-    exec uv run main.py
-fi
-echo "[bot] Neo-MoFox entrypoint not found"
-exit 1
-""")
+    private fun extractRootfsBody(): String {
+        return """
+            progress_echo() { echo "[progress] $@"; }
+            install_ubuntu
+            change_ubuntu_source
+            # Debian ships /etc/resolv.conf as a relative symlink to
+            # ../run/systemd/resolve/stub-resolv.conf. Shell '>' follows the
+            # symlink and ENOENT-fails because run/systemd/... doesn't exist
+            # on host. Drop the symlink and write a plain file instead.
+            "${'$'}BB/rm" -f "${'$'}UBUNTU_PATH/etc/resolv.conf"
+            echo 'nameserver 8.8.8.8' > "${'$'}UBUNTU_PATH/etc/resolv.conf"
+            setup_fake_sysdata
+            echo "[runtime] rootfs ready at ${'$'}UBUNTU_PATH"
+        """.trimIndent()
+    }
 
-    private fun napcatStartScript(): String = ubuntuScript("""
-if [ -x /root/Napcat/opt/QQ/qq ]; then
-    exec xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox
-fi
-echo "[napcat] /root/Napcat/opt/QQ/qq not found"
-exit 1
-""")
+    private fun writeCoreBody(args: Map<String, String>): String {
+        val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+        val instanceName = args["instanceName"].orEmpty()
+        val botQq = args["botQq"].orEmpty()
+        val botNickname = args["botNickname"].orEmpty()
+        val ownerQq = args["ownerQq"].orEmpty()
+        val webuiPort = args["webuiPort"] ?: "8080"
+        val webuiKey = args["webuiApiKey"].orEmpty()
+        return loginBody(
+            """
+            mkdir -p ${shellQuote(repoPath)}/config
+            cat > ${shellQuote(repoPath)}/config/core.toml <<'MOFOX_EOF'
+            [bot]
+            instance_name = "$instanceName"
+            qq = "$botQq"
+            nickname = "$botNickname"
+            owner_qq = "$ownerQq"
 
-    private fun ubuntuScript(body: String): String = commonHeader() + """
-ensure_ubuntu
-proot-distro login ubuntu -- bash -s <<'MOFOX_UBUNTU'
-set -eu
-export DEBIAN_FRONTEND=noninteractive
-export PYTHONUNBUFFERED=1
-export PYTHONIOENCODING=utf-8
-export PATH="${'$'}HOME/.local/bin:${'$'}PATH"
+            [http_router]
+            host = "0.0.0.0"
+            port = $webuiPort
+            api_key = "$webuiKey"
+            MOFOX_EOF
+            """.trimIndent(),
+        )
+    }
 
-clone_with_fallback() {
-    target="${'$'}1"
-    branch="${'$'}2"
-    shift 2
-    last_error=0
-    for url in "${'$'}@"; do
-        echo "[git] cloning ${'$'}target from ${'$'}url"
-        if git clone --depth 1 --branch "${'$'}branch" "${'$'}url" "${'$'}target"; then
-            echo "[git] ${'$'}target cloned"
-            return 0
-        fi
-        last_error=${'$'}?
-        rm -rf "${'$'}target"
-        echo "[git] clone failed with ${'$'}last_error; trying next mirror"
-    done
-    return "${'$'}last_error"
-}
+    private fun writeModelBody(args: Map<String, String>): String {
+        val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+        val apiKey = args["apiKey"].orEmpty()
+        val apiBaseUrl = args["apiBaseUrl"] ?: "https://api.openai.com/v1"
+        return loginBody(
+            """
+            mkdir -p ${shellQuote(repoPath)}/config
+            cat > ${shellQuote(repoPath)}/config/model.toml <<'MOFOX_EOF'
+            [model]
+            api_key = "$apiKey"
+            base_url = "$apiBaseUrl"
+            MOFOX_EOF
+            """.trimIndent(),
+        )
+    }
 
-$body
-MOFOX_UBUNTU
-"""
+    private fun writeAdapterBody(args: Map<String, String>): String {
+        val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+        val wsPort = args["wsPort"] ?: "8095"
+        val channel = args["channel"] ?: "main"
+        return loginBody(
+            """
+            mkdir -p ${shellQuote(repoPath)}/config
+            cat > ${shellQuote(repoPath)}/config/adapter.toml <<'MOFOX_EOF'
+            [napcat]
+            ws_port = $wsPort
+            channel = "$channel"
+            MOFOX_EOF
+            """.trimIndent(),
+        )
+    }
 
-    private fun commonHeader(): String = """
-#!/usr/bin/env sh
-set -eu
-export PYTHONUNBUFFERED=1
-export PYTHONIOENCODING=utf-8
+    private fun writeNapcatConfigBody(args: Map<String, String>): String {
+        val wsPort = args["wsPort"] ?: "8095"
+        val botQq = args["botQq"].orEmpty()
+        return loginBody(
+            """
+            mkdir -p /root/napcat/config
+            cat > /root/napcat/config/onebot11_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF'
+            {
+              "network": {
+                "websocketServers": [
+                  {
+                    "name": "mofox",
+                    "enable": true,
+                    "host": "127.0.0.1",
+                    "port": $wsPort,
+                    "messagePostFormat": "array",
+                    "reportSelfMessage": false,
+                    "token": ""
+                  }
+                ]
+              },
+              "musicSignUrl": "",
+              "enableLocalFile2Url": false
+            }
+            MOFOX_EOF
+            """.trimIndent(),
+        )
+    }
 
-ensure_ubuntu() {
-    if ! command -v proot-distro >/dev/null 2>&1; then
-        echo "[termux] proot-distro is not installed"
-        exit 1
-    fi
-    if proot-distro login ubuntu -- true >/dev/null 2>&1; then
-        echo "[ubuntu] ubuntu rootfs already installed"
-    else
-        echo "[ubuntu] installing ubuntu rootfs via proot-distro"
-        proot-distro install ubuntu
-    fi
-}
-""".trimStart()
+    /** 把任务体包成 `login_ubuntu '...'`。 */
+    private fun loginBody(body: String): String {
+        return "login_ubuntu ${shellQuote(body)}"
+    }
 
-    private fun shellQuote(value: String): String {
-        return "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+    /** 公共脚本头：env + 4 个 helper 函数。 */
+    private fun commonHeader(): String {
+        return buildString {
+            appendLine("# === MoFox runtime common header ===")
+            appendLine("export UBUNTU=${shellQuote(installer.ubuntuTarballName)}")
+            appendLine("export UBUNTU_NAME=${shellQuote(installer.ubuntuTarballName.removeSuffix(".tar.xz"))}")
+            appendLine()
+            appendLine(progressHelper())
+            appendLine(changeUbuntuSourceFn())
+            appendLine(installUbuntuFn())
+            appendLine(setupFakeSysdataFn())
+            appendLine(loginUbuntuFn())
+        }
+    }
+
+    private fun progressHelper(): String = """
+        progress_echo(){
+          echo "[progress] $*"
+          [ -n "${'$'}TMPDIR" ] && echo "$*" > "${'$'}TMPDIR/progress_des" 2>/dev/null || true
+        }
+    """.trimIndent()
+
+    private fun changeUbuntuSourceFn(): String = """
+        change_ubuntu_source(){
+          mkdir -p "${'$'}UBUNTU_PATH/etc/apt"
+          # debuerreotype 默认会落 deb822 格式的 /etc/apt/sources.list.d/debian.sources，
+          # 我们这里直接写经典 sources.list 并把它干掉，避免双源。
+          rm -f "${'$'}UBUNTU_PATH/etc/apt/sources.list.d/debian.sources"
+          cat <<'MOFOX_SRC_EOF' > "${'$'}UBUNTU_PATH/etc/apt/sources.list"
+        deb http://mirrors.huaweicloud.com/debian/ $UBUNTU_CODENAME main contrib non-free non-free-firmware
+        deb http://mirrors.huaweicloud.com/debian/ $UBUNTU_CODENAME-updates main contrib non-free non-free-firmware
+        deb http://mirrors.huaweicloud.com/debian-security/ $UBUNTU_CODENAME-security main contrib non-free non-free-firmware
+        deb http://mirrors.huaweicloud.com/debian/ $UBUNTU_CODENAME-backports main contrib non-free non-free-firmware
+        MOFOX_SRC_EOF
+        }
+    """.trimIndent()
+
+    private fun installUbuntuFn(): String = """
+        install_ubuntu(){
+          # busybox ships as libbusybox.so; create applet symlinks so argv[0] basename matches.
+          BB="${'$'}HOME_PATH/.bb"
+          mkdir -p "${'$'}BB"
+          for applet in tar rm cp mv ls cat ln mkdir chmod sleep find sed awk grep head tail wc xargs sort sh xz gzip bzip2; do
+            [ -L "${'$'}BB/${'$'}applet" ] || ln -sf "${'$'}BIN/libbusybox.so" "${'$'}BB/${'$'}applet"
+          done
+
+          NEED_INSTALL=0
+          if [ ! -d "${'$'}UBUNTU_PATH/bin" ]; then
+            echo "[state] missing bin directory, force reinstall"
+            NEED_INSTALL=1
+          elif [ ! -f "${'$'}UBUNTU_PATH/usr/bin/env" ]; then
+            echo "[state] missing /usr/bin/env, force reinstall"
+            NEED_INSTALL=1
+          elif [ ! -d "${'$'}UBUNTU_PATH/etc" ]; then
+            echo "[state] missing etc directory, force reinstall"
+            NEED_INSTALL=1
+          fi
+
+          if [ "${'$'}NEED_INSTALL" -eq 1 ] || [ -z "${'$'}(ls -A "${'$'}UBUNTU_PATH" 2>/dev/null)" ]; then
+            echo "[state] ${'$'}UBUNTU_PATH not ready, reinstalling"
+            PERSISTENT_BACKUP="${'$'}HOME_PATH/ubuntu_user_backup"
+            if [ -d "${'$'}UBUNTU_PATH/root" ]; then
+              echo "[backup] saving /root to ${'$'}PERSISTENT_BACKUP"
+              mkdir -p "${'$'}PERSISTENT_BACKUP"
+              "${'$'}BB/cp" -r "${'$'}UBUNTU_PATH/root" "${'$'}PERSISTENT_BACKUP/root_backup" || true
+            fi
+            "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH"
+            mkdir -p "${'$'}UBUNTU_PATH"
+            TAR_LOG="${'$'}HOME_PATH/tar.log"
+            # rootfs has ~115 hardlinks pointing at usr/bin/coreutils. Android
+            # /data blocks cross-inode hardlinks, so plain busybox tar drops
+            # them and leaves usr/bin/env as a dangling symlink. proot's
+            # --link2symlink ptrace shim transparently rewrites link() into
+            # symlink() so extraction completes correctly.
+            echo "[cmd] proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
+            echo "[tar] extracting Debian 13 rootfs (~250MB), please wait..."
+            "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
+              TAR_RC=${'$'}?
+              echo "[error] tar failed (rc=${'$'}TAR_RC), tail of log:"
+              "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
+              exit "${'$'}TAR_RC"
+            }
+            echo "[tar] tar exited 0, verifying rootfs integrity"
+            # busybox tar may exit 0 even when extraction is incomplete (e.g.
+            # malformed entries silently skipped). Without this guard the
+            # caller will try to write resolv.conf into a missing etc/ and
+            # blow up with a confusing ENOENT. Dump tar.log on mismatch.
+            MISSING=""
+            for must in etc usr usr/bin bin; do
+              if [ ! -e "${'$'}UBUNTU_PATH/${'$'}must" ]; then
+                MISSING="${'$'}MISSING ${'$'}must"
+              fi
+            done
+            if [ -n "${'$'}MISSING" ]; then
+              echo "[error] tar reported success but rootfs is missing:${'$'}MISSING"
+              echo "[error] tar.log tail (last 60 lines):"
+              "${'$'}BB/tail" -n 60 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
+              echo "[error] top-level entries actually extracted:"
+              "${'$'}BB/ls" -la "${'$'}UBUNTU_PATH" 2>/dev/null || true
+              exit 1
+            fi
+            echo "[tar] extraction complete"
+            if [ -d "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME" ]; then
+              "${'$'}BB/mv" "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"/* "${'$'}UBUNTU_PATH/" || true
+              "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"
+            fi
+            mkdir -p "${'$'}UBUNTU_PATH/root"
+            echo 'export ANDROID_DATA=/home/' >> "${'$'}UBUNTU_PATH/root/.bashrc"
+            if [ -d "${'$'}PERSISTENT_BACKUP/root_backup" ]; then
+              echo "[restore] restoring /root from backup"
+              "${'$'}BB/cp" -r "${'$'}PERSISTENT_BACKUP/root_backup"/* "${'$'}UBUNTU_PATH/root/" || true
+              "${'$'}BB/rm" -rf "${'$'}PERSISTENT_BACKUP"
+            fi
+          else
+            VERSION=${'$'}(cat "${'$'}UBUNTU_PATH/etc/issue.net" 2>/dev/null || echo "debian")
+            echo "[state] Debian already installed -> ${'$'}VERSION"
+          fi
+        }
+    """.trimIndent()
+
+    private fun setupFakeSysdataFn(): String = """
+        setup_fake_sysdata(){
+          for d in proc sys sys/.empty; do
+            if [ ! -e "${'$'}UBUNTU_PATH/${'$'}{d}" ]; then
+              mkdir -p "${'$'}UBUNTU_PATH/${'$'}{d}"
+            fi
+            chmod 700 "${'$'}UBUNTU_PATH/${'$'}{d}"
+          done
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.loadavg" ]; then
+            echo "0.12 0.07 0.02 2/165 765" > "${'$'}UBUNTU_PATH/proc/.loadavg"
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.stat" ]; then
+            cat <<'MOFOX_STAT_EOF' > "${'$'}UBUNTU_PATH/proc/.stat"
+        cpu  1957 0 2877 93280 262 342 254 87 0 0
+        cpu0 31 0 226 12027 82 10 4 9 0 0
+        cpu1 45 0 664 11144 21 263 233 12 0 0
+        ctxt 140223
+        btime 1680020856
+        processes 772
+        procs_running 2
+        procs_blocked 0
+        MOFOX_STAT_EOF
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.uptime" ]; then
+            echo "124.08 932.80" > "${'$'}UBUNTU_PATH/proc/.uptime"
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.version" ]; then
+            echo "Linux version 6.2.1-proot-distro (mofox@android) #1 SMP" > "${'$'}UBUNTU_PATH/proc/.version"
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.vmstat" ]; then
+            cat <<'MOFOX_VM_EOF' > "${'$'}UBUNTU_PATH/proc/.vmstat"
+        nr_free_pages 1743136
+        nr_zone_inactive_anon 179281
+        nr_zone_active_anon 7183
+        nr_mlock 0
+        nr_bounce 0
+        MOFOX_VM_EOF
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.sysctl_entry_cap_last_cap" ]; then
+            echo "40" > "${'$'}UBUNTU_PATH/proc/.sysctl_entry_cap_last_cap"
+          fi
+          if [ ! -f "${'$'}UBUNTU_PATH/proc/.sysctl_inotify_max_user_watches" ]; then
+            echo "4096" > "${'$'}UBUNTU_PATH/proc/.sysctl_inotify_max_user_watches"
+          fi
+        }
+    """.trimIndent()
+
+    private fun loginUbuntuFn(): String = """
+        login_ubuntu(){
+          COMMAND_TO_EXEC="${'$'}1"
+          if [ -z "${'$'}COMMAND_TO_EXEC" ]; then
+            COMMAND_TO_EXEC="/bin/bash -il"
+          fi
+          setup_fake_sysdata
+          BIND_ARGS=""
+          if [ ! -r /proc/loadavg ] || [ ! -s /proc/loadavg ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.loadavg:/proc/loadavg"
+          fi
+          if [ ! -r /proc/stat ] || [ ! -s /proc/stat ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.stat:/proc/stat"
+          fi
+          if [ ! -r /proc/uptime ] || [ ! -s /proc/uptime ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.uptime:/proc/uptime"
+          fi
+          if [ ! -r /proc/version ] || [ ! -s /proc/version ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.version:/proc/version"
+          fi
+          if [ ! -r /proc/vmstat ] || [ ! -s /proc/vmstat ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.vmstat:/proc/vmstat"
+          fi
+          if [ ! -r /proc/sys/kernel/cap_last_cap ] || [ ! -s /proc/sys/kernel/cap_last_cap ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.sysctl_entry_cap_last_cap:/proc/sys/kernel/cap_last_cap"
+          fi
+          if [ ! -r /proc/sys/fs/inotify/max_user_watches ] || [ ! -s /proc/sys/fs/inotify/max_user_watches ]; then
+            BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.sysctl_inotify_max_user_watches:/proc/sys/fs/inotify/max_user_watches"
+          fi
+          mkdir -p "${'$'}UBUNTU_PATH/storage/emulated" 2>/dev/null || true
+          ANDROID_TZ=${'$'}(getprop persist.sys.timezone 2>/dev/null || echo "")
+          if [ -z "${'$'}ANDROID_TZ" ]; then ANDROID_TZ="UTC"; fi
+          exec "${'$'}BIN/libproot.so" \
+            -0 \
+            -r "${'$'}UBUNTU_PATH" \
+            --link2symlink \
+            -b /dev \
+            -b /proc \
+            -b /sys \
+            -b /dev/pts \
+            -b "${'$'}TMPDIR":"${'$'}TMPDIR" \
+            -b "${'$'}TMPDIR":/dev/shm \
+            -b /proc/self/fd:/dev/fd \
+            -b /proc/self/fd/0:/dev/stdin \
+            -b /proc/self/fd/1:/dev/stdout \
+            -b /proc/self/fd/2:/dev/stderr \
+            -b /storage/emulated/0:/sdcard \
+            -b /storage/emulated/0:/storage/emulated/0 \
+            ${'$'}BIND_ARGS \
+            -w /root \
+            /usr/bin/env -i \
+              HOME=/root \
+              TERM=xterm-256color \
+              LANG=zh_CN.UTF-8 \
+              LC_ALL=zh_CN.UTF-8 \
+              TZ="${'$'}ANDROID_TZ" \
+              PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              COMMAND_TO_EXEC="${'$'}COMMAND_TO_EXEC" \
+              /bin/bash -lc "eval \"\${'$'}COMMAND_TO_EXEC\""
+        }
+    """.trimIndent()
+
+    /** 用 POSIX 单引号转义：`it's` -> `'it'\''s'`。 */
+    private fun shellQuote(s: String): String {
+        val escaped = s.replace("'", "'\\''")
+        return "'$escaped'"
+    }
+
+    companion object {
+        // Debian 13 = Trixie。
+        private const val UBUNTU_CODENAME = "trixie"
     }
 }

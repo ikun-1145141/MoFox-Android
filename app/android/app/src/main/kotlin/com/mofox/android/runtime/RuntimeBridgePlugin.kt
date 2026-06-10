@@ -19,13 +19,16 @@ class RuntimeBridgePlugin {
     private val executor = Executors.newSingleThreadExecutor()
 
     fun attach(engine: FlutterEngine, context: Context) {
-        val installer = BootstrapInstaller(context.applicationContext)
-        val processManager = RuntimeProcessManager(installer, events)
+        val appContext = context.applicationContext
+        val installer = RootfsInstaller(appContext)
+        val processManager = RuntimeProcessManager(appContext, installer, events)
 
         MethodChannel(engine.dartExecutor.binaryMessenger, "mofox/runtime")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isBootstrapped" -> result.success(installer.isBootstrapped())
+                    "getNativeLibraryDir" ->
+                        result.success(appContext.applicationInfo.nativeLibraryDir)
                     "installBootstrap" -> runAsync(result) {
                         installer.install(
                             onProgress = { value -> events.emit("bootstrap", value) },

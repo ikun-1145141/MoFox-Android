@@ -1,5 +1,5 @@
 name: mofox_android
-description: Neo-MoFox 的安卓原生外壳 App。WebView 套自家 WebUI，原生壳负责 OOBE / 内嵌 Termux 运行时 / 终端 / 保活与系统级设置。
+description: Neo-MoFox 的安卓原生外壳 App。WebView 套自家 WebUI，原生壳负责 OOBE / 内嵌 proot Linux 运行时 / 终端 / 保活与系统级设置。
 publish_to: "none"
 version: 0.1.0+1
 
@@ -49,6 +49,9 @@ dependencies:
   # 日志
   logger: ^2.3.0
 
+  # rootfs 解包：tar.xz / tar.gz 流式读取 + 硬链接处理
+  archive: ^4.0.7
+
   # 工具
   collection: ^1.18.0
   intl: ^0.20.2
@@ -75,5 +78,5 @@ flutter:
 
   assets:
     - assets/icons/
-    - assets/runtime/
+    - assets/rootfs/
     - assets/scripts/

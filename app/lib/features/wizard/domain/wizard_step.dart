@@ -114,8 +114,8 @@ enum InstallTask {
   registerInstance; // 写实例到本地仓库
 
   String get label => switch (this) {
-        InstallTask.extractRootfs => '解压运行时',
-        InstallTask.installRuntimeDeps => '安装系统依赖',
+        InstallTask.extractRootfs => '解压 Debian 13 rootfs',
+        InstallTask.installRuntimeDeps => '安装 apt 基础依赖',
         InstallTask.cloneRepo => '克隆 Neo-MoFox 仓库',
         InstallTask.syncDeps => '同步 Python 依赖',
         InstallTask.genConfig => '生成默认配置',

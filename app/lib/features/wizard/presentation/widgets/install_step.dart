@@ -17,6 +17,24 @@ class InstallStep extends ConsumerStatefulWidget {
 class _InstallStepState extends ConsumerState<InstallStep> {
   bool _qrShown = false;
   bool _logsExpanded = false;
+  final ScrollController _logsScroll = ScrollController();
+
+  @override
+  void dispose() {
+    _logsScroll.dispose();
+    super.dispose();
+  }
+
+  void _scheduleScrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_logsScroll.hasClients) return;
+      _logsScroll.animateTo(
+        _logsScroll.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +55,9 @@ class _InstallStepState extends ConsumerState<InstallStep> {
       } else if (next.napcatQrPayload == null && _qrShown) {
         Navigator.of(context).pop();
         _qrShown = false;
+      }
+      if ((prev?.logs.length ?? 0) != next.logs.length && _logsExpanded) {
+        _scheduleScrollToBottom();
       }
     });
 
@@ -126,8 +147,10 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                       child: ExpansionPanelList(
                         elevation: 0,
                         expandedHeaderPadding: EdgeInsets.zero,
-                        expansionCallback: (_, __) =>
-                            setState(() => _logsExpanded = !_logsExpanded),
+                        expansionCallback: (_, __) {
+                          setState(() => _logsExpanded = !_logsExpanded);
+                          if (_logsExpanded) _scheduleScrollToBottom();
+                        },
                         children: <ExpansionPanel>[
                           ExpansionPanel(
                             backgroundColor: scheme.surfaceContainerLow,
@@ -142,20 +165,28 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                             ),
                             body: Container(
                               width: double.infinity,
+                              height: 260,
                               margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: scheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Text(
-                                state.logs.isEmpty
-                                    ? '（暂无日志）'
-                                    : state.logs.join('\n'),
-                                style: const TextStyle(
-                                  fontFamily: 'monospace',
-                                  fontSize: 12,
-                                  height: 1.4,
+                              child: Scrollbar(
+                                controller: _logsScroll,
+                                thumbVisibility: true,
+                                child: SingleChildScrollView(
+                                  controller: _logsScroll,
+                                  child: Text(
+                                    state.logs.isEmpty
+                                        ? '（暂无日志）'
+                                        : state.logs.join('\n'),
+                                    style: const TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontSize: 12,
+                                      height: 1.4,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
