@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class SettingsPage extends StatelessWidget {
+import '../application/app_settings_provider.dart';
+
+class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(appSettingsProvider);
+    final terminalHapticsEnabled =
+        settings.valueOrNull?.terminalHapticsEnabled ?? true;
+
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: const <Widget>[
-          _Section(
+        children: <Widget>[
+          const _Section(
             title: '外观',
             children: <Widget>[
               _SettingTile(
@@ -28,8 +35,27 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           _Section(
+            title: '终端',
+            children: <Widget>[
+              _SettingTile(
+                leading: const Icon(Icons.vibration_outlined),
+                title: '触感反馈',
+                subtitle: '长按选择、复制和快捷键按钮震动',
+                trailing: Switch(
+                  value: terminalHapticsEnabled,
+                  onChanged: settings.isLoading
+                      ? null
+                      : (value) => ref
+                          .read(appSettingsProvider.notifier)
+                          .setTerminalHapticsEnabled(value),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const _Section(
             title: '运行时',
             children: <Widget>[
               _SettingTile(
@@ -47,8 +73,8 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: 16),
-          _Section(
+          const SizedBox(height: 16),
+          const _Section(
             title: '保活体检',
             children: <Widget>[
               _SettingTile(
@@ -59,8 +85,8 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: 16),
-          _Section(
+          const SizedBox(height: 16),
+          const _Section(
             title: '备份与导出',
             children: <Widget>[
               _SettingTile(
@@ -84,8 +110,8 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
-          SizedBox(height: 16),
-          _Section(
+          const SizedBox(height: 16),
+          const _Section(
             title: '关于',
             children: <Widget>[
               _SettingTile(
