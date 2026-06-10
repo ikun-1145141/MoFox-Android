@@ -98,24 +98,22 @@ class InstanceDraft {
 }
 
 /// 安装执行的子任务（对照桌面端 wizard step 10 的 install-step-item）。
+///
+/// 注意：rootfs 解压、apt 依赖走 OOBE，不在这里。
+/// Wizard 里跑的都是「每个 bot 实例独占一份」的东西，路径前缀是 `/root/instances/<id>/...`。
 enum InstallTask {
-  extractRootfs, // 解压 rootfs（Android 独有）
-  installRuntimeDeps, // python / git / uv
   cloneRepo, // git clone Neo-MoFox
   syncDeps, // uv sync
   genConfig, // 生成默认 toml
   writeCore, // 写 core.toml
   writeModel, // 写 model.toml
   writeAdapter, // 写 adapter.toml
-  installWebui, // 装 WebUI
-  installNapcat, // 装 Napcat
-  napcatLogin, // Napcat 扫码（弹 BottomSheet）
+  installWebui, // 装 WebUI（每实例的前端构建）
+  napcatLogin, // NapCat 扫码（弹 BottomSheet）
   writeNapcatConfig, // 写 onebot11
   registerInstance; // 写实例到本地仓库
 
   String get label => switch (this) {
-        InstallTask.extractRootfs => '解压 Debian 13 rootfs',
-        InstallTask.installRuntimeDeps => '安装 apt 基础依赖',
         InstallTask.cloneRepo => '克隆 Neo-MoFox 仓库',
         InstallTask.syncDeps => '同步 Python 依赖',
         InstallTask.genConfig => '生成默认配置',
@@ -123,7 +121,6 @@ enum InstallTask {
         InstallTask.writeModel => '写入 model.toml',
         InstallTask.writeAdapter => '写入 adapter.toml',
         InstallTask.installWebui => '安装 WebUI',
-        InstallTask.installNapcat => '安装 NapCat',
         InstallTask.napcatLogin => 'NapCat 扫码登录',
         InstallTask.writeNapcatConfig => '写入 NapCat 配置',
         InstallTask.registerInstance => '注册实例',

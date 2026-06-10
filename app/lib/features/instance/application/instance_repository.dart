@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/instance.dart';
 
-const String _kInstancesKey = 'instances_v1';
+// v2: 加入了 installDir，支持每个 bot 装到独立目录。旧 v1 数据没有这个字段，
+// 直接抛弃即可（OOBE 已完成的老用户极少，且 fromJson 也会回退到默认值）。
+const String _kInstancesKey = 'instances_v2';
 
 /// 实例仓储（单设备本地存储）。
 ///

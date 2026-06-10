@@ -65,16 +65,24 @@ class RuntimeBridge {
         .cast<Map<Object?, Object?>>()
         .map((payload) {
           final task = payload['task']?.toString() ?? '';
-          final line = payload['line']?.toString() ?? '';
+          final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
           return InstallEvent(task: task, line: line);
         })
         .where((event) => event.task.isNotEmpty && event.line.isNotEmpty);
   }
 
   /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, napcat}.
-  Future<void> startProcess(String name) => _channel.invokeMethod<void>(
+  ///
+  /// `args` 给原生端 `processScript` 取参数：
+  /// - bot：`repoPath`（实例的 Neo-MoFox 路径）、`instanceId`（脚本文件名后缀，避免多实例覆盖）。
+  /// - napcat：留空，napcat 是全局唯一安装。
+  Future<void> startProcess(
+    String name, {
+    Map<String, String> args = const <String, String>{},
+  }) =>
+      _channel.invokeMethod<void>(
         'startProcess',
-        <String, Object>{'name': name},
+        <String, Object>{'name': name, 'args': args},
       );
 
   Future<void> stopProcess(String name) => _channel.invokeMethod<void>(
@@ -82,9 +90,13 @@ class RuntimeBridge {
         <String, Object>{'name': name},
       );
 
-  Future<void> restartProcess(String name) => _channel.invokeMethod<void>(
+  Future<void> restartProcess(
+    String name, {
+    Map<String, String> args = const <String, String>{},
+  }) =>
+      _channel.invokeMethod<void>(
         'restartProcess',
-        <String, Object>{'name': name},
+        <String, Object>{'name': name, 'args': args},
       );
 
   /// 拉一份当前各托管进程的状态快照。
@@ -95,8 +107,12 @@ class RuntimeBridge {
         const <String, String>{};
   }
 
-  /// PTY 流：终端页订阅这个，收 stdout，往 [writePty] 写 stdin。
-  Stream<String> ptyOutput(String sessionId) {
+  /// 终端 stdout 流，按 `sessionId` 过滤。
+  ///
+  /// 原生端 `RuntimeBridgePlugin.openShell` 起一个 ProcessBuilder + login_ubuntu 的
+  /// 交互式 bash，stdout 切片后通过 EventChannel 抛过来。订阅之前先 `openShell`
+  /// 拿到 sessionId。
+  Stream<String> shellOutput(String sessionId) {
     return _events
         .receiveBroadcastStream(<String, Object?>{
           'topic': 'pty',
@@ -105,37 +121,43 @@ class RuntimeBridge {
         .where(
           (event) => event is Map<Object?, Object?> && event['topic'] == 'pty',
         )
-        .map(
-          (event) =>
-              (event as Map<Object?, Object?>)['payload']?.toString() ?? '',
-        );
+        .map((event) => (event as Map<Object?, Object?>)['payload'])
+        .where((payload) => payload is Map<Object?, Object?>)
+        .cast<Map<Object?, Object?>>()
+        .where((payload) => payload['sessionId']?.toString() == sessionId)
+        .map((payload) => payload['data']?.toString() ?? '');
   }
 
-  Future<String> openPty({
-    String shell = '/data/data/com.mofox.android/files/usr/bin/bash',
-  }) async {
+  /// 起一个交互式 shell，`cwd` 是进 Debian 后的工作目录。
+  ///
+  /// 三种入口：
+  /// - dashboard 顶部「打开终端」→ `cwd = /root`
+  /// - 实例卡片「在 bot 目录开终端」→ `cwd = instance.repoPath`
+  /// - 实例卡片「在 instance 根目录开终端」→ `cwd = instance.installDir`
+  Future<String> openShell({String cwd = '/root'}) async {
     final id = await _channel.invokeMethod<String>(
-      'openPty',
-      <String, Object>{'shell': shell},
+      'openShell',
+      <String, Object>{'cwd': cwd},
     );
     return id ?? '';
   }
 
-  Future<void> writePty(String sessionId, String data) =>
-      _channel.invokeMethod<void>('writePty', <String, Object>{
+  Future<void> writeShell(String sessionId, String data) =>
+      _channel.invokeMethod<void>('writeShell', <String, Object>{
         'sessionId': sessionId,
         'data': data,
       });
 
-  Future<void> resizePty(String sessionId, int cols, int rows) =>
-      _channel.invokeMethod<void>('resizePty', <String, Object>{
+  /// 调整 native PTY 尺寸，给 nano/top 这类全屏程序同步窗口大小。
+  Future<void> resizeShell(String sessionId, int cols, int rows) =>
+      _channel.invokeMethod<void>('resizeShell', <String, Object>{
         'sessionId': sessionId,
         'cols': cols,
         'rows': rows,
       });
 
-  Future<void> closePty(String sessionId) => _channel.invokeMethod<void>(
-        'closePty',
+  Future<void> closeShell(String sessionId) => _channel.invokeMethod<void>(
+        'closeShell',
         <String, Object>{'sessionId': sessionId},
       );
 }
@@ -162,7 +184,7 @@ class RuntimeTaskResult {
     return RuntimeTaskResult(
       success: map['success'] == true,
       logs: rawLogs is List<Object?>
-          ? rawLogs.map((line) => line.toString()).toList()
+          ? rawLogs.map((line) => _cleanInstallLogLine(line.toString())).toList()
           : const <String>[],
       qrPayload: map['qrPayload']?.toString(),
       error: map['error']?.toString(),
@@ -178,3 +200,16 @@ class InstallEvent {
   final String task;
   final String line;
 }
+
+String _cleanInstallLogLine(String line) {
+  return line
+      .replaceAll(_ansiEscapePattern, '')
+      .replaceAll(_controlCharsPattern, '')
+      .trimRight();
+}
+
+final RegExp _ansiEscapePattern = RegExp(
+  '[\x1B\x9B](?:[@-Z\\-_]|\\[[0-?]*[ -/]*[@-~]|\\][^\x07]*(?:\x07|\x1B\\\\))',
+);
+
+final RegExp _controlCharsPattern = RegExp('[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');

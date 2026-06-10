@@ -139,12 +139,19 @@ class WizardNotifier extends Notifier<WizardState> {
   Future<void> startInstall() async {
     _runner?.cancel();
     final runtime = ref.read(runtimeBridgeProvider);
+    // 实例 id 在 startInstall 起手处生成一次，贯穿整个安装流程：
+    //   - 所有 native task 都用它拼出 /root/instances/<id>/Neo-MoFox 这种路径
+    //   - registerInstance 那步写到 SharedPreferences 用同一个 id
+    // 这样 dashboard 里点"终端"按钮才能用 instance.repoPath / instance.installDir
+    // 直接命中实际目录。
+    final instanceId = 'inst-${DateTime.now().millisecondsSinceEpoch}';
+    final installDir = '/root/instances/$instanceId';
     state = state.copyWith(
       taskStatus: <InstallTask, InstallTaskStatus>{
         for (final t in InstallTask.values) t: InstallTaskStatus.pending,
       },
       taskProgress: 0,
-      logs: <String>['[info] 准备安装环境…'],
+      logs: <String>['[info] 准备安装环境…', '[info] 实例目录：$installDir'],
       napcatQrPayload: null,
       installFinished: false,
     );
@@ -159,12 +166,8 @@ class WizardNotifier extends Notifier<WizardState> {
 
     try {
       for (final task in InstallTask.values) {
-        // 跳过：用户没勾选 NapCat / WebUI 时
-        if (task == InstallTask.installNapcat && !state.draft.installNapcat) {
-          _markStatus(task, InstallTaskStatus.skipped);
-          _appendLog('[skip] 已跳过 NapCat 安装');
-          continue;
-        }
+        // 跳过：用户没勾选 NapCat / WebUI 时。
+        // NapCat 这里目前只做扫码和 onebot11 反向 ws 配置。
         if (task == InstallTask.napcatLogin && !state.draft.installNapcat) {
           _markStatus(task, InstallTaskStatus.skipped);
           continue;
@@ -188,7 +191,7 @@ class WizardNotifier extends Notifier<WizardState> {
           state = state.copyWith(taskProgress: 0.35);
           final result = await runtime.runInstallTask(
             nativeTask,
-            args: _runtimeArgs(),
+            args: _runtimeArgs(instanceId, installDir),
           );
           // 流为空时（极端 race 或事件被 framework 丢弃）回退到 result.logs。
           final streamed = perTaskLogs[nativeTask] ?? const <String>[];
@@ -220,7 +223,7 @@ class WizardNotifier extends Notifier<WizardState> {
           final draft = state.draft;
           await repo.add(
             Instance(
-              id: 'inst-${DateTime.now().millisecondsSinceEpoch}',
+              id: instanceId,
               name: draft.name.isEmpty ? '未命名实例' : draft.name,
               botQq: draft.botQq,
               botNickname: draft.botNickname,
@@ -229,6 +232,7 @@ class WizardNotifier extends Notifier<WizardState> {
               channel: draft.channel,
               installNapcat: draft.installNapcat,
               installWebui: draft.installWebui,
+              installDir: installDir,
               createdAt: DateTime.now(),
             ),
           );
@@ -270,8 +274,6 @@ class WizardNotifier extends Notifier<WizardState> {
   }
 
   String? _nativeTaskName(InstallTask task) => switch (task) {
-        InstallTask.extractRootfs => 'extractRootfs',
-        InstallTask.installRuntimeDeps => 'installRuntimeDeps',
         InstallTask.cloneRepo => 'cloneRepo',
         InstallTask.syncDeps => 'syncDeps',
         InstallTask.genConfig => 'genConfig',
@@ -279,15 +281,19 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.writeModel => 'writeModel',
         InstallTask.writeAdapter => 'writeAdapter',
         InstallTask.installWebui => 'installWebui',
-        InstallTask.installNapcat => 'installNapcat',
         InstallTask.napcatLogin => 'napcatLogin',
         InstallTask.writeNapcatConfig => 'writeNapcatConfig',
         InstallTask.registerInstance => null,
       };
 
-  Map<String, String> _runtimeArgs() {
+  Map<String, String> _runtimeArgs(String instanceId, String installDir) {
     final draft = state.draft;
     return <String, String>{
+      // 多 bot 路径：所有 per-instance 任务都用这两个键拼路径，
+      // 原生侧 RuntimeScripts 默认值是 /root/Neo-MoFox（兼容 OOBE 之前的旧逻辑）。
+      'instanceId': instanceId,
+      'installDir': installDir,
+      'repoPath': '$installDir/Neo-MoFox',
       'name': draft.name,
       'botQq': draft.botQq,
       'botNickname': draft.botNickname,
@@ -309,14 +315,34 @@ class WizardNotifier extends Notifier<WizardState> {
   }
 
   void _appendLog(String line) {
-    state = state.copyWith(logs: <String>[...state.logs, line]);
+    final next = <String>[...state.logs, _trimWizardLogLine(line)];
+    state = state.copyWith(logs: _tailWizardLogs(next));
   }
 
   void _appendLogs(List<String> lines) {
     if (lines.isEmpty) return;
-    state = state.copyWith(logs: <String>[...state.logs, ...lines]);
+    final next = <String>[
+      ...state.logs,
+      for (final line in lines) _trimWizardLogLine(line),
+    ];
+    state = state.copyWith(logs: _tailWizardLogs(next));
   }
 }
+
+List<String> _tailWizardLogs(List<String> logs) {
+  final start = logs.length > _maxWizardLogLines
+      ? logs.length - _maxWizardLogLines
+      : 0;
+  return logs.sublist(start);
+}
+
+String _trimWizardLogLine(String line) {
+  if (line.length <= _maxWizardLogLineChars) return line;
+  return '${line.substring(0, _maxWizardLogLineChars)}…';
+}
+
+const int _maxWizardLogLines = 300;
+const int _maxWizardLogLineChars = 600;
 
 final wizardProvider =
     NotifierProvider<WizardNotifier, WizardState>(WizardNotifier.new);

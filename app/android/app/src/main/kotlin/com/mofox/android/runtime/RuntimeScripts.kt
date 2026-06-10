@@ -34,21 +34,53 @@ class RuntimeScripts(
         return file
     }
 
-    /** bot / napcat 长进程脚本，用 login_ubuntu 跑 /root/start-*.sh。 */
-    fun processScript(name: String): File {
-        val script = when (name) {
-            "bot" -> "cd /root/Neo-MoFox && bash /root/Neo-MoFox/start.sh"
-            "napcat" -> "cd /root/napcat && bash /root/napcat/napcat.sh start ${'$'}BOT_QQ"
+    /**
+     * bot / napcat 长进程脚本。
+     *
+     * - `bot`：每个实例的 Neo-MoFox 落在 `args["repoPath"]`（通常是
+     *   `/root/instances/<inst-id>/Neo-MoFox`），脚本里写实际路径。脚本文件名
+     *   带上 `instanceId`，避免多实例同时启动覆盖同一份脚本。
+     * - `napcat`：全局唯一安装在 `/root/napcat`，所有实例共用。
+     */
+    fun processScript(name: String, args: Map<String, String> = emptyMap()): File {
+        val (script, suffix) = when (name) {
+            "bot" -> {
+                val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+                val instanceId = args["instanceId"]
+                val cmd = "cd ${shellQuote(repoPath)} && bash ${shellQuote("$repoPath/start.sh")}"
+                cmd to (instanceId?.let { "-$it" } ?: "")
+            }
+            "napcat" -> {
+                val cmd = "cd /root/napcat && bash /root/napcat/napcat.sh start ${'$'}BOT_QQ"
+                cmd to ""
+            }
             else -> error("Unknown process: $name")
         }
         installer.ensureBaseDirectories()
-        val file = File(installer.scriptsDir, "process-$name.sh")
+        val file = File(installer.scriptsDir, "process-$name$suffix.sh")
         val content = buildString {
             append("#!/system/bin/sh\n")
             append("set -e\n")
             append(commonHeader())
             append('\n')
             append("login_ubuntu ${shellQuote(script)}\n")
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
+    }
+
+    /** 交互式 shell 脚本：由 native PTY 启动，进 Debian 后 `cd <cwd>` 再起 `bash -il`。 */
+    fun interactiveShellScript(cwd: String): File {
+        installer.ensureBaseDirectories()
+        val file = File(installer.scriptsDir, "shell-interactive.sh")
+        val inner = "cd ${shellQuote(cwd)} 2>/dev/null || cd /root; exec /bin/bash -il"
+        val content = buildString {
+            append("#!/system/bin/sh\n")
+            append("set -e\n")
+            append(commonHeader())
+            append('\n')
+            append("login_ubuntu ${shellQuote(inner)}\n")
         }.replace("\r\n", "\n").replace("\r", "\n")
         file.writeText(content)
         file.setExecutable(true, false)
@@ -502,10 +534,6 @@ class RuntimeScripts(
             -b /dev/pts \
             -b "${'$'}TMPDIR":"${'$'}TMPDIR" \
             -b "${'$'}TMPDIR":/dev/shm \
-            -b /proc/self/fd:/dev/fd \
-            -b /proc/self/fd/0:/dev/stdin \
-            -b /proc/self/fd/1:/dev/stdout \
-            -b /proc/self/fd/2:/dev/stderr \
             -b /storage/emulated/0:/sdcard \
             -b /storage/emulated/0:/storage/emulated/0 \
             ${'$'}BIND_ARGS \

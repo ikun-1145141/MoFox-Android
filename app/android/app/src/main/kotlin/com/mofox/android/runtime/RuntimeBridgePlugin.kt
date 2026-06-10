@@ -4,19 +4,24 @@ import android.content.Context
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
  * Runtime 总线。
  *
  * MethodChannel  : mofox/runtime           （命令）
- * EventChannel   : mofox/runtime/events    （bootstrap 进度 / pty 输出）
+ * EventChannel   : mofox/runtime/events    （bootstrap 进度 / process / pty 输出）
  *
- * 第一阶段实现 bootstrap、安装任务、bot/napcat 长进程启停；PTY 后续接 JNI。
+ * Shell（终端页用）走 native forkpty。xterm 的输入输出、resize、全屏应用控制序列都
+ * 通过 PTY 传递，nano/top 这类程序才能按真实终端工作。
  */
 class RuntimeBridgePlugin {
     private val events = RuntimeEventBus()
     private val executor = Executors.newSingleThreadExecutor()
+    private val shellExecutor = Executors.newCachedThreadPool()
+    private val shellSessions = ConcurrentHashMap<String, ShellSession>()
 
     fun attach(engine: FlutterEngine, context: Context) {
         val appContext = context.applicationContext
@@ -47,7 +52,9 @@ class RuntimeBridgePlugin {
                         processManager.runInstallTask(task, args).toMap()
                     }
                     "startProcess" -> runAsync(result) {
-                        processManager.start(call.requireName())
+                        val name = call.requireName()
+                        val args = call.argument<Map<String, String>>("args") ?: emptyMap()
+                        processManager.start(name, args)
                         null
                     }
                     "stopProcess" -> runAsync(result) {
@@ -55,12 +62,37 @@ class RuntimeBridgePlugin {
                         null
                     }
                     "restartProcess" -> runAsync(result) {
-                        processManager.restart(call.requireName())
+                        val name = call.requireName()
+                        val args = call.argument<Map<String, String>>("args") ?: emptyMap()
+                        processManager.restart(name, args)
                         null
                     }
                     "processStatus" -> result.success(processManager.status())
-                    "openPty", "writePty", "resizePty", "closePty" ->
-                        result.notImplemented()
+                    "openShell" -> runAsync(result) {
+                        val cwd = call.argument<String>("cwd") ?: "/root"
+                        openShell(processManager, cwd)
+                    }
+                    "writeShell" -> runAsync(result) {
+                        val sessionId = call.argument<String>("sessionId")
+                            ?: error("Missing sessionId")
+                        val data = call.argument<String>("data") ?: ""
+                        writeShell(sessionId, data)
+                        null
+                    }
+                    "resizeShell" -> runAsync(result) {
+                        val sessionId = call.argument<String>("sessionId")
+                            ?: error("Missing sessionId")
+                        val cols = call.argument<Int>("cols") ?: 80
+                        val rows = call.argument<Int>("rows") ?: 24
+                        resizeShell(sessionId, cols, rows)
+                        null
+                    }
+                    "closeShell" -> runAsync(result) {
+                        val sessionId = call.argument<String>("sessionId")
+                            ?: error("Missing sessionId")
+                        closeShell(sessionId)
+                        null
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -74,6 +106,62 @@ class RuntimeBridgePlugin {
                     this@RuntimeBridgePlugin.events.attach(null)
                 }
             })
+    }
+
+    private fun openShell(processManager: RuntimeProcessManager, cwd: String): String {
+        val sessionId = UUID.randomUUID().toString()
+        val script = processManager.scripts.interactiveShellScript(cwd)
+        val pty = NativePty.start(
+            command = processManager.commandBuilder.scriptCommand(script),
+            environment = processManager.commandBuilder.environment(),
+            cwd = processManager.installer.homeDir.absolutePath,
+            cols = 80,
+            rows = 24,
+        ) ?: error("Failed to start PTY shell")
+        val session = ShellSession(pty)
+        shellSessions[sessionId] = session
+
+        shellExecutor.execute {
+            val buffer = ByteArray(4096)
+            try {
+                while (true) {
+                    val read = NativePty.nativeRead(session.pty.fd, buffer, 0, buffer.size)
+                    if (read <= 0) break
+                    val chunk = String(buffer, 0, read, Charsets.UTF_8)
+                    events.emit("pty", mapOf("sessionId" to sessionId, "data" to chunk))
+                }
+            } catch (_: Throwable) {
+                // stream closed — fall through to exit notify
+            }
+            val code = try { NativePty.nativeWait(session.pty.pid) } catch (_: Throwable) { -1 }
+            events.emit(
+                "pty",
+                mapOf("sessionId" to sessionId, "data" to "\r\n[shell exited with $code]\r\n", "exit" to code),
+            )
+            shellSessions.remove(sessionId)
+        }
+        return sessionId
+    }
+
+    private fun writeShell(sessionId: String, data: String) {
+        val session = shellSessions[sessionId] ?: return
+        try {
+            val bytes = data.toByteArray(Charsets.UTF_8)
+            NativePty.nativeWrite(session.pty.fd, bytes, 0, bytes.size)
+        } catch (_: Throwable) {
+            // pipe broken — session reader will emit exit notice
+        }
+    }
+
+    private fun resizeShell(sessionId: String, cols: Int, rows: Int) {
+        val session = shellSessions[sessionId] ?: return
+        NativePty.nativeResize(session.pty.fd, cols, rows)
+    }
+
+    private fun closeShell(sessionId: String) {
+        val session = shellSessions.remove(sessionId) ?: return
+        try { NativePty.nativeKill(session.pty.pid) } catch (_: Throwable) {}
+        try { NativePty.nativeClose(session.pty.fd) } catch (_: Throwable) {}
     }
 
     private fun runAsync(
@@ -102,3 +190,5 @@ class RuntimeBridgePlugin {
         )
     }
 }
+
+private data class ShellSession(val pty: PtyProcess)

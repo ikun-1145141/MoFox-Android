@@ -175,19 +175,24 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                               child: Scrollbar(
                                 controller: _logsScroll,
                                 thumbVisibility: true,
-                                child: SingleChildScrollView(
-                                  controller: _logsScroll,
-                                  child: Text(
-                                    state.logs.isEmpty
-                                        ? '（暂无日志）'
-                                        : state.logs.join('\n'),
-                                    style: const TextStyle(
-                                      fontFamily: 'monospace',
-                                      fontSize: 12,
-                                      height: 1.4,
-                                    ),
-                                  ),
-                                ),
+                                child: state.logs.isEmpty
+                                    ? const Align(
+                                        alignment: Alignment.topLeft,
+                                        child: Text(
+                                          '（暂无日志）',
+                                          style: _logTextStyle,
+                                        ),
+                                      )
+                                    : ListView.builder(
+                                        controller: _logsScroll,
+                                        itemCount: state.logs.length,
+                                        itemBuilder: (context, index) => Text(
+                                          state.logs[index],
+                                          style: _logTextStyle,
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                               ),
                             ),
                           ),
@@ -226,6 +231,12 @@ class _InstallStepState extends ConsumerState<InstallStep> {
     );
   }
 }
+
+const TextStyle _logTextStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontSize: 12,
+  height: 1.4,
+);
 
 class _TaskRow extends StatelessWidget {
   const _TaskRow({required this.task, required this.status});

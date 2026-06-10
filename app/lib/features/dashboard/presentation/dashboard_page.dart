@@ -21,6 +21,14 @@ class DashboardPage extends ConsumerWidget {
         title: const Text('我的实例'),
         actions: <Widget>[
           IconButton(
+            tooltip: '打开终端',
+            onPressed: () => context.push(
+              AppRoute.terminal,
+              extra: <String, String>{'cwd': '/root', 'title': '终端'},
+            ),
+            icon: const Icon(Icons.terminal),
+          ),
+          IconButton(
             tooltip: '刷新',
             onPressed: () => ref.invalidate(instancesProvider),
             icon: const Icon(Icons.refresh),
@@ -116,7 +124,7 @@ class _InstanceGrid extends StatelessWidget {
             crossAxisCount: crossAxis,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            mainAxisExtent: 168,
+            mainAxisExtent: 204,
           ),
           itemCount: items.length,
           itemBuilder: (_, i) => _InstanceCard(instance: items[i]),
@@ -208,8 +216,11 @@ class _InstanceCard extends StatelessWidget {
               const Spacer(),
               Row(
                 children: <Widget>[
-                  Icon(Icons.cloud_outlined,
-                      size: 16, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.cloud_outlined,
+                    size: 16,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'WS :${instance.wsPort}',
@@ -217,8 +228,11 @@ class _InstanceCard extends StatelessWidget {
                         text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   const SizedBox(width: 16),
-                  Icon(Icons.flag_outlined,
-                      size: 16, color: scheme.onSurfaceVariant),
+                  Icon(
+                    Icons.flag_outlined,
+                    size: 16,
+                    color: scheme.onSurfaceVariant,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     instance.channel,
@@ -226,6 +240,30 @@ class _InstanceCard extends StatelessWidget {
                         text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   const Spacer(),
+                  IconButton.filledTonal(
+                    tooltip: '在 Bot 目录打开终端',
+                    onPressed: () => context.push(
+                      AppRoute.terminal,
+                      extra: <String, String>{
+                        'cwd': instance.repoPath,
+                        'title': '${instance.name} - Bot 目录',
+                      },
+                    ),
+                    icon: const Icon(Icons.terminal, size: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filledTonal(
+                    tooltip: '在实例根目录打开终端',
+                    onPressed: () => context.push(
+                      AppRoute.terminal,
+                      extra: <String, String>{
+                        'cwd': instance.installDir,
+                        'title': '${instance.name} - 实例目录',
+                      },
+                    ),
+                    icon: const Icon(Icons.folder_open, size: 18),
+                  ),
+                  const SizedBox(width: 8),
                   FilledButton.tonalIcon(
                     onPressed: () {
                       ScaffoldMessenger.of(context).showSnackBar(

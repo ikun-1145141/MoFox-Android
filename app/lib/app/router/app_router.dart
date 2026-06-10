@@ -24,7 +24,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: AppRoute.dashboard,
     redirect: (context, state) {
-      final oobeDone = ref.read(oobeStatusProvider).valueOrNull ?? false;
+      final status = ref.watch(oobeStatusProvider);
+      final oobeDone = status.valueOrNull;
+      if (oobeDone == null) return null;
+
       final goingToOobe = state.matchedLocation == AppRoute.oobe;
       if (!oobeDone && !goingToOobe) return AppRoute.oobe;
       if (oobeDone && goingToOobe) return AppRoute.dashboard;
@@ -57,7 +60,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoute.terminal,
-            builder: (_, __) => const TerminalPage(),
+            builder: (_, state) {
+              final extra = state.extra as Map<String, String>?;
+              return TerminalPage(
+                cwd: extra?['cwd'] ?? '/root',
+                title: extra?['title'] ?? '终端',
+              );
+            },
           ),
           GoRoute(
             path: AppRoute.settings,

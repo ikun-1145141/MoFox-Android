@@ -10,12 +10,12 @@ import java.util.concurrent.Executors
 
 class RuntimeProcessManager(
     context: Context,
-    private val installer: RootfsInstaller,
+    val installer: RootfsInstaller,
     private val events: RuntimeEventBus,
 ) {
     private val executor = Executors.newCachedThreadPool()
-    private val commandBuilder = RuntimeCommandBuilder(context, installer)
-    private val scripts = RuntimeScripts(installer, commandBuilder)
+    val commandBuilder = RuntimeCommandBuilder(context, installer)
+    val scripts = RuntimeScripts(installer, commandBuilder)
     private val processes = ConcurrentHashMap<String, ManagedProcess>()
 
     fun status(): Map<String, String> {
@@ -25,11 +25,11 @@ class RuntimeProcessManager(
         )
     }
 
-    fun start(name: String) {
+    fun start(name: String, args: Map<String, String> = emptyMap()) {
         if (!installer.isBootstrapped()) error("Runtime bootstrap is not installed")
         val existing = processes[name]
         if (existing?.process?.isAlive == true) return
-        val script = scripts.processScript(name)
+        val script = scripts.processScript(name, args)
         val builder = ProcessBuilder(commandBuilder.scriptCommand(script))
             .directory(installer.homeDir)
             .redirectErrorStream(true)
@@ -44,9 +44,9 @@ class RuntimeProcessManager(
         processes[name] = ManagedProcess(processes[name]?.process, "stopped")
     }
 
-    fun restart(name: String) {
+    fun restart(name: String, args: Map<String, String> = emptyMap()) {
         stop(name)
-        start(name)
+        start(name, args)
     }
 
     fun runInstallTask(task: String, args: Map<String, String>): InstallTaskResult {
@@ -88,12 +88,12 @@ class RuntimeProcessManager(
         builder.environment().putAll(commandBuilder.environment())
 
         val process = builder.start()
-        val logs = mutableListOf<String>()
+        val logs = ArrayDeque<String>()
         var qrPayload: String? = null
         events.emit("install", mapOf("task" to task, "line" to "[run] native task $task started"))
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
-                logs += line
+                logs.addBounded(line)
                 events.emit("install", mapOf("task" to task, "line" to line))
                 if (line.startsWith("MOFOX_QR_PAYLOAD=")) {
                     qrPayload = line.substringAfter("=")
@@ -102,7 +102,7 @@ class RuntimeProcessManager(
         }
         val code = process.waitFor()
         events.emit("install", mapOf("task" to task, "line" to "[exit] native task $task exited with $code"))
-        return InstallTaskResult(code == 0, logs, qrPayload, if (code == 0) null else "Task $task exited with $code")
+        return InstallTaskResult(code == 0, logs.toList(), qrPayload, if (code == 0) null else "Task $task exited with $code")
     }
 
     private fun consumeProcess(name: String, process: Process) {
@@ -119,6 +119,13 @@ class RuntimeProcessManager(
         return if (managed.process?.isAlive == true) "running" else managed.state
     }
 }
+
+private fun ArrayDeque<String>.addBounded(line: String) {
+    if (size == MAX_INSTALL_RESULT_LOG_LINES) removeFirst()
+    addLast(line)
+}
+
+private const val MAX_INSTALL_RESULT_LOG_LINES = 300
 
 data class ManagedProcess(val process: Process?, val state: String)
 

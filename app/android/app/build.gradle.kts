@@ -26,6 +26,17 @@ android {
             // 只支持 arm64-v8a。32 位 ARM 装不了 napcat (Node.js)，x86 安卓没人用。
             abiFilters += listOf("arm64-v8a")
         }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=none")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     sourceSets {
@@ -40,6 +51,7 @@ android {
         jniLibs {
             useLegacyPackaging = true
             keepDebugSymbols += listOf(
+                "**/libmofoxpty.so",
                 "**/libbash.so",
                 "**/libbusybox.so",
                 "**/libproot.so",

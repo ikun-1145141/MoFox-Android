@@ -55,7 +55,7 @@ class SummaryStep extends ConsumerWidget {
           title: '组件',
           onEdit: () => notifier.goTo(WizardStep.components),
           rows: <_Row>[
-            _Row('NapCat', draft.installNapcat ? '将安装' : '跳过'),
+            _Row('NapCat', draft.installNapcat ? '将配置' : '跳过'),
             _Row('WebUI', draft.installWebui ? '将安装' : '跳过'),
           ],
         ),
