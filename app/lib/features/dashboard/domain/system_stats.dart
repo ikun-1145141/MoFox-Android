@@ -1,7 +1,6 @@
 class SystemStats {
   const SystemStats({
-    required this.cpuUsage,
-    required this.cpuCores,
+    required this.socName,
     required this.memoryTotal,
     required this.memoryAvailable,
     required this.memoryUsed,
@@ -19,8 +18,7 @@ class SystemStats {
     required this.appDataPath,
   });
 
-  final double cpuUsage;
-  final int cpuCores;
+  final String socName;
   final int memoryTotal;
   final int memoryAvailable;
   final int memoryUsed;
@@ -42,8 +40,7 @@ class SystemStats {
 
   factory SystemStats.fromMap(Map<Object?, Object?> map) {
     return SystemStats(
-      cpuUsage: _double(map['cpuUsage']),
-      cpuCores: _int(map['cpuCores']),
+      socName: map['socName']?.toString() ?? '',
       memoryTotal: _int(map['memoryTotal']),
       memoryAvailable: _int(map['memoryAvailable']),
       memoryUsed: _int(map['memoryUsed']),
@@ -71,11 +68,5 @@ class SystemStats {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  static double _double(Object? value) {
-    if (value is double) return value;
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

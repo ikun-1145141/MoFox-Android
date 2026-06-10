@@ -158,7 +158,7 @@ class _LoadCard extends StatelessWidget {
                 Icon(Icons.monitor_heart_outlined, color: scheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  '机器负载',
+                  '资源占用',
                   style: text.titleMedium?.copyWith(
                     color: scheme.onSurface,
                     fontWeight: FontWeight.w600,
@@ -173,13 +173,6 @@ class _LoadCard extends StatelessWidget {
                 final tiles = <Widget>[
                   _UsageTile(
                     icon: Icons.memory_outlined,
-                    label: 'CPU',
-                    value: _formatPercent(stats.cpuUsage),
-                    detail: '${stats.cpuCores} 核心',
-                    usage: stats.cpuUsage,
-                  ),
-                  _UsageTile(
-                    icon: Icons.sd_card_outlined,
                     label: '内存',
                     value: _formatPercent(stats.memoryUsage),
                     detail:
@@ -301,6 +294,7 @@ class _DeviceDetailsCard extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final items = <_DetailItem>[
       _DetailItem('设备', stats.deviceName),
+      _DetailItem('SoC', stats.socName),
       _DetailItem(
           '系统', 'Android ${stats.androidVersion} (SDK ${stats.sdkInt})'),
       _DetailItem('架构', stats.supportedAbis),

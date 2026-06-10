@@ -177,15 +177,12 @@ class RuntimeBridgePlugin {
 
         val dataStats = StatFs(Environment.getDataDirectory().absolutePath)
         val appStats = StatFs(context.filesDir.absolutePath)
-        val cpuUsage = sampleCpuUsage()
         val totalMemory = memoryInfo.totalMem
         val availableMemory = memoryInfo.availMem
         val totalStorage = dataStats.blockCountLong * dataStats.blockSizeLong
         val availableStorage = dataStats.availableBlocksLong * dataStats.blockSizeLong
 
         return mapOf(
-            "cpuUsage" to cpuUsage,
-            "cpuCores" to Runtime.getRuntime().availableProcessors(),
             "memoryTotal" to totalMemory,
             "memoryAvailable" to availableMemory,
             "memoryUsed" to totalMemory - availableMemory,
@@ -197,6 +194,7 @@ class RuntimeBridgePlugin {
             "deviceName" to listOf(Build.MANUFACTURER, Build.MODEL)
                 .filter { it.isNotBlank() }
                 .joinToString(" "),
+            "socName" to socName(),
             "androidVersion" to Build.VERSION.RELEASE,
             "sdkInt" to Build.VERSION.SDK_INT,
             "supportedAbis" to Build.SUPPORTED_ABIS.joinToString(", "),
@@ -206,27 +204,17 @@ class RuntimeBridgePlugin {
         )
     }
 
-    private fun sampleCpuUsage(): Double {
-        val first = readCpuStat() ?: return 0.0
-        try { Thread.sleep(280) } catch (_: InterruptedException) {}
-        val second = readCpuStat() ?: return 0.0
-        val totalDelta = second.total - first.total
-        val idleDelta = second.idle - first.idle
-        if (totalDelta <= 0) return 0.0
-        return ((totalDelta - idleDelta).toDouble() / totalDelta.toDouble()).coerceIn(0.0, 1.0)
-    }
-
-    private fun readCpuStat(): CpuStat? {
-        val parts = try {
-            File("/proc/stat").readLines().firstOrNull()
-        } catch (_: Throwable) {
-            null
-        }?.trim()?.split(Regex("\\s+")) ?: return null
-        if (parts.size < 8 || parts[0] != "cpu") return null
-        val values = parts.drop(1).mapNotNull { it.toLongOrNull() }
-        if (values.size < 7) return null
-        val idle = values[3] + values.getOrElse(4) { 0L }
-        return CpuStat(total = values.sum(), idle = idle)
+    private fun socName(): String {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val model = listOf(Build.SOC_MANUFACTURER, Build.SOC_MODEL)
+                .filter { it.isNotBlank() && it != "unknown" }
+                .joinToString(" ")
+            if (model.isNotBlank()) return model
+        }
+        return listOf(Build.HARDWARE, Build.BOARD)
+            .filter { it.isNotBlank() && it != "unknown" }
+            .distinct()
+            .joinToString(" ")
     }
 
     private fun runAsync(
@@ -257,4 +245,3 @@ class RuntimeBridgePlugin {
 }
 
 private data class ShellSession(val pty: PtyProcess)
-private data class CpuStat(val total: Long, val idle: Long)
