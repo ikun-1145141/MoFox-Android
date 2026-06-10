@@ -1,6 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../features/dashboard/domain/system_stats.dart';
+
 /// 与原生 `RuntimeBridgePlugin` 对话的方法通道单例。
 ///
 /// 通道协议见 `android/app/src/main/kotlin/.../runtime/RuntimeBridgePlugin.kt`。
@@ -107,6 +109,13 @@ class RuntimeBridge {
         const <String, String>{};
   }
 
+  /// 拉一份 Android 设备和运行负载快照。
+  Future<SystemStats> systemStats() async {
+    final result =
+        await _channel.invokeMethod<Map<Object?, Object?>>('systemStats');
+    return SystemStats.fromMap(result ?? const <Object?, Object?>{});
+  }
+
   /// 终端 stdout 流，按 `sessionId` 过滤。
   ///
   /// 原生端 `RuntimeBridgePlugin.openShell` 起一个 ProcessBuilder + login_ubuntu 的
@@ -184,7 +193,9 @@ class RuntimeTaskResult {
     return RuntimeTaskResult(
       success: map['success'] == true,
       logs: rawLogs is List<Object?>
-          ? rawLogs.map((line) => _cleanInstallLogLine(line.toString())).toList()
+          ? rawLogs
+              .map((line) => _cleanInstallLogLine(line.toString()))
+              .toList()
           : const <String>[],
       qrPayload: map['qrPayload']?.toString(),
       error: map['error']?.toString(),

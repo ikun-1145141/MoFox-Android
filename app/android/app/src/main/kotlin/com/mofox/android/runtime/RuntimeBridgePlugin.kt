@@ -1,9 +1,14 @@
 package com.mofox.android.runtime
 
+import android.app.ActivityManager
 import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -68,6 +73,7 @@ class RuntimeBridgePlugin {
                         null
                     }
                     "processStatus" -> result.success(processManager.status())
+                    "systemStats" -> runAsync(result) { systemStats(appContext) }
                     "openShell" -> runAsync(result) {
                         val cwd = call.argument<String>("cwd") ?: "/root"
                         openShell(processManager, cwd)
@@ -164,6 +170,65 @@ class RuntimeBridgePlugin {
         try { NativePty.nativeClose(session.pty.fd) } catch (_: Throwable) {}
     }
 
+    private fun systemStats(context: Context): Map<String, Any?> {
+        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val memoryInfo = ActivityManager.MemoryInfo()
+        activityManager.getMemoryInfo(memoryInfo)
+
+        val dataStats = StatFs(Environment.getDataDirectory().absolutePath)
+        val appStats = StatFs(context.filesDir.absolutePath)
+        val cpuUsage = sampleCpuUsage()
+        val totalMemory = memoryInfo.totalMem
+        val availableMemory = memoryInfo.availMem
+        val totalStorage = dataStats.blockCountLong * dataStats.blockSizeLong
+        val availableStorage = dataStats.availableBlocksLong * dataStats.blockSizeLong
+
+        return mapOf(
+            "cpuUsage" to cpuUsage,
+            "cpuCores" to Runtime.getRuntime().availableProcessors(),
+            "memoryTotal" to totalMemory,
+            "memoryAvailable" to availableMemory,
+            "memoryUsed" to totalMemory - availableMemory,
+            "storageTotal" to totalStorage,
+            "storageAvailable" to availableStorage,
+            "storageUsed" to totalStorage - availableStorage,
+            "appDataTotal" to appStats.blockCountLong * appStats.blockSizeLong,
+            "appDataAvailable" to appStats.availableBlocksLong * appStats.blockSizeLong,
+            "deviceName" to listOf(Build.MANUFACTURER, Build.MODEL)
+                .filter { it.isNotBlank() }
+                .joinToString(" "),
+            "androidVersion" to Build.VERSION.RELEASE,
+            "sdkInt" to Build.VERSION.SDK_INT,
+            "supportedAbis" to Build.SUPPORTED_ABIS.joinToString(", "),
+            "kernel" to System.getProperty("os.version").orEmpty(),
+            "rootfsPath" to File(context.filesDir, "usr").absolutePath,
+            "appDataPath" to context.filesDir.absolutePath,
+        )
+    }
+
+    private fun sampleCpuUsage(): Double {
+        val first = readCpuStat() ?: return 0.0
+        try { Thread.sleep(280) } catch (_: InterruptedException) {}
+        val second = readCpuStat() ?: return 0.0
+        val totalDelta = second.total - first.total
+        val idleDelta = second.idle - first.idle
+        if (totalDelta <= 0) return 0.0
+        return ((totalDelta - idleDelta).toDouble() / totalDelta.toDouble()).coerceIn(0.0, 1.0)
+    }
+
+    private fun readCpuStat(): CpuStat? {
+        val parts = try {
+            File("/proc/stat").readLines().firstOrNull()
+        } catch (_: Throwable) {
+            null
+        }?.trim()?.split(Regex("\\s+")) ?: return null
+        if (parts.size < 8 || parts[0] != "cpu") return null
+        val values = parts.drop(1).mapNotNull { it.toLongOrNull() }
+        if (values.size < 7) return null
+        val idle = values[3] + values.getOrElse(4) { 0L }
+        return CpuStat(total = values.sum(), idle = idle)
+    }
+
     private fun runAsync(
         result: MethodChannel.Result,
         block: () -> Any?,
@@ -192,3 +257,4 @@ class RuntimeBridgePlugin {
 }
 
 private data class ShellSession(val pty: PtyProcess)
+private data class CpuStat(val total: Long, val idle: Long)
