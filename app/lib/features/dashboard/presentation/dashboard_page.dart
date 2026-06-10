@@ -42,7 +42,7 @@ class DashboardPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.go(AppRoute.wizard),
+        onPressed: () => context.push(AppRoute.wizard),
         icon: const Icon(Icons.add),
         label: const Text('创建实例'),
       ),
@@ -483,7 +483,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () => GoRouter.of(context).go(AppRoute.wizard),
+              onPressed: () => GoRouter.of(context).push(AppRoute.wizard),
               icon: const Icon(Icons.add),
               label: const Text('创建第一个实例'),
             ),

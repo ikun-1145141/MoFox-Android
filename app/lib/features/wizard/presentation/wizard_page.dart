@@ -28,86 +28,94 @@ class WizardPage extends ConsumerWidget {
     final state = ref.watch(wizardProvider);
     final isInstall = state.step == WizardStep.install;
 
-    return Scaffold(
-      backgroundColor: scheme.surface,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            // 顶栏
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    onPressed: () => _confirmExit(context),
-                    icon: const Icon(Icons.close),
-                    tooltip: '退出向导',
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _confirmExit(context);
+      },
+      child: Scaffold(
+        backgroundColor: scheme.surface,
+        body: SafeArea(
+          child: Column(
+            children: <Widget>[
+              // 顶栏
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 16, 8),
+                child: Row(
+                  children: <Widget>[
+                    IconButton(
+                      onPressed: () => _confirmExit(context),
+                      icon: const Icon(Icons.close),
+                      tooltip: '退出向导',
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            state.step.title,
+                            style: text.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '第 ${state.step.index + 1} 步 / 共 ${WizardStep.values.length} 步',
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // 进度条
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: (state.step.index + 1) / WizardStep.values.length,
+                    minHeight: 6,
+                    backgroundColor: scheme.surfaceContainerHigh,
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          state.step.title,
-                          style: text.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          '第 ${state.step.index + 1} 步 / 共 ${WizardStep.values.length} 步',
-                          style: text.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // 步骤描述
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    state.step.description,
+                    style: text.bodyMedium?.copyWith(
+                      color: scheme.onSurfaceVariant,
                     ),
                   ),
-                ],
-              ),
-            ),
-            // 进度条
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: LinearProgressIndicator(
-                  value: (state.step.index + 1) / WizardStep.values.length,
-                  minHeight: 6,
-                  backgroundColor: scheme.surfaceContainerHigh,
                 ),
               ),
-            ),
-            const SizedBox(height: 8),
-            // 步骤描述
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  state.step.description,
-                  style: text.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
+              // 内容
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: KeyedSubtree(
+                    key: ValueKey<WizardStep>(state.step),
+                    child: _stepBody(state.step),
                   ),
                 ),
               ),
-            ),
-            // 内容
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: KeyedSubtree(
-                  key: ValueKey<WizardStep>(state.step),
-                  child: _stepBody(state.step),
-                ),
-              ),
-            ),
-            // 底部按钮：install 步骤自己管
-            if (!isInstall) _NavButtons(),
-          ],
+              // 底部按钮：install 步骤自己管
+              if (!isInstall) _NavButtons(),
+            ],
+          ),
         ),
       ),
     );
@@ -144,7 +152,11 @@ class WizardPage extends ConsumerWidget {
       ),
     );
     if ((ok ?? false) && context.mounted) {
-      context.go(AppRoute.dashboard);
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go(AppRoute.dashboard);
+      }
     }
   }
 }

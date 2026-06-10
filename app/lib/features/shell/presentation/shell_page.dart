@@ -15,68 +15,75 @@ class ShellPage extends StatelessWidget {
     final location = GoRouterState.of(context).uri.path;
     final tab = _tabFromLocation(location);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final wide = constraints.maxWidth >= 600;
-        if (wide) {
-          return Scaffold(
-            body: SafeArea(
-              child: Row(
-                children: <Widget>[
-                  NavigationRail(
-                    selectedIndex: tab,
-                    onDestinationSelected: (i) => _go(context, i),
-                    labelType: NavigationRailLabelType.all,
-                    destinations: const <NavigationRailDestination>[
-                      NavigationRailDestination(
-                        icon: Icon(Icons.dashboard_outlined),
-                        selectedIcon: Icon(Icons.dashboard),
-                        label: Text('管理'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.terminal_outlined),
-                        selectedIcon: Icon(Icons.terminal),
-                        label: Text('终端'),
-                      ),
-                      NavigationRailDestination(
-                        icon: Icon(Icons.settings_outlined),
-                        selectedIcon: Icon(Icons.settings),
-                        label: Text('设置'),
-                      ),
-                    ],
-                  ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: child),
-                ],
+    return PopScope(
+      canPop: context.canPop() || tab == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || tab == 0) return;
+        context.go(AppRoute.dashboard);
+      },
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 600;
+          if (wide) {
+            return Scaffold(
+              body: SafeArea(
+                child: Row(
+                  children: <Widget>[
+                    NavigationRail(
+                      selectedIndex: tab,
+                      onDestinationSelected: (i) => _go(context, i),
+                      labelType: NavigationRailLabelType.all,
+                      destinations: const <NavigationRailDestination>[
+                        NavigationRailDestination(
+                          icon: Icon(Icons.dashboard_outlined),
+                          selectedIcon: Icon(Icons.dashboard),
+                          label: Text('管理'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.terminal_outlined),
+                          selectedIcon: Icon(Icons.terminal),
+                          label: Text('终端'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.settings_outlined),
+                          selectedIcon: Icon(Icons.settings),
+                          label: Text('设置'),
+                        ),
+                      ],
+                    ),
+                    const VerticalDivider(width: 1),
+                    Expanded(child: child),
+                  ],
+                ),
               ),
+            );
+          }
+          return Scaffold(
+            body: child,
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: tab,
+              onDestinationSelected: (i) => _go(context, i),
+              destinations: const <NavigationDestination>[
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard),
+                  label: '管理',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.terminal_outlined),
+                  selectedIcon: Icon(Icons.terminal),
+                  label: '终端',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.settings_outlined),
+                  selectedIcon: Icon(Icons.settings),
+                  label: '设置',
+                ),
+              ],
             ),
           );
-        }
-        return Scaffold(
-          body: child,
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: tab,
-            onDestinationSelected: (i) => _go(context, i),
-            destinations: const <NavigationDestination>[
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_outlined),
-                selectedIcon: Icon(Icons.dashboard),
-                label: '管理',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.terminal_outlined),
-                selectedIcon: Icon(Icons.terminal),
-                label: '终端',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.settings_outlined),
-                selectedIcon: Icon(Icons.settings),
-                label: '设置',
-              ),
-            ],
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 
