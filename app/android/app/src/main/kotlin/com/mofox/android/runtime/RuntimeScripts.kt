@@ -215,17 +215,44 @@ class RuntimeScripts(
                     """
                     cd /root/napcat
                     export BOT_QQ=${shellQuote(botQq)}
-                    bash napcat.sh start "${'$'}BOT_QQ" >/tmp/napcat-login.log 2>&1 &
+                    mkdir -p /root/napcat/cache
+                    rm -f /root/napcat/cache/qrcode.png /tmp/napcat-login.log
+                    xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q "${'$'}BOT_QQ" > /tmp/napcat-login.log 2>&1 &
                     NAPCAT_PID=${'$'}!
-                    for i in ${'$'}(seq 1 60); do
+                    QR_EMITTED=0
+                    LOGIN_DONE=0
+                    for i in ${'$'}(seq 1 180); do
                       sleep 1
-                      QR=${'$'}(grep -oE 'qrlogin[^ ]*' /tmp/napcat-login.log | head -1 || true)
-                      if [ -n "${'$'}QR" ]; then
-                        echo "MOFOX_QR_PAYLOAD=${'$'}QR"
+                      if [ -s /tmp/napcat-login.log ]; then
+                        tail -n 20 /tmp/napcat-login.log
+                      fi
+                      if [ "${'$'}QR_EMITTED" = "0" ] && { grep -q '二维码已保存到' /tmp/napcat-login.log 2>/dev/null || [ -s /root/napcat/cache/qrcode.png ]; }; then
+                        echo "MOFOX_QR_IMAGE=/root/napcat/cache/qrcode.png"
+                        QR_EMITTED=1
+                      fi
+                      if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
+                        echo "[napcat] 登录成功"
+                        LOGIN_DONE=1
+                        break
+                      fi
+                      if grep -q 'Login Error' /tmp/napcat-login.log 2>/dev/null; then
+                        echo "[napcat] 登录失败"
+                        kill "${'$'}NAPCAT_PID" 2>/dev/null || true
+                        wait "${'$'}NAPCAT_PID" 2>/dev/null || true
+                        exit 1
+                      fi
+                      if ! kill -0 "${'$'}NAPCAT_PID" 2>/dev/null; then
                         break
                       fi
                     done
-                    wait ${'$'}NAPCAT_PID || true
+                    if [ "${'$'}LOGIN_DONE" != "1" ]; then
+                      echo "[napcat] 登录等待超时或 NapCat 已退出" >&2
+                      kill "${'$'}NAPCAT_PID" 2>/dev/null || true
+                      wait "${'$'}NAPCAT_PID" 2>/dev/null || true
+                      exit 1
+                    fi
+                    kill "${'$'}NAPCAT_PID" 2>/dev/null || true
+                    wait "${'$'}NAPCAT_PID" 2>/dev/null || true
                     """.trimIndent(),
                 )
             }

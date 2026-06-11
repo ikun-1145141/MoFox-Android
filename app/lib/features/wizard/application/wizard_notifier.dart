@@ -252,6 +252,14 @@ class WizardNotifier extends Notifier<WizardState> {
     final perTaskLogs = <String, List<String>>{};
     final logSubscription = runtime.installEvents().listen((event) {
       perTaskLogs.putIfAbsent(event.task, () => <String>[]).add(event.line);
+      if (event.task == 'napcatLogin' &&
+          event.line.startsWith('MOFOX_QR_PAYLOAD=')) {
+        final separator = event.line.indexOf('=');
+        state = state.copyWith(
+          napcatQrPayload: event.line.substring(separator + 1),
+        );
+        return;
+      }
       _appendLog(event.line);
     });
 
@@ -301,13 +309,13 @@ class WizardNotifier extends Notifier<WizardState> {
           }
           state = state.copyWith(taskProgress: 1);
 
-          if (result.qrPayload != null) {
+          if (result.qrPayload != null && state.napcatQrPayload == null) {
             state = state.copyWith(napcatQrPayload: result.qrPayload);
           }
         }
 
         if (task == InstallTask.napcatLogin) {
-          _appendLog('[info] NapCat 登录需要通过 NapCat WebUI 完成');
+          _appendLog('[info] NapCat 已完成扫码登录');
           state = state.copyWith(napcatQrPayload: null);
         }
 

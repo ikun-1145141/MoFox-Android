@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -94,15 +95,28 @@ class RuntimeProcessManager(
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
                 logs.addBounded(line)
-                events.emit("install", mapOf("task" to task, "line" to line))
-                if (line.startsWith("MOFOX_QR_PAYLOAD=")) {
-                    qrPayload = line.substringAfter("=")
+                val eventLine = when {
+                    line.startsWith("MOFOX_QR_IMAGE=") -> {
+                        val hostPath = mapUbuntuPathToHost(line.substringAfter("="))
+                        "MOFOX_QR_PAYLOAD=file:$hostPath"
+                    }
+                    else -> line
+                }
+                events.emit("install", mapOf("task" to task, "line" to eventLine))
+                if (eventLine.startsWith("MOFOX_QR_PAYLOAD=")) {
+                    qrPayload = eventLine.substringAfter("=")
                 }
             }
         }
         val code = process.waitFor()
         events.emit("install", mapOf("task" to task, "line" to "[exit] native task $task exited with $code"))
         return InstallTaskResult(code == 0, logs.toList(), qrPayload, if (code == 0) null else "Task $task exited with $code")
+    }
+
+    private fun mapUbuntuPathToHost(path: String): String {
+        val cleanPath = path.trim()
+        if (!cleanPath.startsWith("/")) return cleanPath
+        return File(installer.ubuntuPath, cleanPath.removePrefix("/")).absolutePath
     }
 
     private fun consumeProcess(name: String, process: Process) {

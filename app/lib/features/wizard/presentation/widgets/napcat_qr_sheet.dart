@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -9,6 +11,7 @@ class NapcatQrSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final imagePath = payload.startsWith('file:') ? payload.substring(5) : null;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
@@ -35,11 +38,29 @@ class NapcatQrSheet extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: QrImageView(
-                data: payload,
-                size: 220,
-                backgroundColor: Colors.white,
-              ),
+              child: imagePath == null
+                  ? QrImageView(
+                      data: payload,
+                      size: 220,
+                      backgroundColor: Colors.white,
+                    )
+                  : Image.file(
+                      File(imagePath),
+                      width: 220,
+                      height: 220,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => SizedBox(
+                        width: 220,
+                        height: 220,
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: scheme.error,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(height: 16),
             Row(
