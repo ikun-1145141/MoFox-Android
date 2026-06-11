@@ -111,14 +111,18 @@ class RuntimeScripts(
             )
             "cloneRepo" -> {
                 val repoUrl = args["repoUrl"] ?: "https://github.com/MoFox-Studio/Neo-MoFox.git"
-                val target = args["target"] ?: "/root/Neo-MoFox"
+                val installDir = args["installDir"] ?: "/root/instances/default"
+                val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
                 loginBody(
                     """
-                    if [ -d ${shellQuote(target)}/.git ]; then
-                      echo "[runtime] repo already cloned at $target, pulling latest"
-                      cd ${shellQuote(target)} && git pull --ff-only || true
+                    mkdir -p ${shellQuote(installDir)}
+                    cd ${shellQuote(installDir)}
+                    if [ -d ${shellQuote(repoPath)}/.git ]; then
+                      echo "[runtime] repo already cloned at $repoPath, pulling latest"
+                      cd ${shellQuote(repoPath)} && git pull --ff-only || true
                     else
-                      git clone --depth=1 ${shellQuote(repoUrl)} ${shellQuote(target)}
+                      git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
+                      cd ${shellQuote(repoPath)}
                     fi
                     """.trimIndent(),
                 )
