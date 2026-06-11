@@ -169,12 +169,38 @@ class RuntimeScripts(
             }
             "installNapcat" -> loginBody(
                 """
-                mkdir -p /root/napcat
-                cd /root/napcat
-                if [ ! -f napcat.sh ]; then
-                  curl -LsSf https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh -o install.sh
-                  bash install.sh --tui || true
+                mkdir -p /root/napcat-installer /root/napcat
+                cd /root/napcat-installer
+                if [ ! -f /root/Napcat/opt/QQ/qq ]; then
+                  curl -L --fail --connect-timeout 20 --retry 3 \
+                    https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh \
+                    -o napcat-install.sh
+                  bash napcat-install.sh --docker n --cli n --proxy 0
+                else
+                  echo "[napcat] existing rootless installation found at /root/Napcat"
                 fi
+                cat > /root/napcat/napcat.sh <<'MOFOX_NAPCAT_EOF'
+                #!/bin/sh
+                set -e
+                ACTION="${'$'}{1:-start}"
+                QQ="${'$'}{2:-${'$'}BOT_QQ}"
+                QQ_BIN="/root/Napcat/opt/QQ/qq"
+                case "${'$'}ACTION" in
+                  start)
+                    if [ -n "${'$'}QQ" ]; then
+                      exec xvfb-run -a "${'$'}QQ_BIN" --no-sandbox -q "${'$'}QQ"
+                    fi
+                    exec xvfb-run -a "${'$'}QQ_BIN" --no-sandbox
+                    ;;
+                  *)
+                    echo "usage: napcat.sh start [qq]" >&2
+                    exit 2
+                    ;;
+                esac
+                MOFOX_NAPCAT_EOF
+                chmod +x /root/napcat/napcat.sh
+                mkdir -p /root/napcat/config
+                echo "[napcat] global NapCat ready"
                 """.trimIndent(),
             )
             "napcatLogin" -> {
