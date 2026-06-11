@@ -166,6 +166,38 @@ class WizardNotifier extends Notifier<WizardState> {
 
   // ---- 安装执行 ----
 
+  void prepareResume(Instance instance) {
+    state = state.copyWith(
+      step: WizardStep.install,
+      draft: state.draft.copyWith(
+        name: instance.name,
+        botQq: instance.botQq,
+        botNickname: instance.botNickname,
+        ownerQq: instance.ownerQq,
+        wsPort: instance.wsPort,
+        channel: instance.channel,
+        installNapcat: true,
+        installWebui: true,
+      ),
+      taskStatus: <InstallTask, InstallTaskStatus>{
+        for (final task in InstallTask.values) task: InstallTaskStatus.pending,
+      },
+      taskProgress: 0,
+      logs: <String>[
+        '[info] 已载入未完成实例：${instance.name}',
+        '[info] 实例目录：${instance.installDir}',
+        if (instance.installError != null) '[last-error] ${instance.installError}',
+      ],
+      errorMessage: instance.installError,
+      napcatQrPayload: null,
+      installFinished: false,
+      installStarted: true,
+      resumeAvailable: true,
+      instanceId: instance.id,
+      installDir: instance.installDir,
+    );
+  }
+
   /// 启动安装流程。原生层负责 rootfs/proot/脚本执行，Flutter 负责状态编排。
   Future<void> startInstall({bool resume = false}) async {
     if (_installRunning) return;
@@ -183,6 +215,15 @@ class WizardNotifier extends Notifier<WizardState> {
     final installDir = resume && state.installDir != null
         ? state.installDir!
         : '/root/instances/$instanceId';
+    final repo = await ref.read(instanceRepositoryProvider.future);
+    await repo.upsert(
+      _buildInstance(
+        instanceId: instanceId,
+        installDir: installDir,
+        installStatus: InstanceInstallStatus.installing,
+      ),
+    );
+    ref.invalidate(instancesProvider);
     state = state.copyWith(
       taskStatus: resume
           ? _resumeStatuses(state.taskStatus)
@@ -239,6 +280,12 @@ class WizardNotifier extends Notifier<WizardState> {
           if (!result.success) {
             _markStatus(task, InstallTaskStatus.failed);
             final message = result.error ?? '${task.label} 执行失败';
+            await _persistInstallFailure(
+              instanceId: instanceId,
+              installDir: installDir,
+              task: task,
+              message: message,
+            );
             state = state.copyWith(
               errorMessage: message,
               taskProgress: 0,
@@ -261,21 +308,11 @@ class WizardNotifier extends Notifier<WizardState> {
 
         // 注册实例：真正写入仓库
         if (task == InstallTask.registerInstance) {
-          final repo = await ref.read(instanceRepositoryProvider.future);
-          final draft = state.draft;
-          await repo.add(
-            Instance(
-              id: instanceId,
-              name: draft.name.isEmpty ? '未命名实例' : draft.name,
-              botQq: draft.botQq,
-              botNickname: draft.botNickname,
-              ownerQq: draft.ownerQq,
-              wsPort: draft.wsPort,
-              channel: draft.channel,
-              installNapcat: true,
-              installWebui: true,
+          await repo.upsert(
+            _buildInstance(
+              instanceId: instanceId,
               installDir: installDir,
-              createdAt: DateTime.now(),
+              installStatus: InstanceInstallStatus.installed,
             ),
           );
           ref.invalidate(instancesProvider);
@@ -298,6 +335,16 @@ class WizardNotifier extends Notifier<WizardState> {
         _markStatus(running, InstallTaskStatus.failed);
       }
       final message = _formatError(error);
+      final instanceId = state.instanceId;
+      final installDir = state.installDir;
+      if (instanceId != null && installDir != null && running != null) {
+        await _persistInstallFailure(
+          instanceId: instanceId,
+          installDir: installDir,
+          task: running,
+          message: message,
+        );
+      }
       state = state.copyWith(
         errorMessage: message,
         taskProgress: 0,
@@ -320,6 +367,51 @@ class WizardNotifier extends Notifier<WizardState> {
             ? InstallTaskStatus.success
             : InstallTaskStatus.pending,
     };
+  }
+
+  Instance _buildInstance({
+    required String instanceId,
+    required String installDir,
+    required InstanceInstallStatus installStatus,
+    String? lastInstallTask,
+    String? installError,
+  }) {
+    final draft = state.draft;
+    return Instance(
+      id: instanceId,
+      name: draft.name.isEmpty ? '未命名实例' : draft.name,
+      botQq: draft.botQq,
+      botNickname: draft.botNickname,
+      ownerQq: draft.ownerQq,
+      wsPort: draft.wsPort,
+      channel: draft.channel,
+      installNapcat: true,
+      installWebui: true,
+      installDir: installDir,
+      createdAt: DateTime.now(),
+      installStatus: installStatus,
+      lastInstallTask: lastInstallTask,
+      installError: installError,
+    );
+  }
+
+  Future<void> _persistInstallFailure({
+    required String instanceId,
+    required String installDir,
+    required InstallTask task,
+    required String message,
+  }) async {
+    final repo = await ref.read(instanceRepositoryProvider.future);
+    await repo.upsert(
+      _buildInstance(
+        instanceId: instanceId,
+        installDir: installDir,
+        installStatus: InstanceInstallStatus.failed,
+        lastInstallTask: task.name,
+        installError: message,
+      ),
+    );
+    ref.invalidate(instancesProvider);
   }
 
   String _formatError(Object error) {

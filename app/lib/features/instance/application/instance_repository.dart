@@ -35,6 +35,17 @@ class InstanceRepository {
     await saveAll(list);
   }
 
+  Future<void> upsert(Instance instance) async {
+    final list = loadAll().toList();
+    final index = list.indexWhere((item) => item.id == instance.id);
+    if (index >= 0) {
+      list[index] = instance;
+    } else {
+      list.add(instance);
+    }
+    await saveAll(list);
+  }
+
   Future<void> remove(String id) async {
     final list = loadAll().where((i) => i.id != id).toList();
     await saveAll(list);

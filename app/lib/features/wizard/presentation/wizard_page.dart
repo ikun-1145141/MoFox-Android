@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
+import '../../instance/domain/instance.dart';
 import '../application/wizard_notifier.dart';
 import '../domain/wizard_step.dart';
 import 'widgets/account_step.dart';
@@ -19,11 +20,29 @@ import 'widgets/summary_step.dart';
 /// 顶部：进度条 + 标题 + 关闭按钮
 /// 中间：当前步骤的表单
 /// 底部：上一步 / 下一步（最后一步在 install 内部自管）
-class WizardPage extends ConsumerWidget {
-  const WizardPage({super.key});
+class WizardPage extends ConsumerStatefulWidget {
+  const WizardPage({this.resumeInstance, super.key});
+
+  final Instance? resumeInstance;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WizardPage> createState() => _WizardPageState();
+}
+
+class _WizardPageState extends ConsumerState<WizardPage> {
+  @override
+  void initState() {
+    super.initState();
+    final instance = widget.resumeInstance;
+    if (instance != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(wizardProvider.notifier).prepareResume(instance);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final state = ref.watch(wizardProvider);
