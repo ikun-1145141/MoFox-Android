@@ -133,12 +133,14 @@ class RuntimeScripts(
                     """
                     cd ${shellQuote(repoPath)}
                     export PATH="/root/.local/bin:${'$'}PATH"
+                    export UV_LINK_MODE=copy
+                    rm -rf .venv
                     if command -v uv >/dev/null 2>&1; then
-                      uv sync
+                      uv sync --link-mode=copy --no-cache
                     else
                       python3 -m venv .venv
                       . .venv/bin/activate
-                      pip install -r requirements.txt
+                      pip install --no-cache-dir -r requirements.txt
                     fi
                     """.trimIndent(),
                 )
