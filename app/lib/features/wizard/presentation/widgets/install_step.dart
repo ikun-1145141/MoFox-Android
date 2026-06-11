@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -182,6 +183,13 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                                 '安装日志（${state.logs.length}）',
                                 style: text.titleSmall,
                               ),
+                              trailing: IconButton(
+                                tooltip: '复制安装日志',
+                                onPressed: state.logs.isEmpty
+                                    ? null
+                                    : () => _copyInstallLogs(state.logs),
+                                icon: const Icon(Icons.copy, size: 18),
+                              ),
                             ),
                             body: Container(
                               width: double.infinity,
@@ -249,7 +257,8 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton(
-                  onPressed: () => ref.read(wizardProvider.notifier).startInstall(),
+                  onPressed: () =>
+                      ref.read(wizardProvider.notifier).startInstall(),
                   child: const Text('重新安装'),
                 ),
               ],
@@ -267,6 +276,14 @@ class _InstallStepState extends ConsumerState<InstallStep> {
             ),
         ],
       ),
+    );
+  }
+
+  Future<void> _copyInstallLogs(List<String> logs) async {
+    await Clipboard.setData(ClipboardData(text: logs.join('\n')));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已复制 ${logs.length} 行安装日志')),
     );
   }
 }
@@ -293,7 +310,10 @@ class _TaskRow extends StatelessWidget {
       InstallTaskStatus.running => (Icons.autorenew, scheme.primary),
       InstallTaskStatus.success => (Icons.check_circle, scheme.primary),
       InstallTaskStatus.failed => (Icons.cancel, scheme.error),
-      InstallTaskStatus.skipped => (Icons.remove_circle_outline, scheme.outline),
+      InstallTaskStatus.skipped => (
+          Icons.remove_circle_outline,
+          scheme.outline
+        ),
     };
     return ListTile(
       dense: true,

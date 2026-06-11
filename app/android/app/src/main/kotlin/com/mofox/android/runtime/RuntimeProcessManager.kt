@@ -36,13 +36,17 @@ class RuntimeProcessManager(
             .redirectErrorStream(true)
         builder.environment().putAll(commandBuilder.environment())
         val process = builder.start()
-        processes[name] = ManagedProcess(process, "running")
+        processes[name] = ManagedProcess(process, "running", args)
         executor.execute { consumeProcess(name, process) }
     }
 
     fun stop(name: String) {
-        processes[name]?.process?.destroy()
-        processes[name] = ManagedProcess(processes[name]?.process, "stopped")
+        val managed = processes[name]
+        if (managed != null) {
+            runStopScript(name, managed.args)
+            managed.process?.destroy()
+        }
+        processes[name] = ManagedProcess(managed?.process, "stopped", managed?.args ?: emptyMap())
     }
 
     fun restart(name: String, args: Map<String, String> = emptyMap()) {
@@ -119,12 +123,31 @@ class RuntimeProcessManager(
         return File(installer.ubuntuPath, cleanPath.removePrefix("/")).absolutePath
     }
 
+    private fun runStopScript(name: String, args: Map<String, String>) {
+        if (!installer.isBootstrapped()) return
+        val script = scripts.stopProcessScript(name, args)
+        val builder = ProcessBuilder(commandBuilder.scriptCommand(script))
+            .directory(installer.homeDir)
+            .redirectErrorStream(true)
+        builder.environment().putAll(commandBuilder.environment())
+        try {
+            val process = builder.start()
+            BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                lines.forEach { line -> events.emit("process", mapOf("name" to name, "line" to line)) }
+            }
+            process.waitFor()
+        } catch (error: Throwable) {
+            events.emit("process", mapOf("name" to name, "line" to "[$name] stop failed: ${error.message}"))
+        }
+    }
+
     private fun consumeProcess(name: String, process: Process) {
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line -> events.emit("process", mapOf("name" to name, "line" to line)) }
         }
         val code = process.waitFor()
-        processes[name] = ManagedProcess(process, "stopped")
+        val managed = processes[name]
+        processes[name] = ManagedProcess(process, "stopped", managed?.args ?: emptyMap())
         events.emit("process", mapOf("name" to name, "line" to "[$name] exited with $code"))
     }
 
@@ -141,7 +164,11 @@ private fun ArrayDeque<String>.addBounded(line: String) {
 
 private const val MAX_INSTALL_RESULT_LOG_LINES = 300
 
-data class ManagedProcess(val process: Process?, val state: String)
+data class ManagedProcess(
+    val process: Process?,
+    val state: String,
+    val args: Map<String, String> = emptyMap(),
+)
 
 data class InstallTaskResult(
     val success: Boolean,

@@ -109,6 +109,25 @@ class RuntimeBridge {
         const <String, String>{};
   }
 
+  /// 托管进程实时日志流。`name` 为 `bot` 或 `napcat`。
+  Stream<ProcessEvent> processEvents() {
+    return _events
+        .receiveBroadcastStream(<String, Object?>{'topic': 'process'})
+        .where(
+          (event) =>
+              event is Map<Object?, Object?> && event['topic'] == 'process',
+        )
+        .map((event) => (event as Map<Object?, Object?>)['payload'])
+        .where((payload) => payload is Map<Object?, Object?>)
+        .cast<Map<Object?, Object?>>()
+        .map((payload) {
+          final name = payload['name']?.toString() ?? '';
+          final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
+          return ProcessEvent(name: name, line: line);
+        })
+        .where((event) => event.name.isNotEmpty && event.line.isNotEmpty);
+  }
+
   /// 拉一份 Android 设备和运行负载快照。
   Future<SystemStats> systemStats() async {
     final result =
@@ -209,6 +228,13 @@ class InstallEvent {
   const InstallEvent({required this.task, required this.line});
 
   final String task;
+  final String line;
+}
+
+class ProcessEvent {
+  const ProcessEvent({required this.name, required this.line});
+
+  final String name;
   final String line;
 }
 

@@ -70,6 +70,30 @@ class RuntimeScripts(
         return file
     }
 
+      fun stopProcessScript(name: String, args: Map<String, String> = emptyMap()): File {
+        val command = when (name) {
+          "bot" -> {
+            val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
+            "pkill -TERM -f ${shellQuote("bash ${shellQuote("$repoPath/start.sh")}")} || " +
+              "pkill -TERM -f ${shellQuote(repoPath)} || true"
+          }
+          "napcat" -> "pkill -TERM -f /root/Napcat/opt/QQ/qq || true"
+          else -> error("Unknown process: $name")
+        }
+        installer.ensureBaseDirectories()
+        val file = File(installer.scriptsDir, "stop-process-$name.sh")
+        val content = buildString {
+          append("#!/system/bin/sh\n")
+          append("set -e\n")
+          append(commonHeader())
+          append('\n')
+          append("login_ubuntu ${shellQuote(command)}\n")
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
+      }
+
     /** 交互式 shell 脚本：由 native PTY 启动，进 Debian 后 `cd <cwd>` 再起 `bash -il`。 */
     fun interactiveShellScript(cwd: String): File {
         installer.ensureBaseDirectories()
@@ -175,6 +199,8 @@ class RuntimeScripts(
             }
             "installNapcat" -> loginBody(
                 """
+              apt-get update -y
+              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libgcrypt20
                 mkdir -p /root/napcat-installer /root/napcat
                 cd /root/napcat-installer
                 if [ ! -f /root/Napcat/opt/QQ/qq ]; then

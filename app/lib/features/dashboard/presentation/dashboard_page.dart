@@ -82,7 +82,10 @@ class _DashboardBody extends StatelessWidget {
                 child: _EmptyState(),
               )
             else
-              _InstanceGrid(items: items, horizontalPadding: horizontalPadding),
+              _InstanceGrid(
+                items: items,
+                horizontalPadding: horizontalPadding,
+              ),
           ],
         );
       },
@@ -313,25 +316,13 @@ class _InstanceCard extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.terminal, size: 18),
                     ),
-                    IconButton.filledTonal(
-                      tooltip: '在实例根目录打开终端',
-                      onPressed: () => context.push(
-                        AppRoute.terminal,
-                        extra: <String, String>{
-                          'cwd': instance.installDir,
-                          'title': '${instance.name} - 实例目录',
-                        },
-                      ),
-                      icon: const Icon(Icons.folder_open, size: 18),
-                    ),
                     FilledButton.tonalIcon(
                       onPressed: instance.installStatus ==
                               InstanceInstallStatus.installed
-                          ? () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('启动 Bot 待实现')),
-                              );
-                            }
+                          ? () => context.push(
+                                AppRoute.instanceDetail,
+                                extra: instance,
+                              )
                           : () =>
                               context.push(AppRoute.wizard, extra: instance),
                       icon: Icon(
