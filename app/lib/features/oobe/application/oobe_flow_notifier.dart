@@ -84,7 +84,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
   }
 
   /// 跑 OOBE 的 extractRuntime 阶段：
-  /// `extractRootfs` → `installRuntimeDeps`。
+  /// `extractRootfs` → `installRuntimeDeps` → `installNapcat`。
   ///
   /// 这三件全是「全局一次性」的事情。每次只跑一遍，靠 `_runtimeInstallStarted`
   /// 防止用户来回切步骤导致重入。失败后会把 flag 重置，按重试按钮可以再来一次。
@@ -107,6 +107,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       const tasks = <_RuntimeTask>[
         _RuntimeTask(name: 'extractRootfs', label: '解压 Debian 13 rootfs'),
         _RuntimeTask(name: 'installRuntimeDeps', label: '安装 apt 基础依赖'),
+        _RuntimeTask(name: 'installNapcat', label: '安装全局 NapCat'),
       ];
       for (final task in tasks) {
         state = state.copyWith(result: OobeStepRunning(task.label));
