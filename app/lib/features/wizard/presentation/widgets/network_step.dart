@@ -58,15 +58,30 @@ class NetworkStep extends ConsumerWidget {
                 notifier.update((d) => d.copyWith(channel: s.first)),
           ),
           const SizedBox(height: 24),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.dashboard_customize_outlined),
+            title: const Text('安装 WebUI 管理面板'),
+            subtitle: const Text('在浏览器中可视化管理 Bot'),
+            value: draft.installWebui,
+            onChanged: (value) => notifier.update(
+              (d) => d.copyWith(
+                installWebui: value,
+                webuiApiKey: value ? d.webuiApiKey : '',
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: <Widget>[
               Expanded(
                 child: TextFormField(
                   key: ValueKey<String>('webui-${draft.webuiApiKey}'),
                   initialValue: draft.webuiApiKey,
+                  enabled: draft.installWebui,
                   decoration: const InputDecoration(
                     labelText: 'WebUI 访问密钥',
-                    hintText: '点击右侧骰子生成',
+                    hintText: '启用 WebUI 后点击右侧骰子生成',
                     prefixIcon: Icon(Icons.vpn_key_outlined),
                     border: OutlineInputBorder(),
                   ),
@@ -77,19 +92,23 @@ class NetworkStep extends ConsumerWidget {
               const SizedBox(width: 8),
               IconButton.filledTonal(
                 tooltip: '随机生成',
-                onPressed: () => notifier.update(
-                  (d) => d.copyWith(webuiApiKey: _randomKey()),
-                ),
+                onPressed: draft.installWebui
+                    ? () => notifier.update(
+                          (d) => d.copyWith(webuiApiKey: _randomKey()),
+                        )
+                    : null,
                 icon: const Icon(Icons.casino_outlined),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          if (draft.webuiApiKey.isNotEmpty)
+          if (draft.installWebui && draft.webuiApiKey.isNotEmpty)
             _StrengthBar(strength: _strength(draft.webuiApiKey)),
           const SizedBox(height: 12),
           Text(
-            '密钥用于访问 WebUI 管理面板，请妥善保管。',
+            draft.installWebui
+                ? '密钥用于访问 WebUI 管理面板，请妥善保管。'
+                : '关闭后将跳过 WebUI 构建，也不需要填写访问密钥。',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onSurfaceVariant,
                 ),

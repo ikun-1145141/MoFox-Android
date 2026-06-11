@@ -239,7 +239,8 @@ class _NavButtons extends ConsumerWidget {
       case WizardStep.model:
         return s.draft.apiBaseUrl.trim().isNotEmpty;
       case WizardStep.network:
-        return s.draft.wsPort > 0 && s.draft.webuiApiKey.trim().isNotEmpty;
+        return s.draft.wsPort > 0 &&
+            (!s.draft.installWebui || s.draft.webuiApiKey.trim().isNotEmpty);
       case WizardStep.summary:
         return true;
       case WizardStep.install:

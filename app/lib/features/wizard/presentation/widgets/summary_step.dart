@@ -34,8 +34,7 @@ class SummaryStep extends ConsumerWidget {
           onEdit: () => notifier.goTo(WizardStep.account),
           rows: <_Row>[
             _Row('Bot QQ', draft.botQq),
-            if (draft.botNickname.isNotEmpty)
-              _Row('昵称', draft.botNickname),
+            if (draft.botNickname.isNotEmpty) _Row('昵称', draft.botNickname),
             _Row('主人 QQ', draft.ownerQq),
           ],
         ),
@@ -55,15 +54,8 @@ class SummaryStep extends ConsumerWidget {
           rows: <_Row>[
             _Row('WS 端口', '${draft.wsPort}'),
             _Row('通道', draft.channel == 'main' ? '稳定版' : '开发版'),
-            _Row('WebUI 密钥', _mask(draft.webuiApiKey)),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _Group(
-          title: '组件',
-          rows: const <_Row>[
-            _Row('NapCat', '默认安装并配置'),
-            _Row('WebUI', '默认安装'),
+            _Row('WebUI 管理面板', draft.installWebui ? '安装' : '不安装'),
+            if (draft.installWebui) _Row('WebUI 密钥', _mask(draft.webuiApiKey)),
           ],
         ),
       ],

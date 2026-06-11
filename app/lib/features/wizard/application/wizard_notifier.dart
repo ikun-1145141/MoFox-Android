@@ -176,8 +176,7 @@ class WizardNotifier extends Notifier<WizardState> {
         ownerQq: instance.ownerQq,
         wsPort: instance.wsPort,
         channel: instance.channel,
-        installNapcat: true,
-        installWebui: true,
+        installWebui: instance.installWebui,
       ),
       taskStatus: <InstallTask, InstallTaskStatus>{
         for (final task in InstallTask.values) task: InstallTaskStatus.pending,
@@ -186,7 +185,8 @@ class WizardNotifier extends Notifier<WizardState> {
       logs: <String>[
         '[info] 已载入未完成实例：${instance.name}',
         '[info] 实例目录：${instance.installDir}',
-        if (instance.installError != null) '[last-error] ${instance.installError}',
+        if (instance.installError != null)
+          '[last-error] ${instance.installError}',
       ],
       errorMessage: instance.installError,
       napcatQrPayload: null,
@@ -259,6 +259,11 @@ class WizardNotifier extends Notifier<WizardState> {
       for (final task in InstallTask.values) {
         if (state.taskStatus[task] == InstallTaskStatus.success) {
           _appendLog('[resume] ${task.label} 已完成，继续下一项');
+          continue;
+        }
+        if (_shouldSkipTask(task)) {
+          _markStatus(task, InstallTaskStatus.skipped);
+          _appendLog('[skip] ${task.label} 已关闭，跳过');
           continue;
         }
 
@@ -386,7 +391,7 @@ class WizardNotifier extends Notifier<WizardState> {
       wsPort: draft.wsPort,
       channel: draft.channel,
       installNapcat: true,
-      installWebui: true,
+      installWebui: draft.installWebui,
       installDir: installDir,
       createdAt: DateTime.now(),
       installStatus: installStatus,
@@ -436,6 +441,11 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.registerInstance => null,
       };
 
+  bool _shouldSkipTask(InstallTask task) => switch (task) {
+        InstallTask.installWebui => !state.draft.installWebui,
+        _ => false,
+      };
+
   Map<String, String> _runtimeArgs(String instanceId, String installDir) {
     final draft = state.draft;
     return <String, String>{
@@ -456,7 +466,7 @@ class WizardNotifier extends Notifier<WizardState> {
       'webuiApiKey': draft.webuiApiKey,
       'mirrorId': draft.mirrorId,
       'installNapcat': true.toString(),
-      'installWebui': true.toString(),
+      'installWebui': draft.installWebui.toString(),
     };
   }
 
@@ -489,9 +499,8 @@ class WizardNotifier extends Notifier<WizardState> {
 }
 
 List<String> _tailWizardLogs(List<String> logs) {
-  final start = logs.length > _maxWizardLogLines
-      ? logs.length - _maxWizardLogLines
-      : 0;
+  final start =
+      logs.length > _maxWizardLogLines ? logs.length - _maxWizardLogLines : 0;
   return logs.sublist(start);
 }
 

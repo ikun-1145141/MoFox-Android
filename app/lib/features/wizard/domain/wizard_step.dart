@@ -5,7 +5,7 @@ enum WizardStep {
   instanceInfo, // 3. 实例名称
   account, // 4. Bot QQ + 昵称 + 主人 QQ
   model, // 5. API Key + Base URL
-  network, // 6. WS 端口 + 通道 + WebUI Key
+  network, // 6. WS 端口 + 通道 + WebUI
   summary, // 7. 摘要确认
   install; // 8. 执行安装
 
@@ -38,7 +38,7 @@ enum WizardStep {
         WizardStep.instanceInfo => '为你的 Bot 实例命名',
         WizardStep.account => '配置 Bot 的 QQ 账号信息',
         WizardStep.model => '配置大语言模型 API',
-        WizardStep.network => '配置端口、通道与 WebUI 密钥',
+        WizardStep.network => '配置端口、通道与 WebUI 管理面板',
         WizardStep.summary => '请确认以下配置信息',
         WizardStep.install => '正在执行安装，请稍候',
       };
@@ -59,7 +59,6 @@ class InstanceDraft {
     this.wsPort = 8095,
     this.channel = 'main',
     this.webuiApiKey = '',
-    this.installNapcat = true,
     this.installWebui = true,
   });
 
@@ -75,7 +74,6 @@ class InstanceDraft {
   final int wsPort;
   final String channel;
   final String webuiApiKey;
-  final bool installNapcat;
   final bool installWebui;
 
   InstanceDraft copyWith({
@@ -91,7 +89,6 @@ class InstanceDraft {
     int? wsPort,
     String? channel,
     String? webuiApiKey,
-    bool? installNapcat,
     bool? installWebui,
   }) =>
       InstanceDraft(
@@ -107,7 +104,6 @@ class InstanceDraft {
         wsPort: wsPort ?? this.wsPort,
         channel: channel ?? this.channel,
         webuiApiKey: webuiApiKey ?? this.webuiApiKey,
-        installNapcat: installNapcat ?? this.installNapcat,
         installWebui: installWebui ?? this.installWebui,
       );
 }
