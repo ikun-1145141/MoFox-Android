@@ -77,7 +77,9 @@ class _InstallStepState extends ConsumerState<InstallStep> {
               children: <Widget>[
                 Row(
                   children: <Widget>[
-                    if (!state.installFinished)
+                    if (state.errorMessage != null)
+                      Icon(Icons.error_outline, color: scheme.error, size: 20)
+                    else if (!state.installFinished)
                       const SizedBox(
                         width: 18,
                         height: 18,
@@ -88,9 +90,11 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        state.installFinished
-                            ? '安装完成'
-                            : (state.currentTask?.label ?? '准备中…'),
+                        state.errorMessage != null
+                            ? '安装中断'
+                            : state.installFinished
+                                ? '安装完成'
+                                : (state.currentTask?.label ?? '准备中…'),
                         style: text.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: scheme.onSurface,
@@ -115,6 +119,22 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                     backgroundColor: scheme.surfaceContainerHigh,
                   ),
                 ),
+                if (state.errorMessage != null) ...<Widget>[
+                  const SizedBox(height: 12),
+                  Text(
+                    state.errorMessage!,
+                    style: text.bodySmall?.copyWith(color: scheme.error),
+                  ),
+                  if (state.resumeAvailable) ...<Widget>[
+                    const SizedBox(height: 8),
+                    Text(
+                      '可保留已完成任务，从失败处继续安装。',
+                      style: text.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
               ],
             ),
           ),
@@ -205,7 +225,7 @@ class _InstallStepState extends ConsumerState<InstallStep> {
             ),
           ),
           const SizedBox(height: 12),
-          // 完成时显示进入按钮
+          // 完成时显示进入按钮，失败时显示续装按钮
           if (state.installFinished)
             SizedBox(
               width: double.infinity,
@@ -214,6 +234,25 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                 icon: const Icon(Icons.check),
                 label: const Text('完成，返回主界面'),
               ),
+            )
+          else if (state.resumeAvailable)
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => ref
+                        .read(wizardProvider.notifier)
+                        .startInstall(resume: true),
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('从断点继续安装'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                OutlinedButton(
+                  onPressed: () => ref.read(wizardProvider.notifier).startInstall(),
+                  child: const Text('重新安装'),
+                ),
+              ],
             )
           else
             SizedBox(

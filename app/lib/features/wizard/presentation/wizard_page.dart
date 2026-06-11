@@ -6,9 +6,10 @@ import '../../../app/router/app_router.dart';
 import '../application/wizard_notifier.dart';
 import '../domain/wizard_step.dart';
 import 'widgets/account_step.dart';
-import 'widgets/components_step.dart';
+import 'widgets/eula_step.dart';
 import 'widgets/install_step.dart';
 import 'widgets/instance_info_step.dart';
+import 'widgets/mirror_check_step.dart';
 import 'widgets/model_step.dart';
 import 'widgets/network_step.dart';
 import 'widgets/summary_step.dart';
@@ -123,11 +124,12 @@ class WizardPage extends ConsumerWidget {
 
   Widget _stepBody(WizardStep step) {
     return switch (step) {
+      WizardStep.eula => const EulaStep(),
+      WizardStep.mirrorCheck => const MirrorCheckStep(),
       WizardStep.instanceInfo => const InstanceInfoStep(),
       WizardStep.account => const AccountStep(),
       WizardStep.model => const ModelStep(),
       WizardStep.network => const NetworkStep(),
-      WizardStep.components => const ComponentsStep(),
       WizardStep.summary => const SummaryStep(),
       WizardStep.install => const InstallStep(),
     };
@@ -206,6 +208,10 @@ class _NavButtons extends ConsumerWidget {
 
   bool _canProceed(WizardState s) {
     switch (s.step) {
+      case WizardStep.eula:
+        return s.draft.eulaAccepted;
+      case WizardStep.mirrorCheck:
+        return s.draft.mirrorId.trim().isNotEmpty;
       case WizardStep.instanceInfo:
         return s.draft.name.trim().isNotEmpty;
       case WizardStep.account:
@@ -215,7 +221,6 @@ class _NavButtons extends ConsumerWidget {
         return s.draft.apiBaseUrl.trim().isNotEmpty;
       case WizardStep.network:
         return s.draft.wsPort > 0 && s.draft.webuiApiKey.trim().isNotEmpty;
-      case WizardStep.components:
       case WizardStep.summary:
         return true;
       case WizardStep.install:

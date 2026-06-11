@@ -16,6 +16,14 @@ class SummaryStep extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: <Widget>[
         _Group(
+          title: '安装准备',
+          rows: <_Row>[
+            _Row('用户协议', draft.eulaAccepted ? '已同意' : '未同意'),
+            _Row('镜像源', draft.mirrorId),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _Group(
           title: '实例信息',
           onEdit: () => notifier.goTo(WizardStep.instanceInfo),
           rows: <_Row>[_Row('名称', draft.name)],
@@ -53,10 +61,9 @@ class SummaryStep extends ConsumerWidget {
         const SizedBox(height: 12),
         _Group(
           title: '组件',
-          onEdit: () => notifier.goTo(WizardStep.components),
-          rows: <_Row>[
-            _Row('NapCat', draft.installNapcat ? '将配置' : '跳过'),
-            _Row('WebUI', draft.installWebui ? '将安装' : '跳过'),
+          rows: const <_Row>[
+            _Row('NapCat', '默认安装并配置'),
+            _Row('WebUI', '默认安装'),
           ],
         ),
       ],
@@ -80,11 +87,11 @@ class _Group extends StatelessWidget {
   const _Group({
     required this.title,
     required this.rows,
-    required this.onEdit,
+    this.onEdit,
   });
   final String title;
   final List<_Row> rows;
-  final VoidCallback onEdit;
+  final VoidCallback? onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -110,11 +117,12 @@ class _Group extends StatelessWidget {
                   ),
                 ),
               ),
-              TextButton.icon(
-                onPressed: onEdit,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('修改'),
-              ),
+              if (onEdit != null)
+                TextButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('修改'),
+                ),
             ],
           ),
           const SizedBox(height: 4),
