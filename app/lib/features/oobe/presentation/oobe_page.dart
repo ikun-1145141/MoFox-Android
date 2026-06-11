@@ -26,6 +26,7 @@ class OobePage extends ConsumerWidget {
     final progress = (currentIndex + 1) / totalSteps;
     final isFirst = flow.current == OobeStep.welcome;
     final isLast = flow.current == OobeStep.done;
+    final canGoBack = !isFirst && !isLast && flow.current != OobeStep.extractRuntime;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -84,14 +85,14 @@ class OobePage extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
               child: Row(
                 children: <Widget>[
-                  if (!isFirst && !isLast)
+                  if (canGoBack)
                     OutlinedButton(
                       onPressed: () => notifier.jumpTo(
                         OobeStep.values[currentIndex - 1],
                       ),
                       child: const Text('上一步'),
                     ),
-                  if (!isFirst && !isLast) const SizedBox(width: 12),
+                  if (canGoBack) const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
                       // extractRuntime 这步要等原生任务跑完才能放行：
