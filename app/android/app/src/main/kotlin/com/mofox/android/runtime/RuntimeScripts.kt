@@ -242,6 +242,23 @@ class RuntimeScripts(
                     """.trimIndent(),
                 )
             }
+                "deleteInstance" -> {
+                  val installDir = args["installDir"] ?: error("Missing installDir")
+                  loginBody(
+                    """
+                    case ${shellQuote(installDir)} in
+                      /root/instances/*)
+                      rm -rf -- ${shellQuote(installDir)}
+                      echo "[runtime] deleted instance dir: $installDir"
+                      ;;
+                      *)
+                      echo "[runtime] refusing to delete outside /root/instances: $installDir" >&2
+                      exit 2
+                      ;;
+                    esac
+                    """.trimIndent(),
+                  )
+                }
             else -> error("Unknown task: $task")
         }
     }

@@ -210,11 +210,7 @@ class _InstanceCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('实例详情待实现')),
-          );
-        },
+        onTap: () => context.push(AppRoute.instanceDetail, extra: instance),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(

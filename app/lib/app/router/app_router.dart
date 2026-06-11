@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/dashboard/presentation/dashboard_page.dart';
 import '../../features/home/presentation/home_page.dart';
+import '../../features/instance/presentation/instance_detail_page.dart';
 import '../../features/oobe/application/oobe_status_provider.dart';
 import '../../features/oobe/presentation/oobe_page.dart';
 import '../../features/settings/presentation/about_page.dart';
@@ -19,6 +20,7 @@ abstract final class AppRoute {
   static const String shell = '/';
   static const String home = '/home';
   static const String dashboard = '/dashboard';
+  static const String instanceDetail = '/dashboard/instance';
   static const String webview = '/webview';
   static const String terminal = '/terminal';
   static const String settings = '/settings';
@@ -59,6 +61,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.thirdPartyLicenses,
         builder: (_, __) => const ThirdPartyLicensesPage(),
+      ),
+      GoRoute(
+        path: AppRoute.instanceDetail,
+        builder: (_, state) => InstanceDetailPage(
+          instance: state.extra as Instance,
+        ),
       ),
       ShellRoute(
         builder: (context, state, child) => ShellPage(child: child),
