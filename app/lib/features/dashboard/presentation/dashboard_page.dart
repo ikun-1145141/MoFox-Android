@@ -78,7 +78,9 @@ class _DashboardBody extends StatelessWidget {
               )
             else if (items.isEmpty)
               const SliverFillRemaining(
-                  hasScrollBody: false, child: _EmptyState())
+                hasScrollBody: false,
+                child: _EmptyState(),
+              )
             else
               _InstanceGrid(items: items, horizontalPadding: horizontalPadding),
           ],

@@ -44,29 +44,29 @@ class WelcomeStep extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          _Bullet(
+          const _Bullet(
             icon: Icons.gavel_outlined,
             title: '用户协议',
             description: '使用本程序即表示同意 Neo-MoFox 的开源协议与 EULA。',
           ),
-          _Bullet(
+          const _Bullet(
             icon: Icons.privacy_tip_outlined,
             title: '隐私政策',
             description: '所有数据保存在本机 App 私有目录，不上传任何第三方服务器。',
           ),
-          _Bullet(
+          const _Bullet(
             icon: Icons.bolt_outlined,
             title: '前台保活',
             description: '运行 Bot 时会启动前台服务以避免系统杀进程，会有持久通知。',
           ),
           const SizedBox(height: 8),
-          _LegalDocumentButton(
+          const _LegalDocumentButton(
             icon: Icons.description_outlined,
             title: '阅读最终用户许可协议',
             assetPath: 'assets/legal/eula.md',
           ),
           const SizedBox(height: 8),
-          _LegalDocumentButton(
+          const _LegalDocumentButton(
             icon: Icons.policy_outlined,
             title: '阅读遥测隐私协议',
             assetPath: 'assets/legal/privacy.md',
@@ -120,7 +120,7 @@ Future<void> _showLegalDocument(
   late final String body;
   try {
     body = await rootBundle.loadString(assetPath);
-  } on FlutterError catch (_) {
+  } on Exception catch (_) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('无法打开$title，请检查协议文件是否已打包。')),

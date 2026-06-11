@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/wizard_notifier.dart';
-import '../../domain/wizard_step.dart';
 
 /// 镜像源检测步骤。
 ///
@@ -70,8 +69,8 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
       available.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
       final best = available.first;
       ref.read(wizardProvider.notifier).update(
-        (d) => d.copyWith(mirrorId: best.mirror.id),
-      );
+            (d) => d.copyWith(mirrorId: best.mirror.id),
+          );
     }
 
     setState(() {
@@ -134,7 +133,8 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
                 else if (_done)
                   Icon(Icons.check_circle, color: scheme.primary, size: 20)
                 else
-                  Icon(Icons.wifi_find, color: scheme.onSurfaceVariant, size: 20),
+                  Icon(Icons.wifi_find,
+                      color: scheme.onSurfaceVariant, size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -301,7 +301,8 @@ class _MirrorTile extends StatelessWidget {
                 _LatencyBadge(latencyMs: result!.latencyMs)
               else
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: scheme.errorContainer,
                     borderRadius: BorderRadius.circular(999),
@@ -327,7 +328,6 @@ class _LatencyBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
     final Color bgColor;
