@@ -18,6 +18,10 @@ class WizardState {
     this.errorMessage,
     this.napcatQrPayload,
     this.installFinished = false,
+    this.installStarted = false,
+    this.resumeAvailable = false,
+    this.instanceId,
+    this.installDir,
   });
 
   final WizardStep step;
@@ -41,15 +45,31 @@ class WizardState {
   /// 安装是否全部完成。
   final bool installFinished;
 
+  /// 安装流程是否已经启动过。
+  final bool installStarted;
+
+  /// 是否允许从失败任务继续安装。
+  final bool resumeAvailable;
+
+  /// 当前安装实例 ID。
+  final String? instanceId;
+
+  /// 当前安装目录。
+  final String? installDir;
+
   WizardState copyWith({
     WizardStep? step,
     InstanceDraft? draft,
     Map<InstallTask, InstallTaskStatus>? taskStatus,
     double? taskProgress,
     List<String>? logs,
-    String? errorMessage,
+    Object? errorMessage = _sentinel,
     Object? napcatQrPayload = _sentinel,
     bool? installFinished,
+    bool? installStarted,
+    bool? resumeAvailable,
+    Object? instanceId = _sentinel,
+    Object? installDir = _sentinel,
   }) =>
       WizardState(
         step: step ?? this.step,
@@ -57,11 +77,21 @@ class WizardState {
         taskStatus: taskStatus ?? this.taskStatus,
         taskProgress: taskProgress ?? this.taskProgress,
         logs: logs ?? this.logs,
-        errorMessage: errorMessage ?? this.errorMessage,
+        errorMessage: identical(errorMessage, _sentinel)
+            ? this.errorMessage
+            : errorMessage as String?,
         napcatQrPayload: identical(napcatQrPayload, _sentinel)
             ? this.napcatQrPayload
             : napcatQrPayload as String?,
         installFinished: installFinished ?? this.installFinished,
+        installStarted: installStarted ?? this.installStarted,
+        resumeAvailable: resumeAvailable ?? this.resumeAvailable,
+        instanceId: identical(instanceId, _sentinel)
+            ? this.instanceId
+            : instanceId as String?,
+        installDir: identical(installDir, _sentinel)
+            ? this.installDir
+            : installDir as String?,
       );
 
   /// 当前任务（第一个 running 或 pending 的 task）。
@@ -94,12 +124,13 @@ const Object _sentinel = Object();
 
 class WizardNotifier extends Notifier<WizardState> {
   Timer? _runner;
+  bool _installRunning = false;
 
   @override
   WizardState build() {
     ref.onDispose(() => _runner?.cancel());
     return WizardState(
-      step: WizardStep.instanceInfo,
+      step: WizardStep.eula,
       draft: const InstanceDraft(),
       taskStatus: <InstallTask, InstallTaskStatus>{
         for (final t in InstallTask.values) t: InstallTaskStatus.pending,
@@ -135,25 +166,85 @@ class WizardNotifier extends Notifier<WizardState> {
 
   // ---- 安装执行 ----
 
+  void prepareResume(Instance instance) {
+    state = state.copyWith(
+      step: WizardStep.install,
+      draft: state.draft.copyWith(
+        name: instance.name,
+        botQq: instance.botQq,
+        botNickname: instance.botNickname,
+        ownerQq: instance.ownerQq,
+        wsPort: instance.wsPort,
+        channel: instance.channel,
+        installNapcat: true,
+        installWebui: true,
+      ),
+      taskStatus: <InstallTask, InstallTaskStatus>{
+        for (final task in InstallTask.values) task: InstallTaskStatus.pending,
+      },
+      taskProgress: 0,
+      logs: <String>[
+        '[info] 已载入未完成实例：${instance.name}',
+        '[info] 实例目录：${instance.installDir}',
+        if (instance.installError != null) '[last-error] ${instance.installError}',
+      ],
+      errorMessage: instance.installError,
+      napcatQrPayload: null,
+      installFinished: false,
+      installStarted: true,
+      resumeAvailable: true,
+      instanceId: instance.id,
+      installDir: instance.installDir,
+    );
+  }
+
   /// 启动安装流程。原生层负责 rootfs/proot/脚本执行，Flutter 负责状态编排。
-  Future<void> startInstall() async {
+  Future<void> startInstall({bool resume = false}) async {
+    if (_installRunning) return;
     _runner?.cancel();
+    _installRunning = true;
     final runtime = ref.read(runtimeBridgeProvider);
     // 实例 id 在 startInstall 起手处生成一次，贯穿整个安装流程：
     //   - 所有 native task 都用它拼出 /root/instances/<id>/Neo-MoFox 这种路径
     //   - registerInstance 那步写到 SharedPreferences 用同一个 id
     // 这样 dashboard 里点"终端"按钮才能用 instance.repoPath / instance.installDir
     // 直接命中实际目录。
-    final instanceId = 'inst-${DateTime.now().millisecondsSinceEpoch}';
-    final installDir = '/root/instances/$instanceId';
+    final instanceId = resume && state.instanceId != null
+        ? state.instanceId!
+        : 'inst-${DateTime.now().millisecondsSinceEpoch}';
+    final installDir = resume && state.installDir != null
+        ? state.installDir!
+        : '/root/instances/$instanceId';
+    final repo = await ref.read(instanceRepositoryProvider.future);
+    await repo.upsert(
+      _buildInstance(
+        instanceId: instanceId,
+        installDir: installDir,
+        installStatus: InstanceInstallStatus.installing,
+      ),
+    );
+    ref.invalidate(instancesProvider);
     state = state.copyWith(
-      taskStatus: <InstallTask, InstallTaskStatus>{
-        for (final t in InstallTask.values) t: InstallTaskStatus.pending,
-      },
+      taskStatus: resume
+          ? _resumeStatuses(state.taskStatus)
+          : <InstallTask, InstallTaskStatus>{
+              for (final t in InstallTask.values) t: InstallTaskStatus.pending,
+            },
       taskProgress: 0,
-      logs: <String>['[info] 准备安装环境…', '[info] 实例目录：$installDir'],
+      logs: resume
+          ? <String>[
+              ...state.logs,
+              '[info] 从上次失败处继续安装…',
+              '[info] 实例目录：$installDir',
+            ]
+          : <String>['[info] 准备安装环境…', '[info] 实例目录：$installDir'],
+      errorMessage: null,
       napcatQrPayload: null,
       installFinished: false,
+      installStarted: true,
+      resumeAvailable: false,
+      instanceId: instanceId,
+      installDir: installDir,
     );
 
     // 整个安装流程订阅一次原生事件流，按 task 字段累积日志。
@@ -166,20 +257,8 @@ class WizardNotifier extends Notifier<WizardState> {
 
     try {
       for (final task in InstallTask.values) {
-        // 跳过：用户没勾选 NapCat / WebUI 时。
-        // NapCat 这里目前只做扫码和 onebot11 反向 ws 配置。
-        if (task == InstallTask.napcatLogin && !state.draft.installNapcat) {
-          _markStatus(task, InstallTaskStatus.skipped);
-          continue;
-        }
-        if (task == InstallTask.writeNapcatConfig &&
-            !state.draft.installNapcat) {
-          _markStatus(task, InstallTaskStatus.skipped);
-          continue;
-        }
-        if (task == InstallTask.installWebui && !state.draft.installWebui) {
-          _markStatus(task, InstallTaskStatus.skipped);
-          _appendLog('[skip] 已跳过 WebUI 安装');
+        if (state.taskStatus[task] == InstallTaskStatus.success) {
+          _appendLog('[resume] ${task.label} 已完成，继续下一项');
           continue;
         }
 
@@ -201,7 +280,17 @@ class WizardNotifier extends Notifier<WizardState> {
           if (!result.success) {
             _markStatus(task, InstallTaskStatus.failed);
             final message = result.error ?? '${task.label} 执行失败';
-            state = state.copyWith(errorMessage: message, taskProgress: 0);
+            await _persistInstallFailure(
+              instanceId: instanceId,
+              installDir: installDir,
+              task: task,
+              message: message,
+            );
+            state = state.copyWith(
+              errorMessage: message,
+              taskProgress: 0,
+              resumeAvailable: true,
+            );
             _appendLog('[error] $message');
             return;
           }
@@ -219,21 +308,11 @@ class WizardNotifier extends Notifier<WizardState> {
 
         // 注册实例：真正写入仓库
         if (task == InstallTask.registerInstance) {
-          final repo = await ref.read(instanceRepositoryProvider.future);
-          final draft = state.draft;
-          await repo.add(
-            Instance(
-              id: instanceId,
-              name: draft.name.isEmpty ? '未命名实例' : draft.name,
-              botQq: draft.botQq,
-              botNickname: draft.botNickname,
-              ownerQq: draft.ownerQq,
-              wsPort: draft.wsPort,
-              channel: draft.channel,
-              installNapcat: draft.installNapcat,
-              installWebui: draft.installWebui,
+          await repo.upsert(
+            _buildInstance(
+              instanceId: instanceId,
               installDir: installDir,
-              createdAt: DateTime.now(),
+              installStatus: InstanceInstallStatus.installed,
             ),
           );
           ref.invalidate(instancesProvider);
@@ -256,12 +335,83 @@ class WizardNotifier extends Notifier<WizardState> {
         _markStatus(running, InstallTaskStatus.failed);
       }
       final message = _formatError(error);
-      state = state.copyWith(errorMessage: message, taskProgress: 0);
+      final instanceId = state.instanceId;
+      final installDir = state.installDir;
+      if (instanceId != null && installDir != null && running != null) {
+        await _persistInstallFailure(
+          instanceId: instanceId,
+          installDir: installDir,
+          task: running,
+          message: message,
+        );
+      }
+      state = state.copyWith(
+        errorMessage: message,
+        taskProgress: 0,
+        resumeAvailable: true,
+      );
       _appendLog('[error] $message');
       _appendLog('[trace] $stack');
     } finally {
       await logSubscription.cancel();
+      _installRunning = false;
     }
+  }
+
+  Map<InstallTask, InstallTaskStatus> _resumeStatuses(
+    Map<InstallTask, InstallTaskStatus> current,
+  ) {
+    return <InstallTask, InstallTaskStatus>{
+      for (final task in InstallTask.values)
+        task: current[task] == InstallTaskStatus.success
+            ? InstallTaskStatus.success
+            : InstallTaskStatus.pending,
+    };
+  }
+
+  Instance _buildInstance({
+    required String instanceId,
+    required String installDir,
+    required InstanceInstallStatus installStatus,
+    String? lastInstallTask,
+    String? installError,
+  }) {
+    final draft = state.draft;
+    return Instance(
+      id: instanceId,
+      name: draft.name.isEmpty ? '未命名实例' : draft.name,
+      botQq: draft.botQq,
+      botNickname: draft.botNickname,
+      ownerQq: draft.ownerQq,
+      wsPort: draft.wsPort,
+      channel: draft.channel,
+      installNapcat: true,
+      installWebui: true,
+      installDir: installDir,
+      createdAt: DateTime.now(),
+      installStatus: installStatus,
+      lastInstallTask: lastInstallTask,
+      installError: installError,
+    );
+  }
+
+  Future<void> _persistInstallFailure({
+    required String instanceId,
+    required String installDir,
+    required InstallTask task,
+    required String message,
+  }) async {
+    final repo = await ref.read(instanceRepositoryProvider.future);
+    await repo.upsert(
+      _buildInstance(
+        instanceId: instanceId,
+        installDir: installDir,
+        installStatus: InstanceInstallStatus.failed,
+        lastInstallTask: task.name,
+        installError: message,
+      ),
+    );
+    ref.invalidate(instancesProvider);
   }
 
   String _formatError(Object error) {
@@ -294,6 +444,7 @@ class WizardNotifier extends Notifier<WizardState> {
       'instanceId': instanceId,
       'installDir': installDir,
       'repoPath': '$installDir/Neo-MoFox',
+      'repoUrl': _repoUrlForMirror(draft.mirrorId),
       'name': draft.name,
       'botQq': draft.botQq,
       'botNickname': draft.botNickname,
@@ -303,10 +454,18 @@ class WizardNotifier extends Notifier<WizardState> {
       'wsPort': draft.wsPort.toString(),
       'channel': draft.channel,
       'webuiApiKey': draft.webuiApiKey,
-      'installNapcat': draft.installNapcat.toString(),
-      'installWebui': draft.installWebui.toString(),
+      'mirrorId': draft.mirrorId,
+      'installNapcat': true.toString(),
+      'installWebui': true.toString(),
     };
   }
+
+  String _repoUrlForMirror(String mirrorId) => switch (mirrorId) {
+        'ghproxy' =>
+          'https://ghfast.top/https://github.com/MoFox-Studio/Neo-MoFox.git',
+        'gitee' => 'https://gitee.com/MoFox-Studio/Neo-MoFox.git',
+        _ => 'https://github.com/MoFox-Studio/Neo-MoFox.git',
+      };
 
   void _markStatus(InstallTask task, InstallTaskStatus status) {
     final next = <InstallTask, InstallTaskStatus>{...state.taskStatus};

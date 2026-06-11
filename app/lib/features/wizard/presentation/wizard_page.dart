@@ -3,12 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
+import '../../instance/domain/instance.dart';
 import '../application/wizard_notifier.dart';
 import '../domain/wizard_step.dart';
 import 'widgets/account_step.dart';
-import 'widgets/components_step.dart';
+import 'widgets/eula_step.dart';
 import 'widgets/install_step.dart';
 import 'widgets/instance_info_step.dart';
+import 'widgets/mirror_check_step.dart';
 import 'widgets/model_step.dart';
 import 'widgets/network_step.dart';
 import 'widgets/summary_step.dart';
@@ -18,11 +20,29 @@ import 'widgets/summary_step.dart';
 /// 顶部：进度条 + 标题 + 关闭按钮
 /// 中间：当前步骤的表单
 /// 底部：上一步 / 下一步（最后一步在 install 内部自管）
-class WizardPage extends ConsumerWidget {
-  const WizardPage({super.key});
+class WizardPage extends ConsumerStatefulWidget {
+  const WizardPage({this.resumeInstance, super.key});
+
+  final Instance? resumeInstance;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WizardPage> createState() => _WizardPageState();
+}
+
+class _WizardPageState extends ConsumerState<WizardPage> {
+  @override
+  void initState() {
+    super.initState();
+    final instance = widget.resumeInstance;
+    if (instance != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(wizardProvider.notifier).prepareResume(instance);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final state = ref.watch(wizardProvider);
@@ -123,11 +143,12 @@ class WizardPage extends ConsumerWidget {
 
   Widget _stepBody(WizardStep step) {
     return switch (step) {
+      WizardStep.eula => const EulaStep(),
+      WizardStep.mirrorCheck => const MirrorCheckStep(),
       WizardStep.instanceInfo => const InstanceInfoStep(),
       WizardStep.account => const AccountStep(),
       WizardStep.model => const ModelStep(),
       WizardStep.network => const NetworkStep(),
-      WizardStep.components => const ComponentsStep(),
       WizardStep.summary => const SummaryStep(),
       WizardStep.install => const InstallStep(),
     };
@@ -206,6 +227,10 @@ class _NavButtons extends ConsumerWidget {
 
   bool _canProceed(WizardState s) {
     switch (s.step) {
+      case WizardStep.eula:
+        return s.draft.eulaAccepted;
+      case WizardStep.mirrorCheck:
+        return s.draft.mirrorId.trim().isNotEmpty;
       case WizardStep.instanceInfo:
         return s.draft.name.trim().isNotEmpty;
       case WizardStep.account:
@@ -215,7 +240,6 @@ class _NavButtons extends ConsumerWidget {
         return s.draft.apiBaseUrl.trim().isNotEmpty;
       case WizardStep.network:
         return s.draft.wsPort > 0 && s.draft.webuiApiKey.trim().isNotEmpty;
-      case WizardStep.components:
       case WizardStep.summary:
         return true;
       case WizardStep.install:

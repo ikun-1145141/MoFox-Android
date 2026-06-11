@@ -262,19 +262,29 @@ class _InstanceCard extends StatelessWidget {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHigh,
+                      color: _statusColor(instance, scheme),
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
-                      '已停止',
+                      _statusLabel(instance),
                       style: text.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
+                        color: _statusTextColor(instance, scheme),
                       ),
                     ),
                   ),
                 ],
               ),
               const Spacer(),
+              if (instance.installStatus != InstanceInstallStatus.installed &&
+                  instance.installError != null) ...<Widget>[
+                Text(
+                  instance.installError!,
+                  style: text.bodySmall?.copyWith(color: scheme.error),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 children: <Widget>[
                   Icon(
@@ -326,13 +336,25 @@ class _InstanceCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   FilledButton.tonalIcon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('启动 Bot 待实现')),
-                      );
-                    },
-                    icon: const Icon(Icons.play_arrow, size: 18),
-                    label: const Text('启动'),
+                    onPressed: instance.installStatus ==
+                            InstanceInstallStatus.installed
+                        ? () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('启动 Bot 待实现')),
+                            );
+                          }
+                        : () => context.push(AppRoute.wizard, extra: instance),
+                    icon: Icon(
+                      instance.installStatus == InstanceInstallStatus.installed
+                          ? Icons.play_arrow
+                          : Icons.download_done_outlined,
+                      size: 18,
+                    ),
+                    label: Text(
+                      instance.installStatus == InstanceInstallStatus.installed
+                          ? '启动'
+                          : '继续安装',
+                    ),
                   ),
                 ],
               ),
@@ -342,4 +364,28 @@ class _InstanceCard extends StatelessWidget {
       ),
     );
   }
+}
+
+String _statusLabel(Instance instance) {
+  return switch (instance.installStatus) {
+    InstanceInstallStatus.installing => '未完成',
+    InstanceInstallStatus.failed => '安装失败',
+    InstanceInstallStatus.installed => '已停止',
+  };
+}
+
+Color _statusColor(Instance instance, ColorScheme scheme) {
+  return switch (instance.installStatus) {
+    InstanceInstallStatus.installing => scheme.tertiaryContainer,
+    InstanceInstallStatus.failed => scheme.errorContainer,
+    InstanceInstallStatus.installed => scheme.surfaceContainerHigh,
+  };
+}
+
+Color _statusTextColor(Instance instance, ColorScheme scheme) {
+  return switch (instance.installStatus) {
+    InstanceInstallStatus.installing => scheme.onTertiaryContainer,
+    InstanceInstallStatus.failed => scheme.onErrorContainer,
+    InstanceInstallStatus.installed => scheme.onSurfaceVariant,
+  };
 }

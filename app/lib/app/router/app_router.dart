@@ -12,6 +12,7 @@ import '../../features/shell/presentation/shell_page.dart';
 import '../../features/terminal/presentation/terminal_page.dart';
 import '../../features/webview/presentation/webview_page.dart';
 import '../../features/wizard/presentation/wizard_page.dart';
+import '../../features/instance/domain/instance.dart';
 
 abstract final class AppRoute {
   static const String oobe = '/oobe';
@@ -47,7 +48,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Wizard 是全屏 flow，不挂在 ShellRoute 下面（避免被底栏挤）。
       GoRoute(
         path: AppRoute.wizard,
-        builder: (_, __) => const WizardPage(),
+        builder: (_, state) => WizardPage(resumeInstance: state.extra as Instance?),
       ),
       GoRoute(
         path: AppRoute.about,

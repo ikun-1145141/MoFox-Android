@@ -18,6 +18,9 @@ class Instance {
     required this.installWebui,
     required this.installDir,
     required this.createdAt,
+    this.installStatus = InstanceInstallStatus.installed,
+    this.lastInstallTask,
+    this.installError,
   });
 
   final String id;
@@ -36,6 +39,15 @@ class Instance {
   final String installDir;
   final DateTime createdAt;
 
+  /// 安装状态。未完成实例会保留在主界面，供后续续装。
+  final InstanceInstallStatus installStatus;
+
+  /// 最近失败或中断时所在的安装任务名。
+  final String? lastInstallTask;
+
+  /// 最近一次安装错误信息。
+  final String? installError;
+
   /// Bot 仓库路径（`<installDir>/Neo-MoFox`）。
   String get repoPath => '$installDir/Neo-MoFox';
 
@@ -49,6 +61,9 @@ class Instance {
     bool? installNapcat,
     bool? installWebui,
     String? installDir,
+    InstanceInstallStatus? installStatus,
+    Object? lastInstallTask = _sentinel,
+    Object? installError = _sentinel,
   }) =>
       Instance(
         id: id,
@@ -62,6 +77,13 @@ class Instance {
         installWebui: installWebui ?? this.installWebui,
         installDir: installDir ?? this.installDir,
         createdAt: createdAt,
+        installStatus: installStatus ?? this.installStatus,
+        lastInstallTask: identical(lastInstallTask, _sentinel)
+            ? this.lastInstallTask
+            : lastInstallTask as String?,
+        installError: identical(installError, _sentinel)
+            ? this.installError
+            : installError as String?,
       );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -76,6 +98,9 @@ class Instance {
         'installWebui': installWebui,
         'installDir': installDir,
         'createdAt': createdAt.toIso8601String(),
+        'installStatus': installStatus.name,
+        'lastInstallTask': lastInstallTask,
+        'installError': installError,
       };
 
   static Instance fromJson(Map<String, Object?> json) => Instance(
@@ -91,9 +116,27 @@ class Instance {
         installDir: json['installDir'] as String? ??
             '/root/instances/${json['id']}',
         createdAt: DateTime.parse(json['createdAt']! as String),
+        installStatus: InstanceInstallStatusX.fromName(
+          json['installStatus'] as String?,
+        ),
+        lastInstallTask: json['lastInstallTask'] as String?,
+        installError: json['installError'] as String?,
       );
 
   String encode() => jsonEncode(toJson());
   static Instance decode(String raw) =>
       fromJson(jsonDecode(raw) as Map<String, Object?>);
+}
+
+const Object _sentinel = Object();
+
+enum InstanceInstallStatus { installing, failed, installed }
+
+extension InstanceInstallStatusX on InstanceInstallStatus {
+  static InstanceInstallStatus fromName(String? name) {
+    for (final status in InstanceInstallStatus.values) {
+      if (status.name == name) return status;
+    }
+    return InstanceInstallStatus.installed;
+  }
 }
