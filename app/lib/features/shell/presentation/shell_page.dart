@@ -104,7 +104,7 @@ class ShellPage extends StatelessWidget {
     }
     if (loc.startsWith(AppRoute.terminal)) return 2;
     if (loc.startsWith(AppRoute.settings)) return 3;
-    return 0; // dashboard / webview / 其它默认归 0
+    return 0;
   }
 
   void _go(BuildContext context, int i) {

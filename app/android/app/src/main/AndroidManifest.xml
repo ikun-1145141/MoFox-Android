@@ -24,6 +24,7 @@
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="false"
         android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"

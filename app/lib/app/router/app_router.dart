@@ -49,6 +49,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: AppRoute.wizard,
         builder: (_, __) => const WizardPage(),
       ),
+      GoRoute(
+        path: AppRoute.about,
+        builder: (_, __) => const AboutPage(),
+      ),
+      GoRoute(
+        path: AppRoute.thirdPartyLicenses,
+        builder: (_, __) => const ThirdPartyLicensesPage(),
+      ),
       ShellRoute(
         builder: (context, state, child) => ShellPage(child: child),
         routes: <RouteBase>[
@@ -81,14 +89,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoute.settings,
             builder: (_, __) => const SettingsPage(),
-          ),
-          GoRoute(
-            path: AppRoute.about,
-            builder: (_, __) => const AboutPage(),
-          ),
-          GoRoute(
-            path: AppRoute.thirdPartyLicenses,
-            builder: (_, __) => const ThirdPartyLicensesPage(),
           ),
         ],
       ),
