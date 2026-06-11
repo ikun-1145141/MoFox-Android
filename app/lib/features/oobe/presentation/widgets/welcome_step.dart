@@ -63,13 +63,13 @@ class WelcomeStep extends StatelessWidget {
           _LegalDocumentButton(
             icon: Icons.description_outlined,
             title: '阅读最终用户许可协议',
-            assetPath: '../eula.md',
+            assetPath: 'assets/legal/eula.md',
           ),
           const SizedBox(height: 8),
           _LegalDocumentButton(
             icon: Icons.policy_outlined,
             title: '阅读遥测隐私协议',
-            assetPath: '../PRIVACY.md',
+            assetPath: 'assets/legal/privacy.md',
           ),
           const SizedBox(height: 16),
           Text(
@@ -117,7 +117,17 @@ Future<void> _showLegalDocument(
   String title,
   String assetPath,
 ) async {
-  final body = await rootBundle.loadString(assetPath);
+  late final String body;
+  try {
+    body = await rootBundle.loadString(assetPath);
+  } on FlutterError catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('无法打开$title，请检查协议文件是否已打包。')),
+    );
+    return;
+  }
+
   if (!context.mounted) return;
 
   await showModalBottomSheet<void>(

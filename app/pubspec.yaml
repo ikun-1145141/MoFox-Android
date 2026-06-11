@@ -77,8 +77,7 @@ flutter:
   generate: true
 
   assets:
-    - ../eula.md
-    - ../PRIVACY.md
+    - assets/legal/
     - assets/icons/
     - assets/rootfs/
     - assets/scripts/
