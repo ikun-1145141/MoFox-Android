@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../app/router/app_router.dart';
 import '../application/app_settings_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -111,14 +113,15 @@ class SettingsPage extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const _Section(
+          _Section(
             title: '关于',
             children: <Widget>[
               _SettingTile(
-                leading: Icon(Icons.info_outline),
-                title: '版本与开源许可',
-                subtitle: 'MoFox 0.1.0 (1)',
-                trailing: Icon(Icons.chevron_right),
+                leading: const Icon(Icons.info_outline),
+                title: '关于 MoFox',
+                subtitle: '版本、开源许可与源代码',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoute.about),
               ),
             ],
           ),
@@ -162,11 +165,13 @@ class _SettingTile extends StatelessWidget {
     required this.title,
     this.subtitle,
     this.trailing,
+    this.onTap,
   });
   final Widget leading;
   final String title;
   final String? subtitle;
   final Widget? trailing;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +180,7 @@ class _SettingTile extends StatelessWidget {
       title: Text(title),
       subtitle: subtitle == null ? null : Text(subtitle!),
       trailing: trailing,
+      onTap: onTap,
       shape: const RoundedRectangleBorder(),
     );
   }
