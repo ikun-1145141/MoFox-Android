@@ -186,7 +186,7 @@ class _InstanceGrid extends StatelessWidget {
               crossAxisCount: crossAxis,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              mainAxisExtent: 204,
+              mainAxisExtent: 224,
             ),
             itemCount: items.length,
             itemBuilder: (_, i) => _InstanceCard(instance: items[i]),
@@ -287,83 +287,102 @@ class _InstanceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
               ],
-              Row(
+              Wrap(
+                spacing: 16,
+                runSpacing: 6,
                 children: <Widget>[
-                  Icon(
-                    Icons.cloud_outlined,
-                    size: 16,
-                    color: scheme.onSurfaceVariant,
+                  _MetaItem(
+                    icon: Icons.cloud_outlined,
+                    label: 'WS :${instance.wsPort}',
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'WS :${instance.wsPort}',
-                    style: text.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(width: 16),
-                  Icon(
-                    Icons.flag_outlined,
-                    size: 16,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    instance.channel,
-                    style: text.bodySmall
-                        ?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                  const Spacer(),
-                  IconButton.filledTonal(
-                    tooltip: '在 Bot 目录打开终端',
-                    onPressed: () => context.push(
-                      AppRoute.terminal,
-                      extra: <String, String>{
-                        'cwd': instance.repoPath,
-                        'title': '${instance.name} - Bot 目录',
-                      },
-                    ),
-                    icon: const Icon(Icons.terminal, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton.filledTonal(
-                    tooltip: '在实例根目录打开终端',
-                    onPressed: () => context.push(
-                      AppRoute.terminal,
-                      extra: <String, String>{
-                        'cwd': instance.installDir,
-                        'title': '${instance.name} - 实例目录',
-                      },
-                    ),
-                    icon: const Icon(Icons.folder_open, size: 18),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    onPressed: instance.installStatus ==
-                            InstanceInstallStatus.installed
-                        ? () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('启动 Bot 待实现')),
-                            );
-                          }
-                        : () => context.push(AppRoute.wizard, extra: instance),
-                    icon: Icon(
-                      instance.installStatus == InstanceInstallStatus.installed
-                          ? Icons.play_arrow
-                          : Icons.download_done_outlined,
-                      size: 18,
-                    ),
-                    label: Text(
-                      instance.installStatus == InstanceInstallStatus.installed
-                          ? '启动'
-                          : '继续安装',
-                    ),
-                  ),
+                  _MetaItem(icon: Icons.flag_outlined, label: instance.channel),
                 ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: <Widget>[
+                    IconButton.filledTonal(
+                      tooltip: '在 Bot 目录打开终端',
+                      onPressed: () => context.push(
+                        AppRoute.terminal,
+                        extra: <String, String>{
+                          'cwd': instance.repoPath,
+                          'title': '${instance.name} - Bot 目录',
+                        },
+                      ),
+                      icon: const Icon(Icons.terminal, size: 18),
+                    ),
+                    IconButton.filledTonal(
+                      tooltip: '在实例根目录打开终端',
+                      onPressed: () => context.push(
+                        AppRoute.terminal,
+                        extra: <String, String>{
+                          'cwd': instance.installDir,
+                          'title': '${instance.name} - 实例目录',
+                        },
+                      ),
+                      icon: const Icon(Icons.folder_open, size: 18),
+                    ),
+                    FilledButton.tonalIcon(
+                      onPressed: instance.installStatus ==
+                              InstanceInstallStatus.installed
+                          ? () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('启动 Bot 待实现')),
+                              );
+                            }
+                          : () =>
+                              context.push(AppRoute.wizard, extra: instance),
+                      icon: Icon(
+                        instance.installStatus ==
+                                InstanceInstallStatus.installed
+                            ? Icons.play_arrow
+                            : Icons.download_done_outlined,
+                        size: 18,
+                      ),
+                      label: Text(
+                        instance.installStatus ==
+                                InstanceInstallStatus.installed
+                            ? '启动'
+                            : '继续安装',
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _MetaItem extends StatelessWidget {
+  const _MetaItem({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Icon(icon, size: 16, color: scheme.onSurfaceVariant),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ],
     );
   }
 }
