@@ -5,7 +5,7 @@ import '../../../app/router/app_router.dart';
 
 /// 顶层壳：底部 NavigationBar（< 600 dp）+ 侧边 NavigationRail（≥ 600 dp）。
 ///
-/// Tab 顺序：管理（实例 dashboard）→ 终端 → 设置。
+/// Tab 顺序：首页 → 管理 → 终端 → 设置。
 class ShellPage extends StatelessWidget {
   const ShellPage({required this.child, super.key});
   final Widget child;
@@ -19,7 +19,7 @@ class ShellPage extends StatelessWidget {
       canPop: context.canPop() || tab == 0,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop || tab == 0) return;
-        context.go(AppRoute.dashboard);
+        context.go(AppRoute.home);
       },
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -34,6 +34,11 @@ class ShellPage extends StatelessWidget {
                       onDestinationSelected: (i) => _go(context, i),
                       labelType: NavigationRailLabelType.all,
                       destinations: const <NavigationRailDestination>[
+                        NavigationRailDestination(
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: Icon(Icons.home),
+                          label: Text('首页'),
+                        ),
                         NavigationRailDestination(
                           icon: Icon(Icons.dashboard_outlined),
                           selectedIcon: Icon(Icons.dashboard),
@@ -65,6 +70,11 @@ class ShellPage extends StatelessWidget {
               onDestinationSelected: (i) => _go(context, i),
               destinations: const <NavigationDestination>[
                 NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: '首页',
+                ),
+                NavigationDestination(
                   icon: Icon(Icons.dashboard_outlined),
                   selectedIcon: Icon(Icons.dashboard),
                   label: '管理',
@@ -88,16 +98,21 @@ class ShellPage extends StatelessWidget {
   }
 
   int _tabFromLocation(String loc) {
-    if (loc.startsWith(AppRoute.terminal)) return 1;
-    if (loc.startsWith(AppRoute.settings)) return 2;
+    if (loc.startsWith(AppRoute.dashboard) ||
+        loc.startsWith(AppRoute.webview)) {
+      return 1;
+    }
+    if (loc.startsWith(AppRoute.terminal)) return 2;
+    if (loc.startsWith(AppRoute.settings)) return 3;
     return 0; // dashboard / webview / 其它默认归 0
   }
 
   void _go(BuildContext context, int i) {
     final route = switch (i) {
-      1 => AppRoute.terminal,
-      2 => AppRoute.settings,
-      _ => AppRoute.dashboard,
+      1 => AppRoute.dashboard,
+      2 => AppRoute.terminal,
+      3 => AppRoute.settings,
+      _ => AppRoute.home,
     };
     context.go(route);
   }

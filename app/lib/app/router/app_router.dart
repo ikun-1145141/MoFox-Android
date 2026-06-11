@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/dashboard/presentation/dashboard_page.dart';
+import '../../features/home/presentation/home_page.dart';
 import '../../features/oobe/application/oobe_status_provider.dart';
 import '../../features/oobe/presentation/oobe_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
@@ -13,6 +14,7 @@ import '../../features/wizard/presentation/wizard_page.dart';
 abstract final class AppRoute {
   static const String oobe = '/oobe';
   static const String shell = '/';
+  static const String home = '/home';
   static const String dashboard = '/dashboard';
   static const String webview = '/webview';
   static const String terminal = '/terminal';
@@ -22,7 +24,7 @@ abstract final class AppRoute {
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
-    initialLocation: AppRoute.dashboard,
+    initialLocation: AppRoute.home,
     redirect: (context, state) {
       final status = ref.watch(oobeStatusProvider);
       final oobeDone = status.valueOrNull;
@@ -30,7 +32,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       final goingToOobe = state.matchedLocation == AppRoute.oobe;
       if (!oobeDone && !goingToOobe) return AppRoute.oobe;
-      if (oobeDone && goingToOobe) return AppRoute.dashboard;
+      if (oobeDone && goingToOobe) return AppRoute.home;
       return null;
     },
     routes: <RouteBase>[
@@ -48,7 +50,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: <RouteBase>[
           GoRoute(
             path: AppRoute.shell,
-            redirect: (_, __) => AppRoute.dashboard,
+            redirect: (_, __) => AppRoute.home,
+          ),
+          GoRoute(
+            path: AppRoute.home,
+            builder: (_, __) => const HomePage(),
           ),
           GoRoute(
             path: AppRoute.dashboard,
