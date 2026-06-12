@@ -260,6 +260,13 @@ class WizardNotifier extends Notifier<WizardState> {
         );
         return;
       }
+        if (event.task == 'napcatLogin' &&
+          event.line.contains('[napcat] 登录成功')) {
+        state = state.copyWith(
+          draft: state.draft.copyWith(napcatLoginDone: true),
+          napcatQrPayload: null,
+        );
+      }
       _appendLog(event.line);
     });
 
@@ -316,7 +323,10 @@ class WizardNotifier extends Notifier<WizardState> {
 
         if (task == InstallTask.napcatLogin) {
           _appendLog('[info] NapCat 已完成扫码登录');
-          state = state.copyWith(napcatQrPayload: null);
+          state = state.copyWith(
+            draft: state.draft.copyWith(napcatLoginDone: true),
+            napcatQrPayload: null,
+          );
         }
 
         // 注册实例：真正写入仓库
