@@ -47,7 +47,7 @@ class RuntimeScripts(
             "bot" -> {
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val instanceId = args["instanceId"]
-                val cmd = "cd ${shellQuote(repoPath)} && bash ${shellQuote("$repoPath/start.sh")}"
+                val cmd = "cd ${shellQuote(repoPath)} && export PATH=\"/root/.local/bin:${'$'}PATH\" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"
                 cmd to (instanceId?.let { "-$it" } ?: "")
             }
             "napcat" -> {
@@ -74,7 +74,8 @@ class RuntimeScripts(
         val command = when (name) {
           "bot" -> {
             val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
-            "pkill -TERM -f ${shellQuote("bash ${shellQuote("$repoPath/start.sh")}")} || " +
+            "pkill -TERM -f ${shellQuote("uv run python main.py")} || " +
+              "pkill -TERM -f ${shellQuote("python main.py")} || " +
               "pkill -TERM -f ${shellQuote(repoPath)} || true"
           }
           "napcat" -> "pkill -TERM -f /root/Napcat/opt/QQ/qq || true"

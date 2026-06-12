@@ -71,13 +71,16 @@ class InstanceDetailPage extends ConsumerWidget {
                                   children: <Widget>[
                                     _LiveDot(status: console.botStatus),
                                     const SizedBox(width: 6),
-                                    Text(
+                                    Expanded(
+                                      child: Text(
                                       installed
-                                          ? _processStatusLabel(
-                                              console.botStatus)
+                                          ? 'Bot ${_processStatusLabel(console.botStatus)} · NapCat ${_processStatusLabel(console.napcatStatus)}'
                                           : _statusLabel(instance),
                                       style: text.bodySmall?.copyWith(
                                         color: scheme.onSurfaceVariant,
+                                      ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -142,6 +145,46 @@ class InstanceDetailPage extends ConsumerWidget {
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
                                       .restartBot(instance),
+                              icon: const Icon(Icons.restart_alt),
+                              label: const Text('重启'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: !installed || console.isBusy
+                                  ? null
+                                  : () => ref
+                                      .read(processConsoleProvider.notifier)
+                                      .startNapcat(),
+                              icon: const Icon(Icons.qr_code_2),
+                              label: const Text('NapCat'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: !installed || console.isBusy
+                                  ? null
+                                  : () => ref
+                                      .read(processConsoleProvider.notifier)
+                                      .stopNapcat(),
+                              icon: const Icon(Icons.stop),
+                              label: const Text('停止'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: !installed || console.isBusy
+                                  ? null
+                                  : () => ref
+                                      .read(processConsoleProvider.notifier)
+                                      .restartNapcat(),
                               icon: const Icon(Icons.restart_alt),
                               label: const Text('重启'),
                             ),

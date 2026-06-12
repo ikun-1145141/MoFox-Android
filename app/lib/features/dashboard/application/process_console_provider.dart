@@ -93,6 +93,24 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
             runtime.restartProcess('bot', args: _botArgs(instance)),
       );
 
+  Future<void> startNapcat() => _runNapcatAction(
+        action: 'start-napcat',
+        busyLabel: 'NapCat 启动中',
+        run: (runtime) => runtime.startProcess('napcat'),
+      );
+
+  Future<void> stopNapcat() => _runNapcatAction(
+        action: 'stop-napcat',
+        busyLabel: 'NapCat 停止中',
+        run: (runtime) => runtime.stopProcess('napcat'),
+      );
+
+  Future<void> restartNapcat() => _runNapcatAction(
+        action: 'restart-napcat',
+        busyLabel: 'NapCat 重启中',
+        run: (runtime) => runtime.restartProcess('napcat'),
+      );
+
   Future<void> refreshStatus() async {
     try {
       final status = await ref.read(runtimeBridgeProvider).processStatus();
@@ -119,6 +137,26 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     } catch (error) {
       state = state.copyWith(errorMessage: '$busyLabel失败：$error');
       _appendBotLog('[control] $busyLabel失败：$error');
+    } finally {
+      state = state.copyWith(busyAction: null);
+    }
+  }
+
+  Future<void> _runNapcatAction({
+    required String action,
+    required String busyLabel,
+    required Future<void> Function(RuntimeBridge runtime) run,
+  }) async {
+    if (state.isBusy) return;
+    final runtime = ref.read(runtimeBridgeProvider);
+    state = state.copyWith(busyAction: action, errorMessage: null);
+    _appendNapcatLog('[control] $busyLabel');
+    try {
+      await run(runtime);
+      await refreshStatus();
+    } catch (error) {
+      state = state.copyWith(errorMessage: '$busyLabel失败：$error');
+      _appendNapcatLog('[control] $busyLabel失败：$error');
     } finally {
       state = state.copyWith(busyAction: null);
     }
