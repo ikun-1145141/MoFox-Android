@@ -74,9 +74,28 @@ class RuntimeScripts(
         val command = when (name) {
           "bot" -> {
             val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
-            "pkill -TERM -f ${shellQuote("uv run python main.py")} || " +
-              "pkill -TERM -f ${shellQuote("python main.py")} || " +
-              "pkill -TERM -f ${shellQuote(repoPath)} || true"
+            """
+            REPO_PATH=${shellQuote(repoPath)}
+            stop_bot_pids() {
+              SIGNAL=${'$'}1
+              PIDS=${'$'}(pgrep -f 'uv run python main.py|python main.py' 2>/dev/null || true)
+              for PID in ${'$'}PIDS; do
+                [ "${'$'}PID" = "${'$'}${'$'}" ] && continue
+                CMDLINE=${'$'}(tr '\0' ' ' < "/proc/${'$'}PID/cmdline" 2>/dev/null || true)
+                CWD=${'$'}(readlink "/proc/${'$'}PID/cwd" 2>/dev/null || true)
+                case "${'$'}CMDLINE" in
+                  *pgrep*|*stop-process-bot*) continue ;;
+                esac
+                if [ "${'$'}CWD" = "${'$'}REPO_PATH" ] || printf '%s' "${'$'}CMDLINE" | grep -F -- "${'$'}REPO_PATH" >/dev/null 2>&1; then
+                  kill -"${'$'}SIGNAL" "${'$'}PID" 2>/dev/null || true
+                fi
+              done
+            }
+            stop_bot_pids TERM
+            sleep 2
+            stop_bot_pids KILL
+            true
+            """.trimIndent()
           }
           "napcat" -> "pkill -TERM -f /root/Napcat/opt/QQ/qq || true"
           else -> error("Unknown process: $name")
