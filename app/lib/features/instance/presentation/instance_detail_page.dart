@@ -8,18 +8,43 @@ import '../../../core/runtime/runtime_bridge.dart';
 import '../../dashboard/application/process_console_provider.dart';
 import '../application/instance_repository.dart';
 import '../domain/instance.dart';
+import '../../wizard/presentation/widgets/napcat_qr_sheet.dart';
 
-class InstanceDetailPage extends ConsumerWidget {
+class InstanceDetailPage extends ConsumerStatefulWidget {
   const InstanceDetailPage({required this.instance, super.key});
 
   final Instance instance;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<InstanceDetailPage> createState() => _InstanceDetailPageState();
+}
+
+class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
+  bool _qrShown = false;
+
+  Instance get instance => widget.instance;
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final console = ref.watch(processConsoleProvider);
     final installed = instance.installStatus == InstanceInstallStatus.installed;
+
+    ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
+      if (next.napcatQrPayload != null && !_qrShown) {
+        _qrShown = true;
+        showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (_) => NapcatQrSheet(payload: next.napcatQrPayload!),
+        ).whenComplete(() => _qrShown = false);
+      } else if (next.napcatQrPayload == null && _qrShown) {
+        Navigator.of(context).pop();
+        _qrShown = false;
+      }
+    });
 
     return Scaffold(
       body: SafeArea(
@@ -73,12 +98,12 @@ class InstanceDetailPage extends ConsumerWidget {
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                      installed
-                                          ? 'Bot ${_processStatusLabel(console.botStatus)} · NapCat ${_processStatusLabel(console.napcatStatus)}'
-                                          : _statusLabel(instance),
-                                      style: text.bodySmall?.copyWith(
-                                        color: scheme.onSurfaceVariant,
-                                      ),
+                                        installed
+                                            ? 'Bot ${_processStatusLabel(console.botStatus)} · NapCat ${_processStatusLabel(console.napcatStatus)}'
+                                            : _statusLabel(instance),
+                                        style: text.bodySmall?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -160,7 +185,7 @@ class InstanceDetailPage extends ConsumerWidget {
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
-                                      .startNapcat(),
+                                      .startNapcat(instance),
                               icon: const Icon(Icons.qr_code_2),
                               label: const Text('NapCat'),
                             ),
@@ -184,7 +209,7 @@ class InstanceDetailPage extends ConsumerWidget {
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
-                                      .restartNapcat(),
+                                      .restartNapcat(instance),
                               icon: const Icon(Icons.restart_alt),
                               label: const Text('重启'),
                             ),

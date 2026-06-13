@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/router/app_router.dart';
 import '../../application/wizard_notifier.dart';
 import '../../domain/wizard_step.dart';
-import 'napcat_qr_sheet.dart';
 
 class InstallStep extends ConsumerStatefulWidget {
   const InstallStep({super.key});
@@ -16,7 +15,6 @@ class InstallStep extends ConsumerStatefulWidget {
 }
 
 class _InstallStepState extends ConsumerState<InstallStep> {
-  bool _qrShown = false;
   bool _logsExpanded = false;
   final ScrollController _logsScroll = ScrollController();
 
@@ -43,20 +41,7 @@ class _InstallStepState extends ConsumerState<InstallStep> {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    // QR 弹窗：napcatQrPayload 出现时弹出，消失时关闭
     ref.listen<WizardState>(wizardProvider, (prev, next) {
-      if (next.napcatQrPayload != null && !_qrShown) {
-        _qrShown = true;
-        showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          builder: (_) => NapcatQrSheet(payload: next.napcatQrPayload!),
-        ).whenComplete(() => _qrShown = false);
-      } else if (next.napcatQrPayload == null && _qrShown) {
-        Navigator.of(context).pop();
-        _qrShown = false;
-      }
       if ((prev?.logs.length ?? 0) != next.logs.length && _logsExpanded) {
         _scheduleScrollToBottom();
       }

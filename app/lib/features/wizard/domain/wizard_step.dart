@@ -49,7 +49,6 @@ class InstanceDraft {
   const InstanceDraft({
     this.eulaAccepted = false,
     this.mirrorId = 'github',
-    this.napcatLoginDone = false,
     this.name = '',
     this.botQq = '',
     this.botNickname = '',
@@ -64,7 +63,6 @@ class InstanceDraft {
 
   final bool eulaAccepted;
   final String mirrorId;
-  final bool napcatLoginDone;
   final String name;
   final String botQq;
   final String botNickname;
@@ -79,7 +77,6 @@ class InstanceDraft {
   InstanceDraft copyWith({
     bool? eulaAccepted,
     String? mirrorId,
-    bool? napcatLoginDone,
     String? name,
     String? botQq,
     String? botNickname,
@@ -94,7 +91,6 @@ class InstanceDraft {
       InstanceDraft(
         eulaAccepted: eulaAccepted ?? this.eulaAccepted,
         mirrorId: mirrorId ?? this.mirrorId,
-        napcatLoginDone: napcatLoginDone ?? this.napcatLoginDone,
         name: name ?? this.name,
         botQq: botQq ?? this.botQq,
         botNickname: botNickname ?? this.botNickname,
@@ -120,7 +116,6 @@ enum InstallTask {
   writeModel, // 写 model.toml
   writeAdapter, // 写 adapter.toml
   installWebui, // 装 WebUI（每实例的前端构建）
-  napcatLogin, // NapCat 扫码（弹 BottomSheet）
   writeNapcatConfig, // 写 onebot11
   registerInstance; // 写实例到本地仓库
 
@@ -132,7 +127,6 @@ enum InstallTask {
         InstallTask.writeModel => '写入 model.toml',
         InstallTask.writeAdapter => '写入 adapter.toml',
         InstallTask.installWebui => '安装 WebUI',
-        InstallTask.napcatLogin => 'NapCat 扫码登录',
         InstallTask.writeNapcatConfig => '写入 NapCat 配置',
         InstallTask.registerInstance => '注册实例',
       };

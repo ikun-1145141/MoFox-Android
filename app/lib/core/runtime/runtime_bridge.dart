@@ -77,7 +77,7 @@ class RuntimeBridge {
   ///
   /// `args` 给原生端 `processScript` 取参数：
   /// - bot：`repoPath`（实例的 Neo-MoFox 路径）、`instanceId`（脚本文件名后缀，避免多实例覆盖）。
-  /// - napcat：留空，napcat 是全局唯一安装。
+  /// - napcat：`botQq`（NapCat 登录/启动使用的 QQ 号），NapCat 是全局唯一安装。
   Future<void> startProcess(
     String name, {
     Map<String, String> args = const <String, String>{},

@@ -239,7 +239,6 @@ class WizardNotifier extends Notifier<WizardState> {
             ]
           : <String>['[info] 准备安装环境…', '[info] 实例目录：$installDir'],
       errorMessage: null,
-      napcatQrPayload: null,
       installFinished: false,
       installStarted: true,
       resumeAvailable: false,
@@ -252,21 +251,6 @@ class WizardNotifier extends Notifier<WizardState> {
     final perTaskLogs = <String, List<String>>{};
     final logSubscription = runtime.installEvents().listen((event) {
       perTaskLogs.putIfAbsent(event.task, () => <String>[]).add(event.line);
-      if (event.task == 'napcatLogin' &&
-          event.line.startsWith('MOFOX_QR_PAYLOAD=')) {
-        final separator = event.line.indexOf('=');
-        state = state.copyWith(
-          napcatQrPayload: event.line.substring(separator + 1),
-        );
-        return;
-      }
-        if (event.task == 'napcatLogin' &&
-          event.line.contains('[napcat] 登录成功')) {
-        state = state.copyWith(
-          draft: state.draft.copyWith(napcatLoginDone: true),
-          napcatQrPayload: null,
-        );
-      }
       _appendLog(event.line);
     });
 
@@ -315,18 +299,6 @@ class WizardNotifier extends Notifier<WizardState> {
             return;
           }
           state = state.copyWith(taskProgress: 1);
-
-          if (result.qrPayload != null && state.napcatQrPayload == null) {
-            state = state.copyWith(napcatQrPayload: result.qrPayload);
-          }
-        }
-
-        if (task == InstallTask.napcatLogin) {
-          _appendLog('[info] NapCat 已完成扫码登录');
-          state = state.copyWith(
-            draft: state.draft.copyWith(napcatLoginDone: true),
-            napcatQrPayload: null,
-          );
         }
 
         // 注册实例：真正写入仓库
@@ -454,7 +426,6 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.writeModel => 'writeModel',
         InstallTask.writeAdapter => 'writeAdapter',
         InstallTask.installWebui => 'installWebui',
-        InstallTask.napcatLogin => 'napcatLogin',
         InstallTask.writeNapcatConfig => 'writeNapcatConfig',
         InstallTask.registerInstance => null,
       };

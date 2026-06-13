@@ -51,7 +51,8 @@ class RuntimeScripts(
                 cmd to (instanceId?.let { "-$it" } ?: "")
             }
             "napcat" -> {
-                val cmd = "cd /root/napcat && bash /root/napcat/napcat.sh start ${'$'}BOT_QQ"
+              val botQq = args["botQq"].orEmpty()
+              val cmd = "cd /root/napcat && export BOT_QQ=${shellQuote(botQq)} && bash /root/napcat/napcat.sh start ${shellQuote(botQq)}"
                 cmd to ""
             }
             else -> error("Unknown process: $name")
