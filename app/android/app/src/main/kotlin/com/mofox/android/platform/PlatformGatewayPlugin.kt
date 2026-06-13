@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -32,6 +33,9 @@ class PlatformGatewayPlugin {
                     "requestIgnoreBatteryOptimizations" -> {
                         result.success(requestIgnoreBatteryOptimizations(activity))
                     }
+                    "getKeepaliveStatus" -> {
+                        result.success(getKeepaliveStatus(activity))
+                    }
                     "startForegroundService" -> {
                         val intent = Intent(ctx, MoFoxForegroundService::class.java)
                         MoFoxForegroundService.setKeepaliveEnabled(ctx, true)
@@ -57,6 +61,18 @@ class PlatformGatewayPlugin {
             data = Uri.parse("package:$packageName")
         }
         return activity.startActivitySafely(requestIntent)
+    }
+
+    private fun getKeepaliveStatus(activity: Activity): Map<String, Any> {
+        val packageName = activity.packageName
+        val powerManager = activity.getSystemService(Context.POWER_SERVICE) as PowerManager
+        return mapOf(
+            "notificationsGranted" to NotificationManagerCompat.from(activity).areNotificationsEnabled(),
+            "ignoringBatteryOptimizations" to powerManager.isIgnoringBatteryOptimizations(packageName),
+            "foregroundServiceEnabled" to MoFoxForegroundService.isKeepaliveEnabled(activity.applicationContext),
+            "bootReceiverDeclared" to true,
+            "vendorAutostartInspectable" to false,
+        )
     }
 
     private fun openVendorAutostart(activity: Activity) {

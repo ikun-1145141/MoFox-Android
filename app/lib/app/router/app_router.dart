@@ -7,6 +7,7 @@ import '../../features/instance/presentation/instance_detail_page.dart';
 import '../../features/oobe/application/oobe_status_provider.dart';
 import '../../features/oobe/presentation/oobe_page.dart';
 import '../../features/settings/presentation/about_page.dart';
+import '../../features/settings/presentation/keepalive_status_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 import '../../features/settings/presentation/third_party_licenses_page.dart';
 import '../../features/shell/presentation/shell_page.dart';
@@ -24,6 +25,7 @@ abstract final class AppRoute {
   static const String webview = '/webview';
   static const String terminal = '/terminal';
   static const String settings = '/settings';
+  static const String keepaliveStatus = '/settings/keepalive';
   static const String about = '/settings/about';
   static const String thirdPartyLicenses = '/settings/about/licenses';
   static const String wizard = '/wizard';
@@ -57,6 +59,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.about,
         builder: (_, __) => const AboutPage(),
+      ),
+      GoRoute(
+        path: AppRoute.keepaliveStatus,
+        builder: (_, __) => const KeepaliveStatusPage(),
       ),
       GoRoute(
         path: AppRoute.thirdPartyLicenses,

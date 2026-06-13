@@ -30,6 +30,13 @@ class PlatformGateway {
         false;
   }
 
+  Future<KeepaliveStatus> getKeepaliveStatus() async {
+    final result = await _channel.invokeMapMethod<String, Object?>(
+      'getKeepaliveStatus',
+    );
+    return KeepaliveStatus.fromMap(result ?? const <String, Object?>{});
+  }
+
   Future<void> startForegroundService() =>
       _channel.invokeMethod<void>('startForegroundService');
 
@@ -39,3 +46,29 @@ class PlatformGateway {
 
 final platformGatewayProvider =
     Provider<PlatformGateway>((_) => PlatformGateway._());
+
+class KeepaliveStatus {
+  const KeepaliveStatus({
+    required this.notificationsGranted,
+    required this.ignoringBatteryOptimizations,
+    required this.foregroundServiceEnabled,
+    required this.bootReceiverDeclared,
+    required this.vendorAutostartInspectable,
+  });
+
+  factory KeepaliveStatus.fromMap(Map<String, Object?> map) {
+    return KeepaliveStatus(
+      notificationsGranted: map['notificationsGranted'] == true,
+      ignoringBatteryOptimizations: map['ignoringBatteryOptimizations'] == true,
+      foregroundServiceEnabled: map['foregroundServiceEnabled'] == true,
+      bootReceiverDeclared: map['bootReceiverDeclared'] == true,
+      vendorAutostartInspectable: map['vendorAutostartInspectable'] == true,
+    );
+  }
+
+  final bool notificationsGranted;
+  final bool ignoringBatteryOptimizations;
+  final bool foregroundServiceEnabled;
+  final bool bootReceiverDeclared;
+  final bool vendorAutostartInspectable;
+}

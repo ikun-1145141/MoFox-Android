@@ -76,14 +76,15 @@ class SettingsPage extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 16),
-          const _Section(
+          _Section(
             title: '保活体检',
             children: <Widget>[
               _SettingTile(
-                leading: Icon(Icons.shield_outlined),
+                leading: const Icon(Icons.shield_outlined),
                 title: '查看保活状态',
                 subtitle: '前台服务 / 电池白名单 / 自启动',
-                trailing: Icon(Icons.chevron_right),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoute.keepaliveStatus),
               ),
             ],
           ),
