@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
+import '../domain/wizard_mirror_source.dart';
 import '../domain/wizard_step.dart';
 
 class WizardState {
@@ -130,7 +131,7 @@ class WizardNotifier extends Notifier<WizardState> {
   WizardState build() {
     ref.onDispose(() => _runner?.cancel());
     return WizardState(
-      step: WizardStep.eula,
+      step: WizardStep.mirrorCheck,
       draft: const InstanceDraft(),
       taskStatus: <InstallTask, InstallTaskStatus>{
         for (final t in InstallTask.values) t: InstallTaskStatus.pending,
@@ -443,7 +444,7 @@ class WizardNotifier extends Notifier<WizardState> {
       'instanceId': instanceId,
       'installDir': installDir,
       'repoPath': '$installDir/Neo-MoFox',
-      'repoUrl': _repoUrlForMirror(draft.mirrorId),
+      'repoUrl': wizardMirrorSourceFor(draft.mirrorId).repoUrl,
       'name': draft.name,
       'botQq': draft.botQq,
       'botNickname': draft.botNickname,
@@ -458,13 +459,6 @@ class WizardNotifier extends Notifier<WizardState> {
       'installWebui': draft.installWebui.toString(),
     };
   }
-
-  String _repoUrlForMirror(String mirrorId) => switch (mirrorId) {
-        'ghproxy' =>
-          'https://ghfast.top/https://github.com/MoFox-Studio/Neo-MoFox.git',
-        'gitee' => 'https://gitee.com/MoFox-Studio/Neo-MoFox.git',
-        _ => 'https://github.com/MoFox-Studio/Neo-MoFox.git',
-      };
 
   void _markStatus(InstallTask task, InstallTaskStatus status) {
     final next = <InstallTask, InstallTaskStatus>{...state.taskStatus};

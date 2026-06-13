@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/wizard_notifier.dart';
+import '../../domain/wizard_mirror_source.dart';
 
 /// 镜像源检测步骤。
 ///
@@ -21,28 +22,6 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
   bool _done = false;
   final List<_MirrorResult> _results = [];
 
-  /// 预定义镜像源列表。
-  static const List<_MirrorDef> _mirrors = [
-    _MirrorDef(
-      id: 'github',
-      name: 'GitHub (官方)',
-      baseUrl: 'https://github.com/MoFox-Studio/Neo-MoFox',
-      region: '全球',
-    ),
-    _MirrorDef(
-      id: 'ghproxy',
-      name: 'GHProxy 加速',
-      baseUrl: 'https://ghfast.top/https://github.com/MoFox-Studio/Neo-MoFox',
-      region: '中国大陆',
-    ),
-    _MirrorDef(
-      id: 'gitee',
-      name: 'Gitee 镜像',
-      baseUrl: 'https://gitee.com/MoFox-Studio/Neo-MoFox',
-      region: '中国大陆',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -57,7 +36,7 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
       _results.clear();
     });
 
-    for (final mirror in _mirrors) {
+    for (final mirror in wizardMirrorSources) {
       final result = await _probeMirror(mirror);
       if (!mounted) return;
       setState(() => _results.add(result));
@@ -79,7 +58,7 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
     });
   }
 
-  Future<_MirrorResult> _probeMirror(_MirrorDef mirror) async {
+  Future<_MirrorResult> _probeMirror(WizardMirrorSource mirror) async {
     final stopwatch = Stopwatch()..start();
     try {
       // 简单 HTTP HEAD 探测（实际实现需根据平台做网络请求）
@@ -162,10 +141,10 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
           // 镜像源列表
           Expanded(
             child: ListView.separated(
-              itemCount: _mirrors.length,
+              itemCount: wizardMirrorSources.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final mirror = _mirrors[index];
+                final mirror = wizardMirrorSources[index];
                 final result = index < _results.length ? _results[index] : null;
                 final isSelected = draft.mirrorId == mirror.id;
 
@@ -185,7 +164,7 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
           const SizedBox(height: 12),
           // 提示
           Text(
-            '镜像源用于下载 Neo-MoFox 仓库和依赖，选择延迟最低的源可加快安装速度。',
+            '镜像源用于获取 EULA、下载 Neo-MoFox 仓库和依赖，选择延迟最低的源可加快安装速度。',
             style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
@@ -195,22 +174,6 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
   }
 }
 
-// ─── 内部数据类 ────────────────────────────────────────────
-
-class _MirrorDef {
-  const _MirrorDef({
-    required this.id,
-    required this.name,
-    required this.baseUrl,
-    required this.region,
-  });
-
-  final String id;
-  final String name;
-  final String baseUrl;
-  final String region;
-}
-
 class _MirrorResult {
   const _MirrorResult({
     required this.mirror,
@@ -218,7 +181,7 @@ class _MirrorResult {
     required this.latencyMs,
   });
 
-  final _MirrorDef mirror;
+  final WizardMirrorSource mirror;
   final bool reachable;
   final int latencyMs;
 }
@@ -231,7 +194,7 @@ class _MirrorTile extends StatelessWidget {
     this.onTap,
   });
 
-  final _MirrorDef mirror;
+  final WizardMirrorSource mirror;
   final _MirrorResult? result;
   final bool isSelected;
   final VoidCallback? onTap;
@@ -276,7 +239,7 @@ class _MirrorTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${mirror.region} · ${mirror.baseUrl}',
+                      '${mirror.region} · ${mirror.displayUrl}',
                       style: text.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

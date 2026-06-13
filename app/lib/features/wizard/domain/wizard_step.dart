@@ -1,7 +1,7 @@
 /// Wizard 配置阶段（用户填表）。
 enum WizardStep {
-  eula, // 1. 查看并同意 EULA
-  mirrorCheck, // 2. 检测并选择镜像源
+  mirrorCheck, // 1. 检测并选择镜像源
+  eula, // 2. 查看并同意 EULA
   instanceInfo, // 3. 实例名称
   account, // 4. Bot QQ + 昵称 + 主人 QQ
   model, // 5. API Key + Base URL
@@ -34,7 +34,7 @@ enum WizardStep {
 
   String get description => switch (this) {
         WizardStep.eula => '阅读并同意 Neo-MoFox 用户许可协议',
-        WizardStep.mirrorCheck => '检测可用镜像源并选择最快下载源',
+        WizardStep.mirrorCheck => '检测可用镜像源，后续协议与仓库下载都会使用该源',
         WizardStep.instanceInfo => '为你的 Bot 实例命名',
         WizardStep.account => '配置 Bot 的 QQ 账号信息',
         WizardStep.model => '配置大语言模型 API',
@@ -109,7 +109,7 @@ class InstanceDraft {
 /// 注意：rootfs 解压、apt 依赖走 OOBE，不在这里。
 /// Wizard 里跑的都是「每个 bot 实例独占一份」的东西，路径前缀是 `/root/instances/<id>/...`。
 enum InstallTask {
-  cloneRepo, // git clone Neo-MoFox
+  cloneRepo, // 从所选镜像源 git clone Neo-MoFox
   syncDeps, // uv sync
   genConfig, // 生成默认 toml
   writeCore, // 写 core.toml
@@ -120,7 +120,7 @@ enum InstallTask {
   registerInstance; // 写实例到本地仓库
 
   String get label => switch (this) {
-        InstallTask.cloneRepo => '克隆 Neo-MoFox 仓库',
+        InstallTask.cloneRepo => '从镜像源克隆 Neo-MoFox',
         InstallTask.syncDeps => '同步 Python 依赖',
         InstallTask.genConfig => '生成默认配置',
         InstallTask.writeCore => '写入 core.toml',

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/wizard_notifier.dart';
+import '../../domain/wizard_mirror_source.dart';
 
 /// EULA 许可协议查看步骤。
 ///
@@ -25,6 +26,9 @@ class _EulaStepState extends ConsumerState<EulaStep> {
   }
 
   Future<_EulaDocument> _fetchEula() async {
+    final source = wizardMirrorSourceFor(
+      ref.read(wizardProvider).draft.mirrorId,
+    );
     final dio = Dio(
       BaseOptions(
         connectTimeout: const Duration(seconds: 8),
@@ -32,18 +36,16 @@ class _EulaStepState extends ConsumerState<EulaStep> {
         responseType: ResponseType.plain,
       ),
     );
-    for (final source in _eulaSources) {
-      try {
-        final response = await dio.get<String>(source.url);
-        final body = response.data?.trim();
-        if (response.statusCode == 200 && body != null && body.isNotEmpty) {
-          return _EulaDocument(source: source, content: body);
-        }
-      } catch (_) {
-        continue;
+    try {
+      final response = await dio.get<String>(source.eulaUrl);
+      final body = response.data?.trim();
+      if (response.statusCode == 200 && body != null && body.isNotEmpty) {
+        return _EulaDocument(source: source, content: body);
       }
+    } catch (_) {
+      throw StateError('无法从 ${source.name} 获取 EULA，请检查网络后重试。');
     }
-    throw StateError('无法从网络获取 EULA，请检查网络后重试。');
+    throw StateError('无法从 ${source.name} 获取 EULA，请检查网络后重试。');
   }
 
   void _retry() {
@@ -133,7 +135,6 @@ class _EulaStepState extends ConsumerState<EulaStep> {
       ),
     );
   }
-
 }
 
 class _EulaContent extends StatelessWidget {
@@ -159,7 +160,7 @@ class _EulaContent extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '来源：${document.source.name}',
+            '镜像源：${document.source.name}',
             style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 16),
@@ -222,24 +223,6 @@ class _EulaErrorView extends StatelessWidget {
 class _EulaDocument {
   const _EulaDocument({required this.source, required this.content});
 
-  final _EulaSource source;
+  final WizardMirrorSource source;
   final String content;
 }
-
-class _EulaSource {
-  const _EulaSource({required this.name, required this.url});
-
-  final String name;
-  final String url;
-}
-
-const List<_EulaSource> _eulaSources = <_EulaSource>[
-  _EulaSource(
-    name: 'Neo-MoFox-Launcher EULA',
-    url: 'https://raw.githubusercontent.com/MoFox-Studio/Neo-MoFox-Launcher/main/EULA.md',
-  ),
-  _EulaSource(
-    name: 'MoFox Android AGPL-3.0',
-    url: 'https://raw.githubusercontent.com/MoFox-Studio/MoFox-Android/main/LICENSE',
-  ),
-];
