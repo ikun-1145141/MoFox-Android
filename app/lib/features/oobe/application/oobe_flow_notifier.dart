@@ -41,6 +41,7 @@ class OobeFlowState {
 /// Notifier 这里只管「当前是谁 / 进度如何 / 失败回退」。
 class OobeFlowNotifier extends Notifier<OobeFlowState> {
   bool _runtimeInstallStarted = false;
+  bool _runtimeInstallCompleted = false;
   final List<String> _pendingLogs = <String>[];
   Timer? _logFlushTimer;
 
@@ -79,7 +80,9 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
   void jumpTo(OobeStep step) {
     state = OobeFlowState(
       current: step,
-      result: const OobeStepPending(),
+      result: step == OobeStep.extractRuntime && _runtimeInstallCompleted
+          ? const OobeStepSuccess()
+          : const OobeStepPending(),
       logs: state.logs,
     );
   }
@@ -90,6 +93,10 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
   /// 这三件全是「全局一次性」的事情。每次只跑一遍，靠 `_runtimeInstallStarted`
   /// 防止用户来回切步骤导致重入。失败后会把 flag 重置，按重试按钮可以再来一次。
   Future<void> runRuntimeInstall() async {
+    if (_runtimeInstallCompleted) {
+      state = state.copyWith(result: const OobeStepSuccess());
+      return;
+    }
     if (_runtimeInstallStarted) return;
     _runtimeInstallStarted = true;
 
@@ -130,6 +137,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       }
       _appendLog('[done] 运行环境就绪');
       _flushLogs();
+      _runtimeInstallCompleted = true;
       state = state.copyWith(result: const OobeStepSuccess());
     } on PlatformException catch (e) {
       final msg = e.message ?? '原生错误 (${e.code})';
