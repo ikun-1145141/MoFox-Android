@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/platform/platform_gateway.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../domain/oobe_step.dart';
 
@@ -92,6 +93,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
     if (_runtimeInstallStarted) return;
     _runtimeInstallStarted = true;
 
+    final platform = ref.read(platformGatewayProvider);
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
       result: const OobeStepRunning('解压运行环境…'),
@@ -104,6 +106,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
     });
 
     try {
+      await _setKeepScreenOn(platform, enabled: true);
       const tasks = <_RuntimeTask>[
         _RuntimeTask(name: 'extractRootfs', label: '解压 Debian 13 rootfs'),
         _RuntimeTask(name: 'installRuntimeDeps', label: '安装 apt 基础依赖'),
@@ -141,7 +144,19 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       state = state.copyWith(result: OobeStepFailure(e.toString()));
     } finally {
       await logSub.cancel();
+      await _setKeepScreenOn(platform, enabled: false);
       _flushLogs();
+    }
+  }
+
+  Future<void> _setKeepScreenOn(
+    PlatformGateway platform, {
+    required bool enabled,
+  }) async {
+    try {
+      await platform.setKeepScreenOn(enabled: enabled);
+    } catch (_) {
+      // Screen wakefulness is best-effort; runtime install should keep going.
     }
   }
 

@@ -42,6 +42,11 @@ class PlatformGateway {
 
   Future<void> stopForegroundService() =>
       _channel.invokeMethod<void>('stopForegroundService');
+
+  Future<void> setKeepScreenOn({required bool enabled}) =>
+      _channel.invokeMethod<void>('setKeepScreenOn', <String, Object>{
+        'enabled': enabled,
+      });
 }
 
 final platformGatewayProvider =

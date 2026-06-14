@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.core.app.NotificationManagerCompat
 import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
@@ -35,6 +36,10 @@ class PlatformGatewayPlugin {
                     }
                     "getKeepaliveStatus" -> {
                         result.success(getKeepaliveStatus(activity))
+                    }
+                    "setKeepScreenOn" -> {
+                        setKeepScreenOn(activity, call.argument<Boolean>("enabled") == true)
+                        result.success(null)
                     }
                     "startForegroundService" -> {
                         val intent = Intent(ctx, MoFoxForegroundService::class.java)
@@ -73,6 +78,16 @@ class PlatformGatewayPlugin {
             "bootReceiverDeclared" to true,
             "vendorAutostartInspectable" to false,
         )
+    }
+
+    private fun setKeepScreenOn(activity: Activity, enabled: Boolean) {
+        activity.runOnUiThread {
+            if (enabled) {
+                activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            } else {
+                activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
     }
 
     private fun openVendorAutostart(activity: Activity) {
