@@ -139,7 +139,8 @@ class RuntimeScripts(
                 """
                 apt-get update -y
                 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-                    python3 python3-pip python3-venv git curl ca-certificates xz-utils locales
+                  python3 python3-pip python3-venv git curl ca-certificates xz-utils locales \
+                  ffmpeg libgcrypt20 xvfb
                 sed -i 's/^# *\(zh_CN.UTF-8 UTF-8\)/\1/' /etc/locale.gen
                 sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
                 locale-gen zh_CN.UTF-8 en_US.UTF-8 || true
@@ -221,7 +222,6 @@ class RuntimeScripts(
             "installNapcat" -> loginBody(
                 """
               apt-get update -y
-              DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libgcrypt20
                 mkdir -p /root/napcat-installer /root/napcat
                 cd /root/napcat-installer
                 if [ ! -f /root/Napcat/opt/QQ/qq ]; then
