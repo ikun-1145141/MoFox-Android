@@ -130,6 +130,10 @@ class WizardNotifier extends Notifier<WizardState> {
   @override
   WizardState build() {
     ref.onDispose(() => _runner?.cancel());
+    return _initialState();
+  }
+
+  WizardState _initialState() {
     return WizardState(
       step: WizardStep.mirrorCheck,
       draft: const InstanceDraft(),
@@ -139,6 +143,12 @@ class WizardNotifier extends Notifier<WizardState> {
       taskProgress: 0,
       logs: const <String>[],
     );
+  }
+
+  void resetForNewInstance() {
+    _runner?.cancel();
+    _installRunning = false;
+    state = _initialState();
   }
 
   // ---- 表单操作 ----

@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
+import '../../../core/runtime/runtime_bridge.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
+import '../../wizard/application/wizard_notifier.dart';
 
 /// 管理页：实例卡片网格 + 新建 CTA。
 class DashboardPage extends ConsumerWidget {
@@ -28,7 +30,7 @@ class DashboardPage extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push(AppRoute.wizard),
+        onPressed: () => _openNewWizard(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('创建实例'),
       ),
@@ -110,11 +112,11 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget {
+class _EmptyState extends ConsumerWidget {
   const _EmptyState();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     return Center(
@@ -155,7 +157,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             FilledButton.icon(
-              onPressed: () => GoRouter.of(context).push(AppRoute.wizard),
+              onPressed: () => _openNewWizard(context, ref),
               icon: const Icon(Icons.add),
               label: const Text('创建第一个实例'),
             ),
@@ -200,12 +202,12 @@ class _InstanceGrid extends StatelessWidget {
   }
 }
 
-class _InstanceCard extends StatelessWidget {
+class _InstanceCard extends ConsumerWidget {
   const _InstanceCard({required this.instance});
   final Instance instance;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     return Material(
@@ -272,6 +274,15 @@ class _InstanceCard extends StatelessWidget {
                         color: _statusTextColor(instance, scheme),
                       ),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: '删除实例',
+                    onPressed: () => _confirmDeleteInstance(
+                      context,
+                      ref,
+                      instance,
+                    ),
+                    icon: const Icon(Icons.delete_outline),
                   ),
                 ],
               ),
@@ -347,6 +358,56 @@ class _InstanceCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+void _openNewWizard(BuildContext context, WidgetRef ref) {
+  ref.read(wizardProvider.notifier).resetForNewInstance();
+  context.push(AppRoute.wizard);
+}
+
+Future<void> _confirmDeleteInstance(
+  BuildContext context,
+  WidgetRef ref,
+  Instance instance,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('删除实例？'),
+      content: Text('将删除 ${instance.name} 的本地记录和实例目录。此操作无法撤销。'),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('删除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  final messenger = ScaffoldMessenger.of(context);
+  try {
+    final runtime = ref.read(runtimeBridgeProvider);
+    final result = await runtime.runInstallTask(
+      'deleteInstance',
+      args: <String, String>{'installDir': instance.installDir},
+    );
+    if (!result.success) {
+      throw StateError(result.error ?? '删除实例目录失败');
+    }
+    final repo = await ref.read(instanceRepositoryProvider.future);
+    await repo.remove(instance.id);
+    ref.invalidate(instancesProvider);
+    if (!context.mounted) return;
+    messenger.showSnackBar(const SnackBar(content: Text('实例已删除')));
+  } catch (error) {
+    if (!context.mounted) return;
+    messenger.showSnackBar(SnackBar(content: Text('删除失败：$error')));
   }
 }
 

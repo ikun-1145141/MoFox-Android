@@ -448,8 +448,8 @@ MoFox-Android/
 CI 阶段：
 
 - PR：`flutter analyze --no-fatal-infos` + `flutter test`，**不**构建 APK，**不**下 rootfs。
-- Push：三 ABI 各下载 `libxxx.so` + `debian-13-<abi>.tar.xz`，构建 debug APK 上传 artifact。
-- Nightly：每天 02:00 BJT 构建三 ABI debug + release，发布到 `nightly` 预发布 tag。
+- Push：当前支持 `arm64-v8a`，下载对应 `libxxx.so` + `debian-13-arm64.tar.xz`，构建 debug APK 上传 artifact。
+- Nightly：每天 02:00 BJT 构建 `arm64-v8a` debug APK，重建并发布到 `nightly` 预发布 tag；手动触发可选 debug / release。
 
 ---
 
@@ -458,7 +458,7 @@ CI 阶段：
 | 风险 | 缓解 |
 | --- | --- |
 | **proot 性能损失** | proot 在系统调用上有 30%~50% 的开销。Neo-MoFox 主要 IO bound，影响有限；NapCat 启动慢一次性。终端纯 IO，体感无差异。 |
-| **APK 体积** | jniLibs 三 ABI 加起来约 ~30 MB；rootfs `.tar.xz` 三 ABI 各约 ~86 MB，全打进 ~290 MB。**默认按 ABI 分包**（`splits.abi.enable = true`），单架构包 ~120 MB。 |
+| **APK 体积** | 当前只支持 `arm64-v8a`；jniLibs + rootfs 进入单架构包，后续扩展 ABI 时再按 ABI 分包。 |
 | **Debian 13 trixie 周期** | trixie 已于 2025-08 正式发布稳定版，LTS 至 2030（普通安全维护），Freexian ELTS 可延至 2033。LXC 上游每天 rebuild，`tools/build.py --fetch-rootfs` 自动拉最新时间戳。**架构上无需任何改动，仅替换 rootfs 产物。** |
 | **SELinux W^X 加严** | targetSdk≥28 默认禁止 `/data/data/<pkg>/files/**` 执行；使用 `nativeLibraryDir` 规避。未来 Android 版本若加严 jniLibs 也禁止执行，需要切到 `app_process` + `dex2oat` 思路。 |
 | **rootfs 升级** | 用户已经在 rootfs 内 `apt install` 装了一堆软件，App 升级时不能直接覆盖。策略：**rootfs 版本号不变就不动**；版本号变更时引导用户备份 `/root` + 重新解压。 |
@@ -477,7 +477,7 @@ CI 阶段：
   - [ ] proot 命令拼装与首次启动
   - [ ] WebView 主界面 + 终端 + 设置
   - [ ] 前台服务保活
-  - [ ] 三 ABI CI 构建
+  - [x] arm64-v8a CI 构建
 - **v0.2**
   - [ ] 镜像源一键切换
   - [ ] 崩溃日志导出

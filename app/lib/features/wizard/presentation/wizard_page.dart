@@ -35,9 +35,9 @@ class _WizardPageState extends ConsumerState<WizardPage> {
     super.initState();
     final instance = widget.resumeInstance;
     if (instance != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(wizardProvider.notifier).prepareResume(instance);
-      });
+      ref.read(wizardProvider.notifier).prepareResume(instance);
+    } else {
+      ref.read(wizardProvider.notifier).resetForNewInstance();
     }
   }
 
