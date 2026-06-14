@@ -374,12 +374,7 @@ class RuntimeScripts(
             progress_echo() { echo "[progress] $@"; }
             install_ubuntu
             change_ubuntu_source
-            # Debian ships /etc/resolv.conf as a relative symlink to
-            # ../run/systemd/resolve/stub-resolv.conf. Shell '>' follows the
-            # symlink and ENOENT-fails because run/systemd/... doesn't exist
-            # on host. Drop the symlink and write a plain file instead.
-            "${'$'}BB/rm" -f "${'$'}UBUNTU_PATH/etc/resolv.conf"
-            echo 'nameserver 8.8.8.8' > "${'$'}UBUNTU_PATH/etc/resolv.conf"
+            configure_ubuntu_dns
             setup_fake_sysdata
             echo "[runtime] rootfs ready at ${'$'}UBUNTU_PATH"
         """.trimIndent()
@@ -487,6 +482,7 @@ class RuntimeScripts(
             appendLine()
             appendLine(progressHelper())
             appendLine(changeUbuntuSourceFn())
+            appendLine(configureUbuntuDnsFn())
             appendLine(installUbuntuFn())
             appendLine(setupFakeSysdataFn())
             appendLine(loginUbuntuFn())
@@ -512,6 +508,36 @@ class RuntimeScripts(
         deb http://mirrors.huaweicloud.com/debian-security/ $UBUNTU_CODENAME-security main contrib non-free non-free-firmware
         deb http://mirrors.huaweicloud.com/debian/ $UBUNTU_CODENAME-backports main contrib non-free non-free-firmware
         MOFOX_SRC_EOF
+        }
+    """.trimIndent()
+
+    private fun configureUbuntuDnsFn(): String = """
+        configure_ubuntu_dns(){
+          mkdir -p "${'$'}UBUNTU_PATH/etc"
+          rm -f "${'$'}UBUNTU_PATH/etc/resolv.conf"
+          : > "${'$'}UBUNTU_PATH/etc/resolv.conf"
+
+          add_nameserver(){
+            DNS="${'$'}1"
+            case "${'$'}DNS" in
+              *.*.*.*|*:*) ;;
+              *) return 0 ;;
+            esac
+            if ! grep -qx "nameserver ${'$'}DNS" "${'$'}UBUNTU_PATH/etc/resolv.conf" 2>/dev/null; then
+              echo "nameserver ${'$'}DNS" >> "${'$'}UBUNTU_PATH/etc/resolv.conf"
+            fi
+          }
+
+          for PROP in net.dns1 net.dns2 net.dns3 net.dns4; do
+            VALUE=${'$'}(getprop "${'$'}PROP" 2>/dev/null || true)
+            [ -n "${'$'}VALUE" ] && add_nameserver "${'$'}VALUE"
+          done
+
+          add_nameserver 223.5.5.5
+          add_nameserver 119.29.29.29
+          add_nameserver 8.8.8.8
+          chmod 644 "${'$'}UBUNTU_PATH/etc/resolv.conf" 2>/dev/null || true
+          echo "[runtime] resolv.conf: ${'$'}(tr '\n' ';' < "${'$'}UBUNTU_PATH/etc/resolv.conf")"
         }
     """.trimIndent()
 
@@ -675,6 +701,7 @@ class RuntimeScripts(
             BIND_ARGS="${'$'}BIND_ARGS -b ${'$'}UBUNTU_PATH/proc/.sysctl_inotify_max_user_watches:/proc/sys/fs/inotify/max_user_watches"
           fi
           mkdir -p "${'$'}UBUNTU_PATH/storage/emulated" 2>/dev/null || true
+          configure_ubuntu_dns
           ANDROID_TZ=${'$'}(getprop persist.sys.timezone 2>/dev/null || echo "")
           if [ -z "${'$'}ANDROID_TZ" ]; then ANDROID_TZ="UTC"; fi
           exec "${'$'}BIN/libproot.so" \
