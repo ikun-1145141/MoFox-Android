@@ -130,7 +130,7 @@ python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 - **PR**：`flutter pub get` + `flutter analyze --no-fatal-infos` + `flutter test`，**不构建 APK，不下载运行时**。
 - **Push**：按当前支持的 `arm64-v8a` 拉取 jniLibs + rootfs，构建 debug APK 上传 artifact。
-- **Nightly**：每天北京时间 02:00 构建 `arm64-v8a` APK；手动触发可选 `debug` / `release`，定时构建会重建 `nightly` 预发布。
+- **Nightly**：每天北京时间 02:00 构建 `arm64-v8a` APK；手动触发可选 `debug` / `release`，定时和手动构建都会重建 `nightly` 预发布。
 
 ## 常见构建问题
 

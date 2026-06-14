@@ -449,7 +449,7 @@ CI 阶段：
 
 - PR：`flutter analyze --no-fatal-infos` + `flutter test`，**不**构建 APK，**不**下 rootfs。
 - Push：当前支持 `arm64-v8a`，下载对应 `libxxx.so` + `debian-13-arm64.tar.xz`，构建 debug APK 上传 artifact。
-- Nightly：每天 02:00 BJT 构建 `arm64-v8a` debug APK，重建并发布到 `nightly` 预发布 tag；手动触发可选 debug / release。
+- Nightly：每天 02:00 BJT 构建 `arm64-v8a` debug APK；手动触发可选 debug / release；定时和手动构建都会重建并发布到 `nightly` 预发布 tag。
 
 ---
 

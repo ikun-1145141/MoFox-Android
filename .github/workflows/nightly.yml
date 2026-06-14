@@ -97,7 +97,6 @@ jobs:
     name: Publish nightly release
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
     env:
       FLAVOR: ${{ inputs.flavor || 'debug' }}
 
