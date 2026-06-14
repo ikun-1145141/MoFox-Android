@@ -702,6 +702,12 @@ class RuntimeScripts(
           fi
           mkdir -p "${'$'}UBUNTU_PATH/storage/emulated" 2>/dev/null || true
           configure_ubuntu_dns
+          MOFOX_LOCALE_LANG=C.UTF-8
+          if [ -f "${'$'}UBUNTU_PATH/etc/default/locale" ] && \
+             [ -f "${'$'}UBUNTU_PATH/usr/lib/locale/locale-archive" ] && \
+             grep -q '^LANG=zh_CN.UTF-8' "${'$'}UBUNTU_PATH/etc/default/locale" 2>/dev/null; then
+            MOFOX_LOCALE_LANG=zh_CN.UTF-8
+          fi
           ANDROID_TZ=${'$'}(getprop persist.sys.timezone 2>/dev/null || echo "")
           if [ -z "${'$'}ANDROID_TZ" ]; then ANDROID_TZ="UTC"; fi
           exec "${'$'}BIN/libproot.so" \
@@ -721,8 +727,8 @@ class RuntimeScripts(
             /usr/bin/env -i \
               HOME=/root \
               TERM=xterm-256color \
-              LANG=zh_CN.UTF-8 \
-              LC_ALL=zh_CN.UTF-8 \
+              LANG="${'$'}MOFOX_LOCALE_LANG" \
+              LC_ALL="${'$'}MOFOX_LOCALE_LANG" \
               TZ="${'$'}ANDROID_TZ" \
               PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
               COMMAND_TO_EXEC="${'$'}COMMAND_TO_EXEC" \
