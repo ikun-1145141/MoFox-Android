@@ -115,12 +115,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete nightly --cleanup-tag --yes || true
+          set -euo pipefail
+
+          release_id="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/releases/tags/nightly" \
+            --jq '.id' 2>/dev/null || true)"
+          if [ -n "$release_id" ]; then
+            gh api \
+              --method DELETE \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+          fi
+
+          gh api \
+            --method DELETE \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/git/refs/tags/nightly" \
+            2>/dev/null || true
 
       - name: Publish nightly release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
+          target_commitish: ${{ github.sha }}
           name: "Nightly Build #${{ github.run_number }}"
           body: |
             自动构建的 nightly APK。
