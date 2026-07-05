@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/router/app_router.dart';
 import '../../dashboard/application/system_stats_provider.dart';
 import '../../dashboard/domain/system_stats.dart';
+import '../../settings/application/app_settings_provider.dart';
 
 class HomePage extends ConsumerWidget {
   const HomePage({super.key});
@@ -13,6 +14,9 @@ class HomePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final stats = ref.watch(systemStatsProvider);
+    final mainImageMode =
+        ref.watch(appSettingsProvider).valueOrNull?.mainImageMode ??
+            MainImageMode.expressive;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -48,7 +52,10 @@ class HomePage extends ConsumerWidget {
                     96,
                   ),
                   sliver: SliverToBoxAdapter(
-                    child: _SystemOverview(stats: stats),
+                    child: _SystemOverview(
+                      stats: stats,
+                      mainImageMode: mainImageMode,
+                    ),
                   ),
                 ),
               ],
@@ -61,9 +68,10 @@ class HomePage extends ConsumerWidget {
 }
 
 class _SystemOverview extends StatelessWidget {
-  const _SystemOverview({required this.stats});
+  const _SystemOverview({required this.stats, required this.mainImageMode});
 
   final AsyncValue<SystemStats> stats;
+  final MainImageMode mainImageMode;
 
   @override
   Widget build(BuildContext context) {
@@ -73,9 +81,87 @@ class _SystemOverview extends StatelessWidget {
       data: (value) => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
+          if (mainImageMode != MainImageMode.hidden) ...<Widget>[
+            _HomeHero(stats: value, mode: mainImageMode),
+            const SizedBox(height: 12),
+          ],
           _LoadCard(stats: value),
           const SizedBox(height: 12),
           _DeviceDetailsCard(stats: value),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeHero extends StatelessWidget {
+  const _HomeHero({required this.stats, required this.mode});
+
+  final SystemStats stats;
+  final MainImageMode mode;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final compact = mode == MainImageMode.compact;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      padding: EdgeInsets.all(compact ? 16 : 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            scheme.primaryContainer,
+            scheme.tertiaryContainer,
+          ],
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  stats.deviceName.isEmpty ? 'MoFox Runtime' : stats.deviceName,
+                  style: (compact ? text.titleLarge : text.headlineSmall)
+                      ?.copyWith(
+                    color: scheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                SizedBox(height: compact ? 6 : 10),
+                Text(
+                  'Android ${stats.androidVersion} · ${stats.supportedAbis}',
+                  style: text.bodyMedium?.copyWith(
+                    color: scheme.onPrimaryContainer.withOpacity(0.78),
+                  ),
+                  maxLines: compact ? 1 : 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          Container(
+            width: compact ? 44 : 60,
+            height: compact ? 44 : 60,
+            decoration: BoxDecoration(
+              color: scheme.primary.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              Icons.auto_awesome_outlined,
+              color: scheme.onPrimaryContainer,
+              size: compact ? 24 : 30,
+            ),
+          ),
         ],
       ),
     );

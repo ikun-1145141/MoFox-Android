@@ -11,29 +11,26 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(appSettingsProvider);
-    final terminalHapticsEnabled =
-        settings.valueOrNull?.terminalHapticsEnabled ?? true;
+    final appSettings = settings.valueOrNull;
+    final appearanceSubtitle = appSettings == null
+        ? '加载中'
+        : '${appSettings.themeMode.label} · ${appSettings.dynamicColorEnabled ? '动态取色' : '品牌色'} · ${appSettings.mainImageMode.label}';
+    final terminalHapticsEnabled = appSettings?.terminalHapticsEnabled ?? true;
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: <Widget>[
-          const _Section(
+          _Section(
             title: '外观',
             children: <Widget>[
               _SettingTile(
-                leading: Icon(Icons.palette_outlined),
-                title: '主题模式',
-                subtitle: '跟随系统',
-                trailing: Icon(Icons.chevron_right),
-              ),
-              _Divider(),
-              _SettingTile(
-                leading: Icon(Icons.format_color_fill_outlined),
-                title: '动态取色',
-                subtitle: '使用系统壁纸生成 Material You 颜色',
-                trailing: Switch(value: true, onChanged: null),
+                leading: const Icon(Icons.palette_outlined),
+                title: '外观与主题',
+                subtitle: appearanceSubtitle,
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoute.appearance),
               ),
             ],
           ),

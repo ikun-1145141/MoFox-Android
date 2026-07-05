@@ -75,7 +75,8 @@ abstract final class AppTheme {
           minimumSize: const Size(64, 48),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           shape: const StadiumBorder(),
-          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+          textStyle:
+              textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -126,7 +127,9 @@ abstract final class AppTheme {
 
 /// 包一层 [DynamicColorBuilder]，统一对外暴露 light / dark scheme。
 class DynamicTheme extends StatelessWidget {
-  const DynamicTheme({required this.builder, super.key});
+  const DynamicTheme(
+      {required this.useDynamicColor, required this.builder, super.key});
+  final bool useDynamicColor;
   final Widget Function(BuildContext, ColorScheme light, ColorScheme dark)
       builder;
 
@@ -134,15 +137,21 @@ class DynamicTheme extends StatelessWidget {
   Widget build(BuildContext context) {
     return DynamicColorBuilder(
       builder: (lightDynamic, darkDynamic) {
-        final light = lightDynamic?.harmonized() ??
-            ColorScheme.fromSeed(seedColor: BrandColors.seed);
-        final dark = darkDynamic?.harmonized() ??
-            ColorScheme.fromSeed(
-              seedColor: BrandColors.seed,
-              brightness: Brightness.dark,
-            );
+        final light = useDynamicColor
+            ? lightDynamic?.harmonized() ?? _seedScheme(Brightness.light)
+            : _seedScheme(Brightness.light);
+        final dark = useDynamicColor
+            ? darkDynamic?.harmonized() ?? _seedScheme(Brightness.dark)
+            : _seedScheme(Brightness.dark);
         return builder(context, light, dark);
       },
+    );
+  }
+
+  ColorScheme _seedScheme(Brightness brightness) {
+    return ColorScheme.fromSeed(
+      seedColor: BrandColors.seed,
+      brightness: brightness,
     );
   }
 }
