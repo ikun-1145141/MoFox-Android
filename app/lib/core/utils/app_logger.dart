@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
@@ -35,7 +34,6 @@ class _MoFoxLogFilter extends LogFilter {
 /// 多路输出：控制台 + 滚动日志文件。
 class _MoFoxLogOutput extends LogOutput {
   IOSink? _fileSink;
-  String? _currentLogPath;
 
   @override
   void output(OutputEvent event) {
@@ -61,7 +59,6 @@ class _MoFoxLogOutput extends LogOutput {
       if (!logDir.existsSync()) logDir.createSync(recursive: true);
       final today = DateTime.now().toIso8601String().substring(0, 10);
       final path = '${logDir.path}/mofox_$today.log';
-      _currentLogPath = path;
       _fileSink = File(path).openWrite(mode: FileMode.append);
       // 启动分隔
       _fileSink!.writeln('');

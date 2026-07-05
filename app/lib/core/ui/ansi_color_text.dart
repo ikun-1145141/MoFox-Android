@@ -113,6 +113,7 @@ class AnsiParser {
     var dim = false;
     var italic = false;
     var underline = false;
+    // ignore: unused_local_variable
     var blink = false;
     var reverse = false;
 
@@ -131,7 +132,7 @@ class AnsiParser {
         TextSpan(
           text: buffer.toString(),
           style: (baseStyle ?? const TextStyle()).copyWith(
-            color: effectiveFg,
+            color: dim ? effectiveFg.withValues(alpha: 0.5) : effectiveFg,
             backgroundColor: bg == const Color(0x00000000) ? null : bg,
             fontWeight: bold ? FontWeight.bold : null,
             fontStyle: italic ? FontStyle.italic : null,

@@ -206,7 +206,6 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     final session = ref.watch(terminalSessionProvider(_sessionSpec));
     final error = session.error;
     final terminalHapticsEnabled =
