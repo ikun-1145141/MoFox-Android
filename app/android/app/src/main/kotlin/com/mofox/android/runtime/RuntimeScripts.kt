@@ -481,6 +481,7 @@ class RuntimeScripts(
             appendLine("export UBUNTU_NAME=${shellQuote(installer.ubuntuTarballName.removeSuffix(".tar.xz"))}")
             appendLine()
             appendLine(progressHelper())
+            appendLine(colorBashrcFn())
             appendLine(changeUbuntuSourceFn())
             appendLine(configureUbuntuDnsFn())
             appendLine(installUbuntuFn())
@@ -493,6 +494,64 @@ class RuntimeScripts(
         progress_echo(){
           echo "[progress] $*"
           [ -n "${'$'}TMPDIR" ] && echo "$*" > "${'$'}TMPDIR/progress_des" 2>/dev/null || true
+        }
+    """.trimIndent()
+
+    /**
+     * 写入彩色 .bashrc 到 rootfs 的 /root/.bashrc。
+     *
+     * - 只在文件不存在或不含 MoFox 标记时写入，避免覆盖用户自定义。
+     * - 包含：ls/grep/diff 颜色别名、Ubuntu 风格彩色 PS1、LS_COLORS。
+     */
+    private fun colorBashrcFn(): String = """
+        _write_color_bashrc(){
+          BASHRC="${'$'}1"
+          if [ -f "${'$'}BASHRC" ] && grep -q 'MOFOX_COLOR_BASHRC' "${'$'}BASHRC" 2>/dev/null; then
+            return 0
+          fi
+          cat >> "${'$'}BASHRC" <<'MOFOX_COLOR_BASHRC_EOF'
+        #
+        # ~/.bashrc — MoFox 彩色终端配置 (MOFOX_COLOR_BASHRC)
+        #
+
+        # If not running interactively, don't do anything
+        [[ ${'$'}- != *i* ]] && return
+
+        # 1. 基础颜色别名
+        alias ls='ls --color=auto'
+        alias grep='grep --color=auto'
+        alias diff='diff --color=auto'
+        alias ip='ip --color=auto'
+
+        # 2. 彩色提示符 (Ubuntu 风格)
+        # 用户名绿色 @ 主机名 路径蓝色，root 用户名变红
+        if [ "${'$'}EUID" -eq 0 ]; then
+          export PS1='${'$'}{debian_chroot:+(${'$'}debian_chroot)}\[\033[01;31m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]# '
+        else
+          export PS1='${'$'}{debian_chroot:+(${'$'}debian_chroot)}\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+        fi
+
+        # 3. LS_COLORS：让 ls 的目录/链接/可执行文件等有区分色
+        export LS_COLORS=${'$'}{LS_COLORS:-}:'di=01;34:ln=01;36:ex=01;32:pi=33:so=01;35:bd=01;33:cd=01;33:*.tar=01;31:*.gz=01;31:*.xz=01;31:*.zip=01;31:*.7z=01;31:*.py=01;33:*.sh=01;33:*.json=01;33:*.toml=01;33:*.md=01;37:'
+
+        # 4. 常用别名
+        alias ll='ls -alF --color=auto'
+        alias la='ls -A --color=auto'
+        alias l='ls -CF --color=auto'
+        alias ..='cd ..'
+        alias ...='cd ../..'
+
+        # 5. 让 less 支持颜色
+        export LESS='-R'
+        export LESS_TERMCAP_mb=$'\033[01;31m'
+        export LESS_TERMCAP_md=$'\033[01;34m'
+        export LESS_TERMCAP_me=$'\033[0m'
+        export LESS_TERMCAP_se=$'\033[0m'
+        export LESS_TERMCAP_so=$'\033[01;44;37m'
+        export LESS_TERMCAP_ue=$'\033[0m'
+        export LESS_TERMCAP_us=$'\033[01;32m'
+
+        MOFOX_COLOR_BASHRC_EOF
         }
     """.trimIndent()
 
@@ -611,6 +670,7 @@ class RuntimeScripts(
               "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"
             fi
             mkdir -p "${'$'}UBUNTU_PATH/root"
+            _write_color_bashrc "${'$'}UBUNTU_PATH/root/.bashrc"
             echo 'export ANDROID_DATA=/home/' >> "${'$'}UBUNTU_PATH/root/.bashrc"
             if [ -d "${'$'}PERSISTENT_BACKUP/root_backup" ]; then
               echo "[restore] restoring /root from backup"

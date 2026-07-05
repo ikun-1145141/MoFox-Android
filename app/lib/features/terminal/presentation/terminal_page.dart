@@ -6,6 +6,36 @@ import 'package:xterm/xterm.dart';
 import '../../settings/application/app_settings_provider.dart';
 import '../application/terminal_session_provider.dart';
 
+/// 终端彩色主题：深色背景 + 标准 16 色 ANSI 调色板。
+///
+/// xterm 默认主题已经是彩色的，这里显式传一遍确保不受 Flutter 主题影响，
+/// 同时把背景色固定为接近终端惯用的深色，避免在浅色 Material 主题下看不清。
+const TerminalTheme _mofoxTerminalTheme = TerminalTheme(
+  cursor: Color(0xFFAEAFAD),
+  selection: Color(0x44AEAFAD),
+  foreground: Color(0xFFE0E0E0),
+  background: Color(0xFF1A1B26),
+  black: Color(0xFF000000),
+  red: Color(0xFFCD3131),
+  green: Color(0xFF0DBC79),
+  yellow: Color(0xFFE5C07B),
+  blue: Color(0xFF2472C8),
+  magenta: Color(0xFFBC3FBC),
+  cyan: Color(0xFF11A8CD),
+  white: Color(0xFFE5E5E5),
+  brightBlack: Color(0xFF666666),
+  brightRed: Color(0xFFF14C4C),
+  brightGreen: Color(0xFF23D18B),
+  brightYellow: Color(0xFFF5F543),
+  brightBlue: Color(0xFF3B8EEA),
+  brightMagenta: Color(0xFFD670D6),
+  brightCyan: Color(0xFF29B8DB),
+  brightWhite: Color(0xFFFFFFFF),
+  searchHitBackground: Color(0xFFFFFF2B),
+  searchHitBackgroundCurrent: Color(0xFF31FF26),
+  searchHitForeground: Color(0xFF000000),
+);
+
 class TerminalPage extends ConsumerStatefulWidget {
   const TerminalPage({
     super.key,
@@ -209,10 +239,12 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
               ),
             Expanded(
               child: DecoratedBox(
-                decoration: BoxDecoration(color: scheme.surface),
+                decoration:
+                    BoxDecoration(color: _mofoxTerminalTheme.background),
                 child: TerminalView(
                   session.terminal,
                   controller: session.controller,
+                  theme: _mofoxTerminalTheme,
                   autofocus: true,
                   padding: const EdgeInsets.all(12),
                 ),
