@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/utils/app_logger.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
 import '../domain/wizard_mirror_source.dart';
@@ -146,6 +147,7 @@ class WizardNotifier extends Notifier<WizardState> {
   }
 
   void resetForNewInstance() {
+    appLogger.i('wizard: resetForNewInstance');
     _runner?.cancel();
     _installRunning = false;
     state = _initialState();
@@ -178,6 +180,7 @@ class WizardNotifier extends Notifier<WizardState> {
   // ---- 安装执行 ----
 
   void prepareResume(Instance instance) {
+    appLogger.i('wizard: prepareResume instance=${instance.id} name=${instance.name} dir=${instance.installDir}');
     state = state.copyWith(
       step: WizardStep.install,
       draft: state.draft.copyWith(
@@ -212,6 +215,7 @@ class WizardNotifier extends Notifier<WizardState> {
   /// 启动安装流程。原生层负责 rootfs/proot/脚本执行，Flutter 负责状态编排。
   Future<void> startInstall({bool resume = false}) async {
     if (_installRunning) return;
+    appLogger.i('wizard: startInstall resume=$resume');
     _runner?.cancel();
     _installRunning = true;
     final runtime = ref.read(runtimeBridgeProvider);
@@ -279,6 +283,7 @@ class WizardNotifier extends Notifier<WizardState> {
 
         _markStatus(task, InstallTaskStatus.running);
         _appendLog('[run] ${task.label}…');
+        appLogger.i('wizard: run task=${task.name} native=${_nativeTaskName(task)}');
 
         final nativeTask = _nativeTaskName(task);
         if (nativeTask != null) {
@@ -295,6 +300,7 @@ class WizardNotifier extends Notifier<WizardState> {
           if (!result.success) {
             _markStatus(task, InstallTaskStatus.failed);
             final message = result.error ?? '${task.label} 执行失败';
+            appLogger.e('wizard: task=${task.name} failed: $message');
             await _persistInstallFailure(
               instanceId: instanceId,
               installDir: installDir,
@@ -332,7 +338,9 @@ class WizardNotifier extends Notifier<WizardState> {
 
       state = state.copyWith(installFinished: true);
       _appendLog('[done] 安装全部完成');
+      appLogger.i('wizard: install finished instanceId=$instanceId');
     } catch (error, stack) {
+      appLogger.e('wizard: install exception', error: error, stackTrace: stack);
       // 任意一步抛出未处理异常（典型例子：原生侧 PlatformException——比如 bootstrap zip
       // 没打进 APK，context.assets.open 抛 FileNotFoundException）。如果不在这里 catch，
       // state 会永远停在 running + taskProgress: 0.35，UI 看上去就是"卡在 3% 不动"。

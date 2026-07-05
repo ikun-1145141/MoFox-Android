@@ -45,6 +45,7 @@ dependencies:
   device_info_plus: ^10.1.0
   dynamic_color: ^1.7.0
   google_fonts: ^6.2.1
+  share_plus: ^10.0.0
 
   # 日志
   logger: ^2.3.0

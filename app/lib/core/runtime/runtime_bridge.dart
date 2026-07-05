@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/dashboard/domain/system_stats.dart';
+import '../utils/app_logger.dart';
 
 /// 与原生 `RuntimeBridgePlugin` 对话的方法通道单例。
 ///
@@ -36,11 +37,22 @@ class RuntimeBridge {
     String task, {
     Map<String, String> args = const <String, String>{},
   }) async {
-    final result = await _channel.invokeMethod<Map<Object?, Object?>>(
-      'runInstallTask',
-      <String, Object>{'task': task, 'args': args},
-    );
-    return RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
+    appLogger.i('runtime: runInstallTask "$task" args=${args.keys.toList()}');
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        'runInstallTask',
+        <String, Object>{'task': task, 'args': args},
+      );
+      final parsed = RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
+      appLogger.i('runtime: runInstallTask "$task" success=${parsed.success} logs=${parsed.logs.length}');
+      return parsed;
+    } on PlatformException catch (e) {
+      appLogger.e('runtime: runInstallTask "$task" PlatformException code=${e.code} msg=${e.message}', error: e);
+      rethrow;
+    } catch (e, s) {
+      appLogger.e('runtime: runInstallTask "$task" error', error: e, stackTrace: s);
+      rethrow;
+    }
   }
 
   /// 原生安装任务实时日志（按 task 过滤）。
@@ -81,25 +93,32 @@ class RuntimeBridge {
   Future<void> startProcess(
     String name, {
     Map<String, String> args = const <String, String>{},
-  }) =>
-      _channel.invokeMethod<void>(
-        'startProcess',
-        <String, Object>{'name': name, 'args': args},
-      );
+  }) {
+    appLogger.i('runtime: startProcess "$name" args=${args.keys.toList()}');
+    return _channel.invokeMethod<void>(
+      'startProcess',
+      <String, Object>{'name': name, 'args': args},
+    );
+  }
 
-  Future<void> stopProcess(String name) => _channel.invokeMethod<void>(
-        'stopProcess',
-        <String, Object>{'name': name},
-      );
+  Future<void> stopProcess(String name) {
+    appLogger.i('runtime: stopProcess "$name"');
+    return _channel.invokeMethod<void>(
+      'stopProcess',
+      <String, Object>{'name': name},
+    );
+  }
 
   Future<void> restartProcess(
     String name, {
     Map<String, String> args = const <String, String>{},
-  }) =>
-      _channel.invokeMethod<void>(
-        'restartProcess',
-        <String, Object>{'name': name, 'args': args},
-      );
+  }) {
+    appLogger.i('runtime: restartProcess "$name" args=${args.keys.toList()}');
+    return _channel.invokeMethod<void>(
+      'restartProcess',
+      <String, Object>{'name': name, 'args': args},
+    );
+  }
 
   /// 拉一份当前各托管进程的状态快照。
   Future<Map<String, String>> processStatus() async {
@@ -163,18 +182,26 @@ class RuntimeBridge {
   /// - 实例卡片「在 bot 目录开终端」→ `cwd = instance.repoPath`
   /// - 实例卡片「在 instance 根目录开终端」→ `cwd = instance.installDir`
   Future<String> openShell({String cwd = '/root'}) async {
-    final id = await _channel.invokeMethod<String>(
-      'openShell',
-      <String, Object>{'cwd': cwd},
-    );
-    return id ?? '';
+    appLogger.i('runtime: openShell cwd="$cwd"');
+    try {
+      final id = await _channel.invokeMethod<String>(
+        'openShell',
+        <String, Object>{'cwd': cwd},
+      );
+      appLogger.d('runtime: openShell -> sessionId=$id');
+      return id ?? '';
+    } on PlatformException catch (e) {
+      appLogger.e('runtime: openShell PlatformException code=${e.code} msg=${e.message}', error: e);
+      rethrow;
+    }
   }
 
-  Future<void> writeShell(String sessionId, String data) =>
-      _channel.invokeMethod<void>('writeShell', <String, Object>{
-        'sessionId': sessionId,
-        'data': data,
-      });
+  Future<void> writeShell(String sessionId, String data) {
+    return _channel.invokeMethod<void>('writeShell', <String, Object>{
+      'sessionId': sessionId,
+      'data': data,
+    });
+  }
 
   /// 调整 native PTY 尺寸，给 nano/top 这类全屏程序同步窗口大小。
   Future<void> resizeShell(String sessionId, int cols, int rows) =>
@@ -184,10 +211,13 @@ class RuntimeBridge {
         'rows': rows,
       });
 
-  Future<void> closeShell(String sessionId) => _channel.invokeMethod<void>(
-        'closeShell',
-        <String, Object>{'sessionId': sessionId},
-      );
+  Future<void> closeShell(String sessionId) {
+    appLogger.i('runtime: closeShell sessionId="$sessionId"');
+    return _channel.invokeMethod<void>(
+      'closeShell',
+      <String, Object>{'sessionId': sessionId},
+    );
+  }
 }
 
 bool _isBootstrapEvent(Object? event) {

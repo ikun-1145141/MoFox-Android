@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/platform/platform_gateway.dart';
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/utils/app_logger.dart';
 import '../domain/oobe_step.dart';
 
 class OobeFlowState {
@@ -99,6 +100,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
     }
     if (_runtimeInstallStarted) return;
     _runtimeInstallStarted = true;
+    appLogger.i('oobe: runRuntimeInstall start');
 
     final platform = ref.read(platformGatewayProvider);
     final runtime = ref.read(runtimeBridgeProvider);
@@ -122,9 +124,11 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       for (final task in tasks) {
         state = state.copyWith(result: OobeStepRunning(task.label));
         _appendLog('[run] ${task.label}…');
+        appLogger.i('oobe: run task=${task.name}');
         final result = await runtime.runInstallTask(task.name);
         if (!result.success) {
           final msg = result.error ?? '${task.label} 失败';
+          appLogger.e('oobe: task=${task.name} failed: $msg');
           _appendLog('[error] $msg');
           _flushLogs();
           _runtimeInstallStarted = false;
@@ -138,14 +142,17 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       _appendLog('[done] 运行环境就绪');
       _flushLogs();
       _runtimeInstallCompleted = true;
+      appLogger.i('oobe: runtime install completed');
       state = state.copyWith(result: const OobeStepSuccess());
     } on PlatformException catch (e) {
       final msg = e.message ?? '原生错误 (${e.code})';
+      appLogger.e('oobe: PlatformException', error: e);
       _appendLog('[error] $msg');
       _flushLogs();
       _runtimeInstallStarted = false;
       state = state.copyWith(result: OobeStepFailure(msg));
     } catch (e) {
+      appLogger.e('oobe: runtime install error', error: e);
       _appendLog('[error] $e');
       _flushLogs();
       _runtimeInstallStarted = false;
