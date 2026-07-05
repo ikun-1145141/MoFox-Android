@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/ui/ansi_color_text.dart';
 import '../../application/oobe_flow_notifier.dart';
 import '../../domain/oobe_step.dart';
 
@@ -193,7 +194,7 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
                   : ListView.builder(
                       controller: _logsScroll,
                       itemCount: flow.logs.length,
-                      itemBuilder: (context, index) => Text(
+                      itemBuilder: (context, index) => AnsiColorText(
                         flow.logs[index],
                         style: _logTextStyle(scheme),
                         maxLines: 3,

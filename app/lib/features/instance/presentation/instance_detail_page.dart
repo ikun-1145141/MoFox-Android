@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/ui/ansi_color_text.dart';
 import '../../dashboard/application/process_console_provider.dart';
 import '../application/instance_repository.dart';
 import '../domain/instance.dart';
@@ -434,7 +435,6 @@ class _ProcessLogPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final style = Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: const Color(0xFFE6EDF3),
           fontFamily: 'monospace',
           height: 1.35,
         );
@@ -448,7 +448,7 @@ class _ProcessLogPane extends StatelessWidget {
             )
           : ListView.builder(
               itemCount: lines.length,
-              itemBuilder: (context, index) => Text(
+              itemBuilder: (context, index) => AnsiColorText(
                 lines[index],
                 style: style,
               ),

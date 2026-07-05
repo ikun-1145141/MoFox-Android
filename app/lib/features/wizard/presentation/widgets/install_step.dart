@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/router/app_router.dart';
+import '../../../../core/ui/ansi_color_text.dart';
 import '../../application/wizard_notifier.dart';
 import '../../domain/wizard_step.dart';
 
@@ -199,7 +200,8 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                                     : ListView.builder(
                                         controller: _logsScroll,
                                         itemCount: state.logs.length,
-                                        itemBuilder: (context, index) => Text(
+                                        itemBuilder: (context, index) =>
+                                            AnsiColorText(
                                           state.logs[index],
                                           style: _logTextStyle,
                                           maxLines: 3,

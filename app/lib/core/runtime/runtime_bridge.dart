@@ -239,14 +239,12 @@ class ProcessEvent {
 }
 
 String _cleanInstallLogLine(String line) {
+  // 保留 ANSI 颜色转义码（ESC 0x1B + [），前端用 AnsiColorText 渲染。
+  // 只剥除其他控制字符（排除 0x1B）。
   return line
-      .replaceAll(_ansiEscapePattern, '')
       .replaceAll(_controlCharsPattern, '')
       .trimRight();
 }
 
-final RegExp _ansiEscapePattern = RegExp(
-  '[\x1B\x9B](?:[@-Z\\-_]|\\[[0-?]*[ -/]*[@-~]|\\][^\x07]*(?:\x07|\x1B\\\\))',
-);
-
-final RegExp _controlCharsPattern = RegExp('[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
+final RegExp _controlCharsPattern =
+    RegExp('[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F\x7F]');
