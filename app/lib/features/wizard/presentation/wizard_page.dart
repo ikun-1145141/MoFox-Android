@@ -34,11 +34,17 @@ class _WizardPageState extends ConsumerState<WizardPage> {
   void initState() {
     super.initState();
     final instance = widget.resumeInstance;
-    if (instance != null) {
-      ref.read(wizardProvider.notifier).prepareResume(instance);
-    } else {
-      ref.read(wizardProvider.notifier).resetForNewInstance();
-    }
+    // 不能在 widget 生命周期内直接修改 provider，用 microtask 延迟到
+    // 当前 build 帧结束后执行，避免 Riverpod 抛 "tried to modify a
+    // provider in a widget life-cycle" 错误。
+    Future.microtask(() {
+      if (!mounted) return;
+      if (instance != null) {
+        ref.read(wizardProvider.notifier).prepareResume(instance);
+      } else {
+        ref.read(wizardProvider.notifier).resetForNewInstance();
+      }
+    });
   }
 
   @override
