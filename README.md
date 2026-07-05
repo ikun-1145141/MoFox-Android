@@ -1,8 +1,21 @@
 # MoFox-Android
 
-[Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安卓原生外壳 App。**WebView 套自家 WebUI** 做主界面，原生层只负责 OOBE、内嵌 Linux 运行时、终端、保活与系统级设置。
+[Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安卓原生外壳 App。自带完整 Linux 运行时（proot + Debian 13），不依赖 Termux，安装即可用。原生层负责 OOBE、实例管理、内嵌运行时、终端、保活与系统级设置。
 
 > 完整架构请看 [ARCHITECTURE.md](ARCHITECTURE.md)。
+
+## 功能
+
+- **OOBE 一次性引导**：欢迎 → 系统体检 → 解压 rootfs → 保活授权，四步完成。
+- **实例管理**：支持创建多个 Bot 实例，每个实例独立目录（`/root/instances/<id>/`），可启停、续装、查看日志。
+- **实例创建向导**：镜像源检测 → EULA → 实例信息 → 账号 → 模型 → 网络 → 摘要 → 安装，八步表单 + 彩色安装日志。
+- **首页概览**：CPU / 内存 / 存储使用率，主图模式（沉浸 / 紧凑 / 隐藏）。
+- **彩色终端**：xterm.dart + flutter_pty 直连 Debian bash，固定深色主题 + .bashrc 注入彩色 prompt。
+- **WebUI 壳**：Neo-MoFox WebUI 与 NapCat 控制台切换。
+- **外观设置**：主题模式（跟随系统 / 浅色 / 深色）、Android 12+ 动态取色、主图模式。
+- **保活体检**：通知权限、电池白名单、前台服务、开机自启、厂商自启动一键检查与跳转。
+- **App 日志**：双路输出（控制台 + 文件），支持导出分享，方便排查问题。
+- **NapCat 扫码登录**：实例详情页内弹出二维码，QQ 扫码即登录。
 
 ## 仓库结构
 
@@ -12,11 +25,16 @@ MoFox-Android/
 ├── tools/build.py         # 构建脚本
 └── app/                   # Flutter 工程
     ├── lib/               # Dart 源码（Clean Architecture × Feature-First）
+    │   ├── main.dart      # 入口（runZonedGuarded + 日志）
+    │   ├── app/           # MaterialApp.router + GoRouter
+    │   ├── core/          # runtime / platform / theme / ui / utils
+    │   └── features/      # oobe / wizard / home / dashboard / instance / shell / webview / terminal / settings
     ├── android/           # 原生 Android 工程（Kotlin + jniLibs）
     │   └── app/src/main/jniLibs/<abi>/    # 原生二进制（不入仓）
     ├── assets/
-    │   ├── rootfs/        # Ubuntu 26.04 rootfs（不入仓）
+    │   ├── rootfs/        # Debian 13 (trixie) rootfs（不入仓）
     │   ├── scripts/       # 注入到 rootfs 的初始化脚本
+    │   ├── legal/         # EULA / 隐私协议
     │   └── icons/
     └── test/              # 单元 / Widget / 集成测试
 ```
@@ -93,16 +111,16 @@ app/android/app/src/main/jniLibs/
 └── x86_64/...
 ```
 
-### 2. Ubuntu 26.04 rootfs
+### 2. Debian 13 (trixie) rootfs
 
 ```
 app/assets/rootfs/
-├── ubuntu-26.04-arm64-v8a.tar.xz
-├── ubuntu-26.04-armeabi-v7a.tar.xz
-└── ubuntu-26.04-x86_64.tar.xz
+├── debian-13-arm64-v8a.tar.xz
+├── debian-13-armeabi-v7a.tar.xz
+└── debian-13-x86_64.tar.xz
 ```
 
-> Ubuntu 26.04 LTS 正式发布前，初期使用 24.04 LTS (noble) 兜底，**文件名保持 `ubuntu-26.04-*` 占位**，正式发布后仅替换产物，架构无需改动。
+> rootfs 来源：[LXC images](https://images.linuxcontainers.org/) 的 `debian/trixie/<arch>/default/` 每日构建。`python tools/build.py --fetch-rootfs` 会自动列目录抓最新时间戳并下载，按优先级走清华 → BFSU → 上游官方三个镜像。
 
 ### 本地手动准备运行时资产
 
@@ -118,7 +136,7 @@ New-Item -ItemType Directory -Force -Path $jniDir | Out-Null
 
 # 2. 下载 rootfs
 New-Item -ItemType Directory -Force -Path "app/assets/rootfs" | Out-Null
-# Invoke-WebRequest -Uri "<release-url>/ubuntu-26.04-arm64-v8a.tar.xz" -OutFile "app/assets/rootfs/ubuntu-26.04-arm64-v8a.tar.xz"
+# Invoke-WebRequest -Uri "<release-url>/debian-13-arm64-v8a.tar.xz" -OutFile "app/assets/rootfs/debian-13-arm64-v8a.tar.xz"
 
 # 3. 构建
 python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
@@ -134,7 +152,7 @@ python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 ## 常见构建问题
 
-- `Missing runtime asset: jniLibs/<abi>/libproot.so` 或 `assets/rootfs/ubuntu-*.tar.xz`：本地 APK 没带运行时资产。按上面"本地手动准备运行时资产"准备齐全后重建。
+- `Missing runtime asset: jniLibs/<abi>/libproot.so` 或 `assets/rootfs/debian-13-*.tar.xz`：本地 APK 没带运行时资产。按上面"本地手动准备运行时资产"准备齐全后重建。
 - 真机首启卡在 `安装系统依赖` / `apt install`：通常是设备网络或镜像源问题。OOBE 内置镜像源切换（清华 / 中科大 / 阿里 / 官方），可在向导日志页或设置内切换重试。
 - 真机首启卡在 `安装 NapCat`：NapCat 走 GitHub 原始链接，国内可能慢。OOBE 内置多个 GitHub 加速代理自动测延迟。
 - `找不到 flutter`：确认 Flutter 已加入 `PATH`，或安装 / 配置 `fvm` 的默认版本。脚本也会尝试 `~/fvm/default/bin/flutter(.bat)`。
@@ -142,4 +160,4 @@ python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 ## 许可
 
-本项目采用 GNU Affero General Public License v3.0（AGPL-3.0），详见 [LICENSE](LICENSE)。内嵌的 proot / busybox / bash / sudo / talloc 等原生二进制沿用其上游 LICENSE（GPLv2/v3），Ubuntu 26.04 rootfs 沿用 Canonical 各组件原 LICENSE。
+本项目采用 GNU Affero General Public License v3.0（AGPL-3.0），详见 [LICENSE](LICENSE)。内嵌的 proot / busybox / bash / sudo / talloc 等原生二进制沿用其上游 LICENSE（GPLv2/v3），Debian 13 (trixie) rootfs 沿用 Debian 各组件原 LICENSE。
