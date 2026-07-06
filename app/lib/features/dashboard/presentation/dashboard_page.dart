@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/ui/explosion_overlay.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
 import '../../wizard/application/wizard_notifier.dart';
@@ -202,158 +204,252 @@ class _InstanceGrid extends StatelessWidget {
   }
 }
 
-class _InstanceCard extends ConsumerWidget {
+class _InstanceCard extends ConsumerStatefulWidget {
   const _InstanceCard({required this.instance});
   final Instance instance;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_InstanceCard> createState() => _InstanceCardState();
+}
+
+class _InstanceCardState extends ConsumerState<_InstanceCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _removeController;
+
+  final GlobalKey cardKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _removeController = AnimationController(
+      duration: const Duration(milliseconds: 350),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _removeController.dispose();
+    super.dispose();
+  }
+
+  /// 触发爆炸动画 + 震动，动画结束后执行真正的删除逻辑。
+  Future<void> _animateAndDelete() async {
+    final renderBox = cardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !mounted) {
+      // 无法获取位置，直接删除
+      _confirmDeleteInstance(context, ref, widget.instance);
+      return;
+    }
+
+    final cardRect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
+    final scheme = Theme.of(context).colorScheme;
+
+    // 震动反馈
+    HapticFeedback.heavyImpact();
+
+    // 粒子爆炸 overlay
+    ExplosionOverlay.show(
+      context,
+      rect: cardRect,
+      color: scheme.primary,
+    );
+
+    // 卡片缩小消失动画
+    await _removeController.forward();
+
+    if (!mounted) return;
+    _confirmDeleteInstance(context, ref, widget.instance);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
+    final instance = widget.instance;
+
+    return AnimatedBuilder(
+      animation: _removeController,
+      builder: (_, child) {
+        final t = _removeController.value;
+        return Opacity(
+          opacity: 1 - t,
+          child: Transform.scale(
+            scale: 1 - t * 0.3,
+            child: child,
+          ),
+        );
+      },
+      child: Material(
+        key: cardKey,
+        color: scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push(AppRoute.instanceDetail, extra: instance),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.smart_toy_outlined,
-                      color: scheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          instance.name,
-                          style: text.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: scheme.onSurface,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'QQ ${instance.botQq}',
-                          style: text.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _statusColor(instance, scheme),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      _statusLabel(instance),
-                      style: text.labelSmall?.copyWith(
-                        color: _statusTextColor(instance, scheme),
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: '删除实例',
-                    onPressed: () => _confirmDeleteInstance(
-                      context,
-                      ref,
-                      instance,
-                    ),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              if (instance.installStatus != InstanceInstallStatus.installed &&
-                  instance.installError != null) ...<Widget>[
-                Text(
-                  instance.installError!,
-                  style: text.bodySmall?.copyWith(color: scheme.error),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-              ],
-              Wrap(
-                spacing: 16,
-                runSpacing: 6,
-                children: <Widget>[
-                  _MetaItem(
-                    icon: Icons.cloud_outlined,
-                    label: 'WS :${instance.wsPort}',
-                  ),
-                  _MetaItem(icon: Icons.flag_outlined, label: instance.channel),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.end,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => context.push(AppRoute.instanceDetail, extra: instance),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
                   children: <Widget>[
-                    IconButton.filledTonal(
-                      tooltip: '在 Bot 目录打开终端',
-                      onPressed: () => context.push(
-                        AppRoute.terminal,
-                        extra: <String, String>{
-                          'cwd': instance.repoPath,
-                          'title': '${instance.name} - Bot 目录',
-                        },
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      icon: const Icon(Icons.terminal, size: 18),
+                      child: Icon(
+                        Icons.smart_toy_outlined,
+                        color: scheme.onPrimaryContainer,
+                      ),
                     ),
-                    FilledButton.tonalIcon(
-                      onPressed: instance.installStatus ==
-                              InstanceInstallStatus.installed
-                          ? () => context.push(
-                                AppRoute.instanceDetail,
-                                extra: instance,
-                              )
-                          : () =>
-                              context.push(AppRoute.wizard, extra: instance),
-                      icon: Icon(
-                        instance.installStatus ==
-                                InstanceInstallStatus.installed
-                            ? Icons.play_arrow
-                            : Icons.download_done_outlined,
-                        size: 18,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            instance.name,
+                            style: text.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: scheme.onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'QQ ${instance.botQq}',
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
                       ),
-                      label: Text(
-                        instance.installStatus ==
-                                InstanceInstallStatus.installed
-                            ? '启动'
-                            : '继续安装',
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
                       ),
+                      decoration: BoxDecoration(
+                        color: _statusColor(instance, scheme),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        _statusLabel(instance),
+                        style: text.labelSmall?.copyWith(
+                          color: _statusTextColor(instance, scheme),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '删除实例',
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('删除实例？'),
+                            content: Text(
+                              '将删除 ${instance.name} 的本地记录和实例目录。此操作无法撤销。',
+                            ),
+                            actions: <Widget>[
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(false),
+                                child: const Text('取消'),
+                              ),
+                              FilledButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(true),
+                                child: const Text('删除'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true && mounted) {
+                          _animateAndDelete();
+                        }
+                      },
+                      icon: const Icon(Icons.delete_outline),
                     ),
                   ],
                 ),
-              ),
-            ],
+                const Spacer(),
+                if (instance.installStatus != InstanceInstallStatus.installed &&
+                    instance.installError != null) ...<Widget>[
+                  Text(
+                    instance.installError!,
+                    style: text.bodySmall?.copyWith(color: scheme.error),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 6,
+                  children: <Widget>[
+                    _MetaItem(
+                      icon: Icons.cloud_outlined,
+                      label: 'WS :${instance.wsPort}',
+                    ),
+                    _MetaItem(
+                      icon: Icons.flag_outlined,
+                      label: instance.channel,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: <Widget>[
+                      IconButton.filledTonal(
+                        tooltip: '在 Bot 目录打开终端',
+                        onPressed: () => context.push(
+                          AppRoute.terminal,
+                          extra: <String, String>{
+                            'cwd': instance.repoPath,
+                            'title': '${instance.name} - Bot 目录',
+                          },
+                        ),
+                        icon: const Icon(Icons.terminal, size: 18),
+                      ),
+                      FilledButton.tonalIcon(
+                        onPressed: instance.installStatus ==
+                                InstanceInstallStatus.installed
+                            ? () => context.push(
+                                  AppRoute.instanceDetail,
+                                  extra: instance,
+                                )
+                            : () =>
+                                context.push(AppRoute.wizard, extra: instance),
+                        icon: Icon(
+                          instance.installStatus ==
+                                  InstanceInstallStatus.installed
+                              ? Icons.play_arrow
+                              : Icons.download_done_outlined,
+                          size: 18,
+                        ),
+                        label: Text(
+                          instance.installStatus ==
+                                  InstanceInstallStatus.installed
+                              ? '启动'
+                              : '继续安装',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

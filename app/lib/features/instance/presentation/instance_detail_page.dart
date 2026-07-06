@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/router/app_router.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../../../core/ui/ansi_color_text.dart';
+import '../../../core/ui/explosion_overlay.dart';
 import '../../dashboard/application/process_console_provider.dart';
 import '../application/instance_repository.dart';
 import '../domain/instance.dart';
@@ -382,6 +383,24 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
       ),
     );
     if (confirmed != true || !context.mounted) return;
+
+    // 震动反馈
+    HapticFeedback.heavyImpact();
+
+    // 爆炸粒子动画
+    final scheme = Theme.of(context).colorScheme;
+    ExplosionOverlay.show(
+      context,
+      rect: Rect.fromCenter(
+        center: Offset(
+          MediaQuery.of(context).size.width / 2,
+          MediaQuery.of(context).size.height / 2,
+        ),
+        width: 200,
+        height: 200,
+      ),
+      color: scheme.primary,
+    );
 
     final messenger = ScaffoldMessenger.of(context);
     try {
