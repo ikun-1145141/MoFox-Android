@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -176,28 +177,45 @@ def _http_get_text(url: str, timeout: float = 30.0) -> str:
         return resp.read().decode("utf-8", errors="replace")
 
 
-def _resolve_latest_lxc_url(lxc_arch: str) -> str:
-    """列 LXC default/ 目录，挑最新时间戳，拼出 rootfs.tar.xz 直链。"""
-    last_exc: Exception | None = None
+def _list_lxc_timestamps(base_url: str) -> list[str]:
+    """列 LXC default/ 目录，返回排序后的时间戳列表（旧→新）。"""
+    html = _http_get_text(base_url)
+    stamps = sorted(set(LXC_TIMESTAMP_RE.findall(html)))
+    return stamps
+
+
+def _resolve_lxc_urls(lxc_arch: str, max_versions: int = 3) -> list[str]:
+    """收集所有镜像源的最新 N 个时间戳 rootfs.tar.xz 直链。
+
+    镜像站正在 sync 时，最新时间戳目录已创建但 rootfs.tar.xz 尚未上传完，
+    会导致 404。所以收集最近 max_versions 个时间戳，下载时从新到旧依次尝试。
+    """
+    candidates: list[str] = []
     for base_fmt in LXC_DEBIAN_BASE_URLS:
         base = base_fmt.format(lxc_arch=lxc_arch)
         try:
-            html = _http_get_text(base)
+            stamps = _list_lxc_timestamps(base)
         except Exception as exc:  # noqa: BLE001
-            last_exc = exc
             print(f"[warn] 列 {base} 失败: {exc}")
             continue
 
-        stamps = sorted(set(LXC_TIMESTAMP_RE.findall(html)))
         if not stamps:
             print(f"[warn] {base} 没匹配到时间戳目录")
             continue
 
-        latest = stamps[-1]
-        print(f"[lxc] {lxc_arch} 镜像源 {base}  最新版本 {latest}")
-        return f"{base}{latest}/rootfs.tar.xz"
+        # 取最近 max_versions 个时间戳，从新到旧。
+        recent = stamps[-max_versions:]
+        print(f"[lxc] {lxc_arch} 镜像源 {base}  可用版本: {', '.join(recent)}")
+        for stamp in reversed(recent):
+            url = f"{base}{stamp}/rootfs.tar.xz"
+            if url not in candidates:
+                candidates.append(url)
 
-    raise RuntimeError(f"所有 LXC 镜像源都没列出 {lxc_arch}/default/ 目录: {last_exc}")
+    if not candidates:
+        raise RuntimeError(
+            f"所有 LXC 镜像源都没列出 {lxc_arch}/default/ 目录"
+        )
+    return candidates
 
 
 def _download_with_progress(url: str, dest: Path) -> None:
@@ -229,7 +247,10 @@ def _download_with_progress(url: str, dest: Path) -> None:
 
 
 def fetch_rootfs(abis: list[str], force: bool = False) -> int:
-    """按 ABI 拉 Debian 13 (trixie) rootfs.tar.xz。来源: LXC images 镜像。"""
+    """按 ABI 拉 Debian 13 (trixie) rootfs.tar.xz。来源: LXC images 镜像。
+
+    镜像站正在 sync 时最新版本可能 404，所以从新到旧依次尝试多个候选 URL。
+    """
     ROOTFS_DIR.mkdir(parents=True, exist_ok=True)
 
     for abi in abis:
@@ -240,16 +261,46 @@ def fetch_rootfs(abis: list[str], force: bool = False) -> int:
             continue
 
         try:
-            url = _resolve_latest_lxc_url(suffix)
-            _download_with_progress(url, xz_path)
+            candidates = _resolve_lxc_urls(suffix)
         except Exception as exc:  # noqa: BLE001
-            print(f"[ERR] 下载 {suffix} 失败: {exc}", file=sys.stderr)
+            print(f"[ERR] 解析 {suffix} 镜像源失败: {exc}", file=sys.stderr)
             return 1
 
-        if not _is_real_tarball(xz_path):
-            print(f"[ERR] 下载产物 {xz_path} 不是合法 .tar.xz", file=sys.stderr)
+        downloaded = False
+        for url in candidates:
+            try:
+                _download_with_progress(url, xz_path)
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    print(f"[warn] {url} 返回 404（镜像可能正在 sync），尝试下一个版本…")
+                    # 清理 .part 残留
+                    part = xz_path.with_suffix(xz_path.suffix + ".part")
+                    if part.exists():
+                        part.unlink()
+                    continue
+                raise
+            except Exception as exc:  # noqa: BLE001
+                print(f"[warn] 下载 {url} 失败: {exc}，尝试下一个版本…")
+                part = xz_path.with_suffix(xz_path.suffix + ".part")
+                if part.exists():
+                    part.unlink()
+                continue
+
+            if not _is_real_tarball(xz_path):
+                print(f"[warn] {url} 下载产物不是合法 .tar.xz，尝试下一个版本…")
+                xz_path.unlink(missing_ok=True)
+                continue
+
+            print(f"[ok] {xz_path.name}  {human_size(xz_path.stat().st_size)}")
+            downloaded = True
+            break
+
+        if not downloaded:
+            print(
+                f"[ERR] 下载 {suffix} 失败: 所有候选 URL 均不可用",
+                file=sys.stderr,
+            )
             return 1
-        print(f"[ok] {xz_path.name}  {human_size(xz_path.stat().st_size)}")
 
     return 0
 
