@@ -19,7 +19,7 @@ class InstanceInfoStep extends ConsumerWidget {
             initialValue: draft.name,
             decoration: const InputDecoration(
               labelText: '实例名称',
-              hintText: '例如：我的麦麦',
+              hintText: '例如：我的墨狐',
               prefixIcon: Icon(Icons.badge_outlined),
               border: OutlineInputBorder(),
             ),
