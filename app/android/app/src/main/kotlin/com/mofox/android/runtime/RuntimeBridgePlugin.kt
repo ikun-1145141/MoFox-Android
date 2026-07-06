@@ -66,6 +66,10 @@ class RuntimeBridgePlugin {
                         processManager.stop(call.requireName())
                         null
                     }
+                    "cancelNapcatLogin" -> runAsync(result) {
+                        processManager.cancelNapcatLogin()
+                        null
+                    }
                     "restartProcess" -> runAsync(result) {
                         val name = call.requireName()
                         val args = call.argument<Map<String, String>>("args") ?: emptyMap()

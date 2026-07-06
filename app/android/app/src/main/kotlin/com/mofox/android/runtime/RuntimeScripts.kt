@@ -261,8 +261,9 @@ class RuntimeScripts(
                     export BOT_QQ=${shellQuote(botQq)}
                     DEFAULT_QR_PATH=/root/napcat/cache/qrcode.png
                     NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
+                    CANCEL_FILE=/tmp/napcat-login.cancel
                     mkdir -p /root/napcat/cache
-                    rm -f "${'$'}DEFAULT_QR_PATH" "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log
+                    rm -f "${'$'}DEFAULT_QR_PATH" "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log "${'$'}CANCEL_FILE"
                     xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q "${'$'}BOT_QQ" > /tmp/napcat-login.log 2>&1 &
                     NAPCAT_PID=${'$'}!
                     stop_napcat_login_process() {
@@ -285,29 +286,40 @@ class RuntimeScripts(
                       wait "${'$'}NAPCAT_PID" 2>/dev/null || true
                     }
                     QR_EMITTED=0
+                    QR_MTIME=""
                     LOGIN_DONE=0
                     for i in ${'$'}(seq 1 180); do
                       sleep 1
+                      # 用户取消登录
+                      if [ -f "${'$'}CANCEL_FILE" ]; then
+                        log_warn "用户取消登录"
+                        stop_napcat_login_process
+                        exit 1
+                      fi
                       if [ -s /tmp/napcat-login.log ]; then
                         tail -n 20 /tmp/napcat-login.log
                       fi
-                      if [ "${'$'}QR_EMITTED" = "0" ]; then
-                        QR_PATH=""
-                        if [ -s /tmp/napcat-login.log ]; then
-                          QR_PATH=${'$'}(sed -n 's/.*二维码已保存到 \([^[:space:]]*qrcode\.png\).*/\1/p' /tmp/napcat-login.log | tail -n 1)
-                        fi
-                        if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
-                          QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
-                        fi
-                        if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}DEFAULT_QR_PATH" ]; then
-                          QR_PATH="${'$'}DEFAULT_QR_PATH"
-                        fi
-                        if [ -n "${'$'}QR_PATH" ] && [ -s "${'$'}QR_PATH" ]; then
+                      # 检测二维码（支持刷新：文件 mtime 变化时重新输出）
+                      QR_PATH=""
+                      if [ -s /tmp/napcat-login.log ]; then
+                        QR_PATH=${'$'}(sed -n 's/.*二维码已保存到 \([^[:space:]]*qrcode\.png\).*/\1/p' /tmp/napcat-login.log | tail -n 1)
+                      fi
+                      if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
+                        QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
+                      fi
+                      if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}DEFAULT_QR_PATH" ]; then
+                        QR_PATH="${'$'}DEFAULT_QR_PATH"
+                      fi
+                      if [ -n "${'$'}QR_PATH" ] && [ -s "${'$'}QR_PATH" ]; then
+                        CURRENT_MTIME=${'$'}(stat -c %Y "${'$'}QR_PATH" 2>/dev/null || echo "")
+                        if [ "${'$'}QR_EMITTED" = "0" ] || [ -n "${'$'}CURRENT_MTIME" -a "${'$'}CURRENT_MTIME" != "${'$'}QR_MTIME" ]; then
                           echo "MOFOX_QR_IMAGE=${'$'}QR_PATH"
                           QR_EMITTED=1
+                          QR_MTIME="${'$'}CURRENT_MTIME"
                         fi
                       fi
-                      if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
+                      # 登录成功检测：已启用数据库辅助支持能力（登录后才出现）
+                      if grep -q '已启用数据库辅助支持能力' /tmp/napcat-login.log 2>/dev/null; then
                         LOGIN_DONE=1
                         break
                       fi

@@ -164,6 +164,20 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         run: (runtime) => runtime.stopProcess('napcat'),
       );
 
+  /// 取消正在进行的 NapCat 扫码登录。
+  /// 不走 _runNapcatAction，因为登录任务已经在执行中（busyAction='start-napcat'），
+  /// 这里只是通知 native 层写 cancel 标记文件让登录脚本自行退出。
+  Future<void> cancelNapcatLogin() async {
+    appLogger.i('process: cancelNapcatLogin');
+    final runtime = ref.read(runtimeBridgeProvider);
+    try {
+      await runtime.cancelNapcatLogin();
+    } catch (error) {
+      appLogger.e('process: cancelNapcatLogin failed', error: error);
+    }
+    state = state.copyWith(napcatQrPayload: null);
+  }
+
   Future<void> restartNapcat(Instance instance) => _runNapcatAction(
         action: 'restart-napcat',
         busyLabel: 'NapCat 重启中',

@@ -148,6 +148,17 @@ class RuntimeProcessManager(
         return File(installer.ubuntuPath, cleanPath.removePrefix("/")).absolutePath
     }
 
+    /** 取消正在进行的 napcatLogin 任务：在 rootfs 内写 cancel 标记文件。 */
+    fun cancelNapcatLogin() {
+        try {
+            val cancelFile = File(installer.ubuntuPath, "tmp/napcat-login.cancel")
+            cancelFile.parentFile?.mkdirs()
+            cancelFile.writeText("cancel")
+        } catch (e: Throwable) {
+            events.emit("install", mapOf("task" to "napcatLogin", "line" to "[napcat] cancel failed: ${e.message}"))
+        }
+    }
+
     private fun runStopScript(name: String, args: Map<String, String>) {
         if (!installer.isBootstrapped()) return
         val script = scripts.stopProcessScript(name, args)

@@ -23,6 +23,7 @@ class InstanceDetailPage extends ConsumerStatefulWidget {
 
 class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
   bool _qrShown = false;
+  String? _qrPayload;
 
   Instance get instance => widget.instance;
 
@@ -34,17 +35,58 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     final installed = instance.installStatus == InstanceInstallStatus.installed;
 
     ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
-      if (next.napcatQrPayload != null && !_qrShown) {
+      final payload = next.napcatQrPayload;
+      if (payload != null && !_qrShown) {
         _qrShown = true;
+        _qrPayload = payload;
         showModalBottomSheet<void>(
           context: context,
           isScrollControlled: true,
           showDragHandle: true,
-          builder: (_) => NapcatQrSheet(payload: next.napcatQrPayload!),
-        ).whenComplete(() => _qrShown = false);
-      } else if (next.napcatQrPayload == null && _qrShown) {
+          isDismissible: false,
+          enableDrag: false,
+          builder: (_) => NapcatQrSheet(
+            payload: _qrPayload!,
+            onCancel: () {
+              ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
+              Navigator.of(context).pop();
+            },
+          ),
+        ).whenComplete(() {
+          _qrShown = false;
+          _qrPayload = null;
+        });
+      } else if (payload != null && _qrShown && payload != _qrPayload) {
+        // 二维码刷新：关闭旧 sheet 再弹新的
+        _qrPayload = payload;
         Navigator.of(context).pop();
         _qrShown = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_qrShown && mounted) {
+            _qrShown = true;
+            showModalBottomSheet<void>(
+              context: context,
+              isScrollControlled: true,
+              showDragHandle: true,
+              isDismissible: false,
+              enableDrag: false,
+              builder: (_) => NapcatQrSheet(
+                payload: _qrPayload!,
+                onCancel: () {
+                  ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
+                  Navigator.of(context).pop();
+                },
+              ),
+            ).whenComplete(() {
+              _qrShown = false;
+              _qrPayload = null;
+            });
+          }
+        });
+      } else if (payload == null && _qrShown) {
+        Navigator.of(context).pop();
+        _qrShown = false;
+        _qrPayload = null;
       }
     });
 

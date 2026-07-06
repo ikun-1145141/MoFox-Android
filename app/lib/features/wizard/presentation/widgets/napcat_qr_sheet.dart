@@ -4,8 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class NapcatQrSheet extends StatelessWidget {
-  const NapcatQrSheet({required this.payload, super.key});
+  const NapcatQrSheet({required this.payload, this.onCancel, super.key});
   final String payload;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -80,6 +81,16 @@ class NapcatQrSheet extends StatelessWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            if (onCancel != null)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onCancel,
+                  icon: const Icon(Icons.close),
+                  label: const Text('取消登录'),
+                ),
+              ),
           ],
         ),
       ),

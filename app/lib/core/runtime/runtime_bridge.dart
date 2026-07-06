@@ -114,6 +114,12 @@ class RuntimeBridge {
     );
   }
 
+  /// 取消正在进行的 NapCat 扫码登录任务。
+  Future<void> cancelNapcatLogin() {
+    appLogger.i('runtime: cancelNapcatLogin');
+    return _channel.invokeMethod<void>('cancelNapcatLogin');
+  }
+
   Future<void> restartProcess(
     String name, {
     Map<String, String> args = const <String, String>{},
