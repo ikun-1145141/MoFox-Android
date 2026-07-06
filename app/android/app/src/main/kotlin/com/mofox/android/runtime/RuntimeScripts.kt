@@ -450,17 +450,29 @@ class RuntimeScripts(
     private fun writeAdapterBody(args: Map<String, String>): String {
         val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
         val wsPort = args["wsPort"] ?: "8095"
-        val channel = args["channel"] ?: "main"
+        val botQq = args["botQq"].orEmpty()
+        val botNickname = args["botNickname"].orEmpty()
+        val adapterDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
         return loginBody(
             """
-            log_step "写入 adapter.toml…"
-            mkdir -p ${shellQuote(repoPath)}/config
-            cat > ${shellQuote(repoPath)}/config/adapter.toml <<'MOFOX_EOF'
-            [napcat]
-            ws_port = $wsPort
-            channel = "$channel"
+            log_step "写入 onebot_adapter/config.toml…"
+            mkdir -p $adapterDir
+            cat > $adapterDir/config.toml <<'MOFOX_EOF'
+            [plugin]
+            enabled = true
+            config_version = "2.0.0"
+
+            [bot]
+            qq_id = "$botQq"
+            qq_nickname = "$botNickname"
+
+            [napcat_server]
+            mode = "reverse"
+            host = "localhost"
+            port = $wsPort
+            access_token = ""
             MOFOX_EOF
-            log_ok "adapter.toml 写入完成"
+            log_ok "onebot_adapter/config.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -475,22 +487,34 @@ class RuntimeScripts(
             cat > /root/napcat/config/onebot11_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF'
             {
               "network": {
-                "websocketServers": [
+                "httpServers": [],
+                "httpClients": [],
+                "websocketServers": [],
+                "websocketClients": [
                   {
-                    "name": "mofox",
+                    "name": "neo-mofox-ws-client",
                     "enable": true,
-                    "host": "127.0.0.1",
-                    "port": $wsPort,
+                    "url": "ws://127.0.0.1:${'$'}wsPort",
                     "messagePostFormat": "array",
                     "reportSelfMessage": false,
+                    "reconnectInterval": 3000,
                     "token": ""
                   }
                 ]
               },
               "musicSignUrl": "",
-              "enableLocalFile2Url": false
+              "enableLocalFile2Url": false,
+              "parseMultMsg": false
             }
             MOFOX_EOF
+            cat > /root/napcat/config/napcat_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF2'
+            {
+              "fileLog": true,
+              "consoleLog": true,
+              "fileLogLevel": "info",
+              "consoleLogLevel": "info"
+            }
+            MOFOX_EOF2
             log_ok "NapCat 配置写入完成"
             """.trimIndent(),
         )
