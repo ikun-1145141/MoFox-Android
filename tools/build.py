@@ -189,8 +189,14 @@ def _resolve_lxc_urls(lxc_arch: str, max_versions: int = 3) -> list[str]:
 
     镜像站正在 sync 时，最新时间戳目录已创建但 rootfs.tar.xz 尚未上传完，
     会导致 404。所以收集最近 max_versions 个时间戳，下载时从新到旧依次尝试。
+
+    关键：每个镜像源只用自己的时间戳生成 URL，不会用镜像 A 的时间戳去拼
+    镜像 B 的地址——否则镜像 B 还没同步到那个版本就会无辜 404。
+    最终候选列表按时间戳从新到旧排序，同一时间戳多镜像源时优先清华→BFSU→上游。
     """
-    candidates: list[str] = []
+    # stamp → [url1, url2, ...]  （同一时间戳可能有多个镜像源）
+    stamp_to_urls: dict[str, list[str]] = {}
+
     for base_fmt in LXC_DEBIAN_BASE_URLS:
         base = base_fmt.format(lxc_arch=lxc_arch)
         try:
@@ -203,46 +209,66 @@ def _resolve_lxc_urls(lxc_arch: str, max_versions: int = 3) -> list[str]:
             print(f"[warn] {base} 没匹配到时间戳目录")
             continue
 
-        # 取最近 max_versions 个时间戳，从新到旧。
         recent = stamps[-max_versions:]
         print(f"[lxc] {lxc_arch} 镜像源 {base}  可用版本: {', '.join(recent)}")
-        for stamp in reversed(recent):
+        for stamp in recent:
             url = f"{base}{stamp}/rootfs.tar.xz"
-            if url not in candidates:
-                candidates.append(url)
+            stamp_to_urls.setdefault(stamp, []).append(url)
 
-    if not candidates:
+    if not stamp_to_urls:
         raise RuntimeError(
             f"所有 LXC 镜像源都没列出 {lxc_arch}/default/ 目录"
         )
+
+    # 按时间戳从新到旧排列；同一时间戳内按镜像源顺序（清华→BFSU→上游）。
+    candidates: list[str] = []
+    for stamp in sorted(stamp_to_urls.keys(), reverse=True):
+        candidates.extend(stamp_to_urls[stamp])
     return candidates
 
 
+# 下载超时：连接阶段 30s，读取阶段每 chunk 60s。
+# 不设 timeout 的话，CI 遇到挂起的镜像站会卡死直到被 GitHub 强杀（6h）。
+_DL_CONNECT_TIMEOUT = 30.0
+_DL_READ_TIMEOUT = 60.0
+
+
 def _download_with_progress(url: str, dest: Path) -> None:
-    """流式下载到 dest.part，带进度条。"""
+    """流式下载到 dest.part，带进度条。
+
+    异常时自动清理 .part 残留，避免垃圾文件遗留。
+    """
     tmp = dest.with_suffix(dest.suffix + ".part")
     print(f"[fetch] {url}")
     req = urllib.request.Request(url, headers={"User-Agent": "MoFox-Android-build/1.0"})
-    with urllib.request.urlopen(req) as resp, tmp.open("wb") as out:
-        total = int(resp.headers.get("Content-Length") or 0)
-        read = 0
-        last_print = 0.0
-        while True:
-            chunk = resp.read(64 * 1024)
-            if not chunk:
-                break
-            out.write(chunk)
-            read += len(chunk)
-            now = time.time()
-            if total and now - last_print > 0.5:
-                pct = read / total * 100
-                sys.stdout.write(
-                    f"\r        {human_size(read)} / {human_size(total)} ({pct:.1f}%)"
-                )
-                sys.stdout.flush()
-                last_print = now
-        if total:
-            sys.stdout.write("\n")
+    try:
+        with urllib.request.urlopen(
+            req, timeout=_DL_READ_TIMEOUT
+        ) as resp, tmp.open("wb") as out:
+            total = int(resp.headers.get("Content-Length") or 0)
+            read = 0
+            last_print = 0.0
+            while True:
+                chunk = resp.read(64 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                read += len(chunk)
+                now = time.time()
+                if total and now - last_print > 0.5:
+                    pct = read / total * 100
+                    sys.stdout.write(
+                        f"\r        {human_size(read)} / {human_size(total)} ({pct:.1f}%)"
+                    )
+                    sys.stdout.flush()
+                    last_print = now
+            if total:
+                sys.stdout.write("\n")
+    except Exception:
+        # 中途断开 / 超时 → 清理 .part 残留，不让垃圾文件遗留
+        if tmp.exists():
+            tmp.unlink()
+        raise
     tmp.replace(dest)
 
 
