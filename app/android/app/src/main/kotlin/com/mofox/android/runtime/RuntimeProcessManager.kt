@@ -8,6 +8,7 @@ import java.io.File
 import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class RuntimeProcessManager(
     context: Context,
@@ -120,13 +121,25 @@ class RuntimeProcessManager(
                 }
             }
         }
-        val code = process.waitFor()
+        val code = process.waitForWithTimeout()
         if (code == 0) {
             events.emit("install", mapOf("task" to task, "line" to "${C_GREEN}✓ 任务完成: $task${C_RESET}"))
         } else {
             events.emit("install", mapOf("task" to task, "line" to "${C_RED}✗ 任务失败: $task (退出码 $code)${C_RESET}"))
         }
         return InstallTaskResult(code == 0, logs.toList(), qrPayload, if (code == 0) null else "Task $task exited with $code")
+    }
+
+    /**
+     * 带超时的 waitFor：最多等 [timeoutSeconds] 秒，超时后强制销毁进程。
+     * 防止 proot 挂起导致单线程执行器永久阻塞。
+     */
+    private fun Process.waitForWithTimeout(timeoutSeconds: Long = 60): Int {
+        if (waitFor(timeoutSeconds, TimeUnit.SECONDS)) return exitValue()
+        // 超时：强制杀进程
+        destroyForcibly()
+        waitFor(5, TimeUnit.SECONDS)
+        return -1
     }
 
     private fun mapUbuntuPathToHost(path: String): String {

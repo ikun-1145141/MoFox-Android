@@ -392,17 +392,31 @@ Future<void> _confirmDeleteInstance(
 
   final messenger = ScaffoldMessenger.of(context);
   try {
-    final runtime = ref.read(runtimeBridgeProvider);
-    final result = await runtime.runInstallTask(
-      'deleteInstance',
-      args: <String, String>{'installDir': instance.installDir},
-    );
-    if (!result.success) {
-      throw StateError(result.error ?? '删除实例目录失败');
-    }
+    // 先删除本地记录并刷新 UI，确保实例立即从列表消失。
     final repo = await ref.read(instanceRepositoryProvider.future);
     await repo.remove(instance.id);
     ref.invalidate(instancesProvider);
+
+    // 再尝试删除 rootfs 中的实例目录；失败只警告，不阻止本地记录删除。
+    try {
+      final runtime = ref.read(runtimeBridgeProvider);
+      final result = await runtime.runInstallTask(
+        'deleteInstance',
+        args: <String, String>{'installDir': instance.installDir},
+      );
+      if (!result.success && context.mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('本地记录已删除，远程目录清理失败：${result.error ?? "未知错误"}')),
+        );
+        return;
+      }
+    } catch (error) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(content: Text('本地记录已删除，远程目录清理异常：$error')),
+      );
+      return;
+    }
     if (!context.mounted) return;
     messenger.showSnackBar(const SnackBar(content: Text('实例已删除')));
   } catch (error) {
