@@ -80,6 +80,14 @@ class RuntimeProcessManager(
         if (!installer.isBootstrapped()) {
             return InstallTaskResult(false, emptyList(), null, "Runtime bootstrap is not installed")
         }
+        // installNapcat 需要先把本地 napcat-install.sh 拷进 rootfs
+        if (task == "installNapcat") {
+            try {
+                installer.stageNapcatInstaller()
+            } catch (e: Throwable) {
+                return InstallTaskResult(false, emptyList(), null, e.message ?: "stageNapcatInstaller failed")
+            }
+        }
         return runShellTask(task, args)
     }
 

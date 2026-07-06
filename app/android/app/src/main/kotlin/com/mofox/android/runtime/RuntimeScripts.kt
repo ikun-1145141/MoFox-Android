@@ -224,15 +224,9 @@ class RuntimeScripts(
             }
             "installNapcat" -> loginBody(
                 """
-                apt-get update -y
-                mkdir -p /root/napcat-installer /root/napcat
-                cd /root/napcat-installer
                 if [ ! -f /root/Napcat/opt/QQ/qq ]; then
-                  log_info "下载 NapCat 安装脚本…"
-                  curl -L --fail --connect-timeout 20 --retry 3 \
-                    https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh \
-                    -o napcat-install.sh
-                  bash napcat-install.sh --docker n --cli n
+                  log_info "执行本地 NapCat 安装脚本…"
+                  bash /usr/local/bin/napcat-install.sh
                 else
                   log_info "NapCat 已安装，跳过"
                 fi

@@ -31,6 +31,28 @@ class RootfsInstaller(private val context: Context) {
             File(ubuntuPath, "etc/os-release").exists()
     }
 
+    /**
+     * 把 `flutter_assets/assets/scripts/napcat-install.sh` 拷到 rootfs 内的
+     * `/usr/local/bin/napcat-install.sh`，供 installNapcat 任务体直接执行。
+     * 幂等：文件已存在且大小一致则跳过。
+     */
+    fun stageNapcatInstaller(): File {
+        ensureBaseDirectories()
+        val target = File(ubuntuPath, "usr/local/bin/napcat-install.sh")
+        if (target.exists() && target.length() > 0) return target
+        ubuntuPath.mkdirs()
+        File(ubuntuPath, "usr/local/bin").mkdirs()
+        try {
+            context.assets.open("flutter_assets/assets/scripts/napcat-install.sh").use { input ->
+                target.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            target.setExecutable(true, false)
+        } catch (e: java.io.FileNotFoundException) {
+            throw RuntimeException("缺少 assets/scripts/napcat-install.sh", e)
+        }
+        return target
+    }
+
     fun ensureBaseDirectories() {
         homeDir.mkdirs()
         scriptsDir.mkdirs()
