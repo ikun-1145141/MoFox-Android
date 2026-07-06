@@ -11,22 +11,65 @@ import androidx.core.app.NotificationManagerCompat
 import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.PluginRegistry
+import java.io.ByteArrayOutputStream
 
 /**
- * Platform 总线骨架。
+ * Platform 总线。
  *
  * MethodChannel : mofox/platform
  *
- * 提供 SAF 文件导出、保活提示、前台服务开关。
- * 当前 SAF 与 vendor autostart 桩返回 null / false，等 UI 接通后再补 ActivityResult。
+ * 提供 SAF 文件导出/导入、保活提示、前台服务开关。
  */
-class PlatformGatewayPlugin {
+class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
+
+    companion object {
+        private const val REQ_EXPORT = 10001
+        private const val REQ_IMPORT = 10002
+    }
+
+    private var activity: Activity? = null
+    private var pendingExportBytes: ByteArray? = null
+    private var pendingResult: MethodChannel.Result? = null
+
     fun attach(engine: FlutterEngine, activity: Activity) {
+        this.activity = activity
         val ctx: Context = activity.applicationContext
+
         MethodChannel(engine.dartExecutor.binaryMessenger, "mofox/platform")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "exportToSaf" -> result.success(null)
+                    "exportToSaf" -> {
+                        val suggestedName = call.argument<String>("suggestedName") ?: "export.zip"
+                        val bytes = call.argument<ByteArray>("bytes")
+                        if (bytes == null) {
+                            result.error("MISSING_BYTES", "bytes is required", null)
+                            return@setMethodCallHandler
+                        }
+                        pendingExportBytes = bytes
+                        pendingResult = result
+                        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/zip"
+                            putExtra(Intent.EXTRA_TITLE, suggestedName)
+                        }
+                        activity.startActivityForResult(intent, REQ_EXPORT)
+                    }
+                    "importFromSaf" -> {
+                        pendingResult = result
+                        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "*/*"
+                            val mimeTypes = arrayOf(
+                                "application/zip",
+                                "application/x-tar",
+                                "application/x-xz",
+                                "application/octet-stream",
+                            )
+                            putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+                        }
+                        activity.startActivityForResult(intent, REQ_IMPORT)
+                    }
                     "openVendorAutostart" -> {
                         openVendorAutostart(activity)
                         result.success(null)
@@ -55,6 +98,58 @@ class PlatformGatewayPlugin {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        val ctx = activity?.applicationContext ?: return false
+        val res = pendingResult
+        if (res == null) return false
+
+        when (requestCode) {
+            REQ_EXPORT -> {
+                val uri = data?.data
+                val bytes = pendingExportBytes
+                if (uri != null && bytes != null && resultCode == Activity.RESULT_OK) {
+                    try {
+                        ctx.contentResolver.openOutputStream(uri)?.use { out ->
+                            out.write(bytes)
+                        }
+                        res.success(uri.toString())
+                    } catch (e: Exception) {
+                        res.error("SAF_EXPORT_FAILED", e.message, null)
+                    }
+                } else {
+                    res.success(null)
+                }
+                pendingExportBytes = null
+                pendingResult = null
+                return true
+            }
+            REQ_IMPORT -> {
+                val uri = data?.data
+                if (uri != null && resultCode == Activity.RESULT_OK) {
+                    try {
+                        val bytes = ctx.contentResolver.openInputStream(uri)?.use { inp ->
+                            val buf = ByteArrayOutputStream()
+                            inp.copyTo(buf)
+                            buf.toByteArray()
+                        }
+                        if (bytes != null) {
+                            res.success(bytes)
+                        } else {
+                            res.error("SAF_IMPORT_FAILED", "Cannot read file", null)
+                        }
+                    } catch (e: Exception) {
+                        res.error("SAF_IMPORT_FAILED", e.message, null)
+                    }
+                } else {
+                    res.success(null)
+                }
+                pendingResult = null
+                return true
+            }
+        }
+        return false
     }
 
     private fun requestIgnoreBatteryOptimizations(activity: Activity): Boolean {

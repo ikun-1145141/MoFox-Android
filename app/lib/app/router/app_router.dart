@@ -15,6 +15,7 @@ import '../../features/shell/presentation/shell_page.dart';
 import '../../features/terminal/presentation/terminal_page.dart';
 import '../../features/webview/presentation/webview_page.dart';
 import '../../features/instance/domain/instance.dart';
+import '../../features/backup/presentation/backup_page.dart';
 import '../../features/wizard/presentation/wizard_page.dart';
 
 abstract final class AppRoute {
@@ -31,6 +32,7 @@ abstract final class AppRoute {
   static const String about = '/settings/about';
   static const String thirdPartyLicenses = '/settings/about/licenses';
   static const String wizard = '/wizard';
+  static const String backup = '/settings/backup';
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
@@ -69,6 +71,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.appearance,
         builder: (_, __) => const AppearancePage(),
+      ),
+      GoRoute(
+        path: AppRoute.backup,
+        builder: (_, __) => const BackupPage(),
       ),
       GoRoute(
         path: AppRoute.thirdPartyLicenses,

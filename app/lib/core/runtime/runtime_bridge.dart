@@ -225,6 +225,51 @@ class RuntimeBridge {
       <String, Object>{'sessionId': sessionId},
     );
   }
+
+  /// 读取 rootfs 内的文件内容（文本）。文件不存在返回空字符串。
+  Future<String> readFile(String rootfsPath) async {
+    final result =
+        await _channel.invokeMethod<String>('readFile', <String, Object>{
+      'path': rootfsPath,
+    });
+    return result ?? '';
+  }
+
+  /// 检查 rootfs 内文件是否存在。
+  Future<bool> fileExists(String rootfsPath) async {
+    final result =
+        await _channel.invokeMethod<bool>('fileExists', <String, Object>{
+      'path': rootfsPath,
+    });
+    return result ?? false;
+  }
+
+  /// 列出 rootfs 内目录内容。返回 [{name, isDir, size}] 列表。
+  Future<List<RootfsEntry>> listDir(String rootfsPath) async {
+    final result =
+        await _channel.invokeMethod<List<Object?>>('listDir', <String, Object>{
+      'path': rootfsPath,
+    });
+    if (result == null) return const <RootfsEntry>[];
+    return result
+        .whereType<Map<Object?, Object?>>()
+        .map(RootfsEntry.fromMap)
+        .toList(growable: false);
+  }
+
+  /// 在 rootfs 内用 tar 打包指定路径到 destPath（rootfs 内绝对路径）。
+  /// 返回 host 层文件绝对路径。
+  Future<String> packToTar({
+    required List<String> paths,
+    required String destPath,
+  }) async {
+    final result =
+        await _channel.invokeMethod<String>('packToTar', <String, Object>{
+      'paths': paths,
+      'dest': destPath,
+    });
+    return result ?? '';
+  }
 }
 
 bool _isBootstrapEvent(Object? event) {
@@ -283,3 +328,23 @@ String _cleanInstallLogLine(String line) {
 
 final RegExp _controlCharsPattern =
     RegExp('[\x00-\x08\x0B\x0C\x0E-\x1A\x1C-\x1F\x7F]');
+
+class RootfsEntry {
+  const RootfsEntry({
+    required this.name,
+    required this.isDir,
+    required this.size,
+  });
+
+  final String name;
+  final bool isDir;
+  final int size;
+
+  factory RootfsEntry.fromMap(Map<Object?, Object?> map) {
+    return RootfsEntry(
+      name: map['name']?.toString() ?? '',
+      isDir: map['isDir'] == true,
+      size: (map['size'] as num?)?.toInt() ?? 0,
+    );
+  }
+}

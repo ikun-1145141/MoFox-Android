@@ -18,6 +18,13 @@ class PlatformGateway {
     });
   }
 
+  /// 通过 SAF 让用户选文件后读取内容。返回文件字节；用户取消返回 `null`。
+  Future<Uint8List?> importFromSaf() async {
+    final result = await _channel.invokeMethod<List<Object?>>('importFromSaf');
+    if (result == null) return null;
+    return Uint8List.fromList(result.cast<int>());
+  }
+
   /// 跳系统设置页（自启动 / 耗电管理 / 后台锁定），按厂商分发。
   Future<void> openVendorAutostart() =>
       _channel.invokeMethod<void>('openVendorAutostart');

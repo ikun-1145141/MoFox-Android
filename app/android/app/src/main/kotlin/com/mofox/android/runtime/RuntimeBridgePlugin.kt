@@ -99,6 +99,23 @@ class RuntimeBridgePlugin {
                         closeShell(sessionId)
                         null
                     }
+                    "readFile" -> runAsync(result) {
+                        val path = call.argument<String>("path") ?: error("Missing path")
+                        readFileFromRootfs(installer, path)
+                    }
+                    "fileExists" -> runAsync(result) {
+                        val path = call.argument<String>("path") ?: error("Missing path")
+                        fileExistsInRootfs(installer, path)
+                    }
+                    "listDir" -> runAsync(result) {
+                        val path = call.argument<String>("path") ?: error("Missing path")
+                        listDirInRootfs(installer, path)
+                    }
+                    "packToTar" -> runAsync(result) {
+                        val paths = call.argument<List<String>>("paths") ?: error("Missing paths")
+                        val dest = call.argument<String>("dest") ?: error("Missing dest")
+                        packToTarInRootfs(processManager, paths, dest)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -241,6 +258,60 @@ class RuntimeBridgePlugin {
             "qrPayload" to qrPayload,
             "error" to error,
         )
+    }
+
+    private fun readFileFromRootfs(
+        installer: RootfsInstaller,
+        rootfsPath: String,
+    ): String {
+        val cleanPath = rootfsPath.removePrefix("/")
+        val file = File(installer.ubuntuPath, cleanPath)
+        if (!file.exists()) return ""
+        return file.readText()
+    }
+
+    private fun fileExistsInRootfs(
+        installer: RootfsInstaller,
+        rootfsPath: String,
+    ): Boolean {
+        val cleanPath = rootfsPath.removePrefix("/")
+        return File(installer.ubuntuPath, cleanPath).exists()
+    }
+
+    private fun listDirInRootfs(
+        installer: RootfsInstaller,
+        rootfsPath: String,
+    ): List<Map<String, Any>> {
+        val cleanPath = rootfsPath.removePrefix("/")
+        val dir = File(installer.ubuntuPath, cleanPath)
+        if (!dir.exists() || !dir.isDirectory) return emptyList()
+        return dir.listFiles()?.map { f ->
+            mapOf(
+                "name" to f.name,
+                "isDir" to f.isDirectory,
+                "size" to f.length(),
+            )
+        } ?: emptyList()
+    }
+
+    private fun packToTarInRootfs(
+        processManager: RuntimeProcessManager,
+        paths: List<String>,
+        destPath: String,
+    ): String {
+        val script = processManager.scripts.packTarScript(paths, destPath)
+        val builder = ProcessBuilder(processManager.commandBuilder.scriptCommand(script))
+            .directory(processManager.installer.homeDir)
+            .redirectErrorStream(true)
+        builder.environment().putAll(processManager.commandBuilder.environment())
+        val process = builder.start()
+        val output = process.inputStream.bufferedReader().readText()
+        val code = process.waitFor()
+        if (code != 0) {
+            error("tar failed (code=$code): $output")
+        }
+        val cleanDest = destPath.removePrefix("/")
+        return File(processManager.installer.ubuntuPath, cleanDest).absolutePath
     }
 }
 

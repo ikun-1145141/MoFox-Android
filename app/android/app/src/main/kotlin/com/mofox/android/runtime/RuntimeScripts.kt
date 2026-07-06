@@ -496,6 +496,32 @@ class RuntimeScripts(
         )
     }
 
+    /**
+     * 生成打包脚本：在 Debian 内用 tar 把指定路径打包到 destPath。
+     * paths 是 rootfs 内的绝对路径，destPath 也是 rootfs 内的绝对路径。
+     */
+    fun packTarScript(paths: List<String>, destPath: String): File {
+        val pathsArg = paths.joinToString(" ") { shellQuote(it) }
+        val body = """
+            log_step "打包备份文件…"
+            mkdir -p $(dirname ${shellQuote(destPath)})
+            tar cJf ${shellQuote(destPath)} $pathsArg
+            log_ok "打包完成: $destPath"
+        """.trimIndent()
+        installer.ensureBaseDirectories()
+        val file = File(installer.scriptsDir, "pack-tar.sh")
+        val content = buildString {
+            append("#!/system/bin/sh\n")
+            append("set -e\n")
+            append(commonHeader())
+            append('\n')
+            append("login_ubuntu ${shellQuote(body)}\n")
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
+    }
+
     /** 把任务体包成 `login_ubuntu '...'`。 */
     private fun loginBody(body: String): String {
         return "login_ubuntu ${shellQuote(body)}"
