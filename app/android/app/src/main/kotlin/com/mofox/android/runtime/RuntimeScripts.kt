@@ -232,7 +232,7 @@ class RuntimeScripts(
                   curl -L --fail --connect-timeout 20 --retry 3 \
                     https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh \
                     -o napcat-install.sh
-                  bash napcat-install.sh --docker n --cli n --proxy 0
+                  bash napcat-install.sh --docker n --cli n
                 else
                   log_info "NapCat 已安装，跳过"
                 fi
