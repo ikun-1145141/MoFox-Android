@@ -198,7 +198,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                         children: <Widget>[
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.botStatus == 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -210,7 +212,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: FilledButton.tonalIcon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.botStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -222,7 +226,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: FilledButton.tonalIcon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.botStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -238,7 +244,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                         children: <Widget>[
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.napcatStatus == 'running'
                                   ? null
                                   : () {
                                       _loginCancelled = false;
@@ -253,7 +261,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.napcatStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -265,7 +275,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: OutlinedButton.icon(
-                              onPressed: !installed || console.isBusy
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.napcatStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)

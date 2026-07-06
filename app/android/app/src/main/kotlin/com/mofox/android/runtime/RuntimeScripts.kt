@@ -102,15 +102,16 @@ class RuntimeScripts(
             """
             NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
             for PID in ${'$'}NAPCAT_PIDS; do
-              kill -TERM "${'$'}PID" 2>/dev/null || true
+              kill -QUIT "${'$'}PID" 2>/dev/null || true
             done
-            pkill -TERM -f 'Xvfb' 2>/dev/null || true
-            sleep 2
+            sleep 3
             NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
             for PID in ${'$'}NAPCAT_PIDS; do
               kill -KILL "${'$'}PID" 2>/dev/null || true
             done
-            pkill -KILL -f 'Xvfb' 2>/dev/null || true
+            pgrep -f 'Xvfb' 2>/dev/null | grep -v "${'$'}${'$'}" | while read XPID; do
+              kill -TERM "${'$'}XPID" 2>/dev/null || true
+            done
             true
             """.trimIndent()
           }
