@@ -243,7 +243,7 @@ class _NavButtons extends ConsumerWidget {
         return s.draft.botQq.trim().isNotEmpty &&
             s.draft.ownerQq.trim().isNotEmpty;
       case WizardStep.model:
-        return s.draft.apiBaseUrl.trim().isNotEmpty;
+        return s.draft.apiKey.trim().isNotEmpty;
       case WizardStep.network:
         return s.draft.wsPort > 0 &&
             (!s.draft.installWebui || s.draft.webuiApiKey.trim().isNotEmpty);

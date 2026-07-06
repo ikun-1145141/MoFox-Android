@@ -410,7 +410,8 @@ class RuntimeScripts(
     private fun writeModelBody(args: Map<String, String>): String {
         val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
         val apiKey = args["apiKey"].orEmpty()
-        val apiBaseUrl = args["apiBaseUrl"] ?: "https://api.openai.com/v1"
+        // SiliconFlow base URL 硬编码，用户无需在向导中填写。
+        val apiBaseUrl = "https://api.siliconflow.cn/v1"
         return loginBody(
             """
             mkdir -p ${shellQuote(repoPath)}/config

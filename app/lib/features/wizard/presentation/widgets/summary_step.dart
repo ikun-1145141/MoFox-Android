@@ -43,7 +43,7 @@ class SummaryStep extends ConsumerWidget {
           title: '模型',
           onEdit: () => notifier.goTo(WizardStep.model),
           rows: <_Row>[
-            _Row('Base URL', draft.apiBaseUrl),
+            _Row('服务商', '硅基流动 SiliconFlow'),
             _Row('API Key', _mask(draft.apiKey)),
           ],
         ),

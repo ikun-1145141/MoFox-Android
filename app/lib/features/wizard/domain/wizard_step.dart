@@ -4,7 +4,7 @@ enum WizardStep {
   eula, // 2. 查看并同意 EULA
   instanceInfo, // 3. 实例名称
   account, // 4. Bot QQ + 昵称 + 主人 QQ
-  model, // 5. API Key + Base URL
+  model, // 5. SiliconFlow API Key
   network, // 6. WS 端口 + 通道 + WebUI
   summary, // 7. 摘要确认
   install; // 8. 执行安装
@@ -37,7 +37,7 @@ enum WizardStep {
         WizardStep.mirrorCheck => '检测可用镜像源，后续协议与仓库下载都会使用该源',
         WizardStep.instanceInfo => '为你的 Bot 实例命名',
         WizardStep.account => '配置 Bot 的 QQ 账号信息',
-        WizardStep.model => '配置大语言模型 API',
+        WizardStep.model => '配置硅基流动 API 密钥',
         WizardStep.network => '配置端口、通道与 WebUI 管理面板',
         WizardStep.summary => '请确认以下配置信息',
         WizardStep.install => '正在执行安装，请稍候',
@@ -54,7 +54,6 @@ class InstanceDraft {
     this.botNickname = '',
     this.ownerQq = '',
     this.apiKey = '',
-    this.apiBaseUrl = 'https://api.openai.com/v1',
     this.wsPort = 8095,
     this.channel = 'main',
     this.webuiApiKey = '',
@@ -68,7 +67,6 @@ class InstanceDraft {
   final String botNickname;
   final String ownerQq;
   final String apiKey;
-  final String apiBaseUrl;
   final int wsPort;
   final String channel;
   final String webuiApiKey;
@@ -82,7 +80,6 @@ class InstanceDraft {
     String? botNickname,
     String? ownerQq,
     String? apiKey,
-    String? apiBaseUrl,
     int? wsPort,
     String? channel,
     String? webuiApiKey,
@@ -96,7 +93,6 @@ class InstanceDraft {
         botNickname: botNickname ?? this.botNickname,
         ownerQq: ownerQq ?? this.ownerQq,
         apiKey: apiKey ?? this.apiKey,
-        apiBaseUrl: apiBaseUrl ?? this.apiBaseUrl,
         wsPort: wsPort ?? this.wsPort,
         channel: channel ?? this.channel,
         webuiApiKey: webuiApiKey ?? this.webuiApiKey,

@@ -468,7 +468,6 @@ class WizardNotifier extends Notifier<WizardState> {
       'botNickname': draft.botNickname,
       'ownerQq': draft.ownerQq,
       'apiKey': draft.apiKey,
-      'apiBaseUrl': draft.apiBaseUrl,
       'wsPort': draft.wsPort.toString(),
       'channel': draft.channel,
       'webuiApiKey': draft.webuiApiKey,
