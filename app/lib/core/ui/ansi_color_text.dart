@@ -13,6 +13,8 @@ const Map<String, Color> _logTagColors = <String, Color>{
   'skip': Color(0xFF666666), // grey
   'done': Color(0xFF0DBC79), // green
   'trace': Color(0xFF666666), // grey
+  'runtime': Color(0xFFE5C07B), // yellow
+  'progress': Color(0xFF8B5CF6), // purple
 };
 
 /// 解析 ANSI 颜色转义序列并用 [TextSpan] 渲染彩色文本。

@@ -137,7 +137,6 @@ class RuntimeScripts(
             "extractRootfs" -> extractRootfsBody()
             "installRuntimeDeps" -> loginBody(
                 """
-                log_step "安装运行时依赖…"
                 apt-get update -y
                 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                   python3 python3-pip python3-venv git curl ca-certificates xz-utils locales \
@@ -150,13 +149,11 @@ class RuntimeScripts(
                 LANG=zh_CN.UTF-8
                 LC_ALL=zh_CN.UTF-8
                 MOFOX_LOCALE_EOF
-                log_ok "系统包安装完成"
                 log_info "安装 uv 包管理器…"
                 curl -LsSf https://astral.sh/uv/install.sh | sh || true
                 . /root/.local/bin/env 2>/dev/null || true
                 python3 --version
                 git --version
-                log_ok "运行时依赖就绪"
                 """.trimIndent(),
             )
             "cloneRepo" -> {
@@ -165,7 +162,6 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
                 loginBody(
                     """
-                    log_step "克隆 Neo-MoFox 仓库…"
                     mkdir -p ${shellQuote(installDir)}
                     cd ${shellQuote(installDir)}
                     if [ -d ${shellQuote(repoPath)}/.git ]; then
@@ -175,7 +171,6 @@ class RuntimeScripts(
                       git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
                       cd ${shellQuote(repoPath)}
                     fi
-                    log_ok "仓库克隆完成"
                     """.trimIndent(),
                 )
             }
@@ -183,7 +178,6 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
-                    log_step "同步 Python 依赖…"
                     cd ${shellQuote(repoPath)}
                     export PATH="/root/.local/bin:${'$'}PATH"
                     export UV_LINK_MODE=copy
@@ -195,7 +189,6 @@ class RuntimeScripts(
                       . .venv/bin/activate
                       pip install --no-cache-dir -r requirements.txt
                     fi
-                    log_ok "Python 依赖同步完成"
                     """.trimIndent(),
                 )
             }
@@ -203,13 +196,11 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
-                    log_step "生成默认配置…"
                     cd ${shellQuote(repoPath)}
                     mkdir -p config
                     if [ ! -f config/bot_config.toml ]; then
                       python3 -m mofox.config.generate || true
                     fi
-                    log_ok "配置文件就绪"
                     """.trimIndent(),
                 )
             }
@@ -221,11 +212,9 @@ class RuntimeScripts(
                 val webuiKey = args["webuiApiKey"].orEmpty()
                 loginBody(
                     """
-                    log_step "安装 WebUI…"
                     cd ${shellQuote(repoPath)}
                     if [ -d webui ]; then
                       cd webui && (npm install --omit=dev || true) && (npm run build || true)
-                      log_ok "WebUI 构建完成"
                     else
                       log_warn "webui 目录不存在，跳过"
                     fi
@@ -235,7 +224,6 @@ class RuntimeScripts(
             }
             "installNapcat" -> loginBody(
                 """
-                log_step "安装 NapCat…"
                 apt-get update -y
                 mkdir -p /root/napcat-installer /root/napcat
                 cd /root/napcat-installer
@@ -269,14 +257,12 @@ class RuntimeScripts(
                 MOFOX_NAPCAT_EOF
                 chmod +x /root/napcat/napcat.sh
                 mkdir -p /root/napcat/config
-                log_ok "NapCat 安装完成"
                 """.trimIndent(),
             )
             "napcatLogin" -> {
                 val botQq = args["botQq"].orEmpty()
                 loginBody(
                     """
-                    log_step "NapCat 扫码登录…"
                     cd /root/napcat
                     export BOT_QQ=${shellQuote(botQq)}
                     DEFAULT_QR_PATH=/root/napcat/cache/qrcode.png
@@ -328,7 +314,6 @@ class RuntimeScripts(
                         fi
                       fi
                       if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
-                        log_ok "NapCat 登录成功"
                         LOGIN_DONE=1
                         break
                       fi
@@ -356,13 +341,11 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
-                    log_step "注册实例…"
                     mkdir -p /root/.mofox
                     cat > /root/.mofox/instance.toml <<'MOFOX_EOF'
                     name = "$instanceName"
                     path = "$repoPath"
                     MOFOX_EOF
-                    log_ok "实例 $instanceName 已注册"
                     """.trimIndent(),
                 )
             }
@@ -373,7 +356,6 @@ class RuntimeScripts(
                     case ${shellQuote(installDir)} in
                       /root/instances/*)
                       rm -rf -- ${shellQuote(installDir)}
-                      log_ok "已删除实例目录: $installDir"
                       ;;
                       *)
                       log_error "拒绝删除 /root/instances 之外的路径: $installDir"
@@ -390,12 +372,10 @@ class RuntimeScripts(
     private fun extractRootfsBody(): String {
         return """
             progress_echo() { echo "[progress] $@"; }
-            log_step "解压 Debian 13 rootfs…"
             install_ubuntu
             change_ubuntu_source
             configure_ubuntu_dns
             setup_fake_sysdata
-            log_ok "rootfs 就绪: ${'$'}UBUNTU_PATH"
         """.trimIndent()
     }
 
@@ -409,7 +389,6 @@ class RuntimeScripts(
         val webuiKey = args["webuiApiKey"].orEmpty()
         return loginBody(
             """
-            log_step "写入 core.toml…"
             mkdir -p ${shellQuote(repoPath)}/config
             cat > ${shellQuote(repoPath)}/config/core.toml <<'MOFOX_EOF'
             [bot]
@@ -423,7 +402,6 @@ class RuntimeScripts(
             port = $webuiPort
             api_key = "$webuiKey"
             MOFOX_EOF
-            log_ok "core.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -435,14 +413,12 @@ class RuntimeScripts(
         val apiBaseUrl = "https://api.siliconflow.cn/v1"
         return loginBody(
             """
-            log_step "写入 model.toml…"
             mkdir -p ${shellQuote(repoPath)}/config
             cat > ${shellQuote(repoPath)}/config/model.toml <<'MOFOX_EOF'
             [model]
             api_key = "$apiKey"
             base_url = "$apiBaseUrl"
             MOFOX_EOF
-            log_ok "model.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -455,7 +431,6 @@ class RuntimeScripts(
         val adapterDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
         return loginBody(
             """
-            log_step "写入 onebot_adapter/config.toml…"
             mkdir -p $adapterDir
             cat > $adapterDir/config.toml <<'MOFOX_EOF'
             [plugin]
@@ -472,7 +447,6 @@ class RuntimeScripts(
             port = $wsPort
             access_token = ""
             MOFOX_EOF
-            log_ok "onebot_adapter/config.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -482,7 +456,6 @@ class RuntimeScripts(
         val botQq = args["botQq"].orEmpty()
         return loginBody(
             """
-            log_step "写入 NapCat 配置…"
             mkdir -p /root/napcat/config
             cat > /root/napcat/config/onebot11_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF'
             {
@@ -515,7 +488,7 @@ class RuntimeScripts(
               "consoleLogLevel": "info"
             }
             MOFOX_EOF2
-            log_ok "NapCat 配置写入完成"
+
             """.trimIndent(),
         )
     }
@@ -527,10 +500,8 @@ class RuntimeScripts(
     fun packTarScript(paths: List<String>, destPath: String): File {
         val pathsArg = paths.joinToString(" ") { shellQuote(it) }
         val body = """
-            log_step "打包备份文件…"
             mkdir -p $(dirname ${shellQuote(destPath)})
             tar cJf ${shellQuote(destPath)} $pathsArg
-            log_ok "打包完成: $destPath"
         """.trimIndent()
         installer.ensureBaseDirectories()
         val file = File(installer.scriptsDir, "pack-tar.sh")
@@ -724,7 +695,6 @@ class RuntimeScripts(
             # --link2symlink ptrace shim transparently rewrites link() into
             # symlink() so extraction completes correctly.
             log_info "proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
-            log_step "解压 Debian 13 rootfs (~250MB)，请稍候…"
             "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
               TAR_RC=${'$'}?
               log_error "tar 失败 (rc=${'$'}TAR_RC)，日志末尾："
@@ -750,7 +720,6 @@ class RuntimeScripts(
               "${'$'}BB/ls" -la "${'$'}UBUNTU_PATH" 2>/dev/null || true
               exit 1
             fi
-            log_ok "解压完成"
             if [ -d "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME" ]; then
               "${'$'}BB/mv" "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"/* "${'$'}UBUNTU_PATH/" || true
               "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"
