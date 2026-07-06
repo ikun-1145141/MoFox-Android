@@ -230,6 +230,7 @@ class RuntimeScripts(
                 else
                   log_info "NapCat 已安装，跳过"
                 fi
+                mkdir -p /root/napcat/config
                 cat > /root/napcat/napcat.sh <<'MOFOX_NAPCAT_EOF'
                 #!/bin/sh
                 set -e
@@ -250,7 +251,6 @@ class RuntimeScripts(
                 esac
                 MOFOX_NAPCAT_EOF
                 chmod +x /root/napcat/napcat.sh
-                mkdir -p /root/napcat/config
                 """.trimIndent(),
             )
             "napcatLogin" -> {
