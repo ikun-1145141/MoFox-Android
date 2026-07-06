@@ -1,5 +1,20 @@
 import 'package:flutter/material.dart';
 
+/// 日志行首标签 → 颜色映射。
+/// 匹配 `[info]`、`[run]`、`[ok]`、`[error]`、`[warn]`、`[step]` 等。
+const Map<String, Color> _logTagColors = <String, Color>{
+  'info': Color(0xFF11A8CD), // cyan
+  'run': Color(0xFF2472C8), // blue
+  'ok': Color(0xFF0DBC79), // green
+  'error': Color(0xFFCD3131), // red
+  'warn': Color(0xFFE5C07B), // yellow
+  'step': Color(0xFF8B5CF6), // purple
+  'resume': Color(0xFFE5C07B), // yellow
+  'skip': Color(0xFF666666), // grey
+  'done': Color(0xFF0DBC79), // green
+  'trace': Color(0xFF666666), // grey
+};
+
 /// 解析 ANSI 颜色转义序列并用 [TextSpan] 渲染彩色文本。
 ///
 /// 支持 SGR (Select Graphic Rendition) 序列：
@@ -11,6 +26,9 @@ import 'package:flutter/material.dart';
 /// - TrueColor `38;2;r;g;b` / `48;2;r;g;b`
 ///
 /// 不支持的序列被静默忽略，只输出可见字符。
+///
+/// 此外，如果行首以 `[tag]` 开头（如 `[info]`、`[run]`、`[ok]`），
+/// 会自动将整个 `[tag]` 部分着色，剩余部分继续按 ANSI 序列解析。
 class AnsiColorText extends StatelessWidget {
   const AnsiColorText(
     this.data, {
@@ -117,6 +135,29 @@ class AnsiParser {
     var blink = false;
     var reverse = false;
 
+    // 检测行首 [tag] 标签并着色。
+    var startIndex = 0;
+    if (input.isNotEmpty && input[0] == '[') {
+      final close = input.indexOf(']');
+      if (close > 0 && close < 20) {
+        final tag = input.substring(1, close).toLowerCase();
+        final tagColor = _logTagColors[tag];
+        if (tagColor != null) {
+          // 将 [tag] 部分着色输出。
+          spans.add(
+            TextSpan(
+              text: input.substring(0, close + 1),
+              style: (baseStyle ?? const TextStyle()).copyWith(
+                color: tagColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          );
+          startIndex = close + 1;
+        }
+      }
+    }
+
     void flush() {
       if (buffer.isEmpty) return;
       Color effectiveFg = fg;
@@ -143,7 +184,7 @@ class AnsiParser {
       buffer.clear();
     }
 
-    var i = 0;
+    var i = startIndex;
     while (i < input.length) {
       final char = input[i];
 
