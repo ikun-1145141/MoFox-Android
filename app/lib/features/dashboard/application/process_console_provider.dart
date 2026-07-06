@@ -62,6 +62,8 @@ const Object _sentinel = Object();
 class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   StreamSubscription<ProcessEvent>? _events;
   Timer? _statusTimer;
+  /// 同步忙标志：防止快速点击在 Riverpod 状态传播前绕过 isBusy 守卫。
+  bool _actionInProgress = false;
 
   @override
   ProcessConsoleState build() {
@@ -187,7 +189,9 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     required Future<void> Function(RuntimeBridge runtime) run,
     Instance? instance,
   }) async {
-    if (state.isBusy) return;
+    // 同步守卫：快速点击时 state.isBusy 还没传播，用本地标志挡住。
+    if (_actionInProgress || state.isBusy) return;
+    _actionInProgress = true;
     appLogger.i(
         'process: bot $action${instance == null ? '' : ' instance=${instance.id}'}');
     final runtime = ref.read(runtimeBridgeProvider);
@@ -203,6 +207,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       _appendBotLog('[control] $busyLabel失败：$error');
     } finally {
       state = state.copyWith(busyAction: null);
+      _actionInProgress = false;
     }
   }
 
@@ -211,7 +216,8 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     required String busyLabel,
     required Future<void> Function(RuntimeBridge runtime) run,
   }) async {
-    if (state.isBusy) return;
+    if (_actionInProgress || state.isBusy) return;
+    _actionInProgress = true;
     appLogger.i('process: napcat $action');
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
@@ -232,6 +238,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       _appendNapcatLog('[control] $busyLabel失败：$error');
     } finally {
       state = state.copyWith(busyAction: null);
+      _actionInProgress = false;
     }
   }
 

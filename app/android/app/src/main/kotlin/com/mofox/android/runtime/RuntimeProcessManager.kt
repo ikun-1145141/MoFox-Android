@@ -19,6 +19,8 @@ class RuntimeProcessManager(
     val commandBuilder = RuntimeCommandBuilder(context, installer)
     val scripts = RuntimeScripts(installer, commandBuilder)
     private val processes = ConcurrentHashMap<String, ManagedProcess>()
+    /** 正在进行的 stop/restart 操作标记，防止快速点击导致并发停止脚本互相打架。 */
+    private val stopping = ConcurrentHashMap<String, Boolean>()
 
     fun status(): Map<String, String> {
         return mapOf(
@@ -42,12 +44,19 @@ class RuntimeProcessManager(
     }
 
     fun stop(name: String) {
-        val managed = processes[name]
-        if (managed != null) {
-            runStopScript(name, managed.args)
-            managed.process?.destroy()
+        // 并发保护：如果该进程已经在停止中，直接返回，避免快速点击触发多个 stop 脚本
+        // 同时 spawn 多个 pgrep/kill，可能误杀 host 层 bash/proot 导致整个 app 崩溃。
+        if (stopping.putIfAbsent(name, true) != null) return
+        try {
+            val managed = processes[name]
+            if (managed != null) {
+                runStopScript(name, managed.args)
+                managed.process?.destroy()
+            }
+            processes[name] = ManagedProcess(managed?.process, "stopped", managed?.args ?: emptyMap())
+        } finally {
+            stopping.remove(name)
         }
-        processes[name] = ManagedProcess(managed?.process, "stopped", managed?.args ?: emptyMap())
     }
 
     fun restart(name: String, args: Map<String, String> = emptyMap()) {
@@ -151,7 +160,8 @@ class RuntimeProcessManager(
             BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
                 lines.forEach { line -> events.emit("process", mapOf("name" to name, "line" to line)) }
             }
-            process.waitFor()
+            // stop 脚本里有 sleep 2，给 15 秒兜底，避免卡死 executor 线程。
+            process.waitForWithTimeout(15)
         } catch (error: Throwable) {
             events.emit("process", mapOf("name" to name, "line" to "[$name] stop failed: ${error.message}"))
         }
