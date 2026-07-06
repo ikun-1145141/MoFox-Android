@@ -98,7 +98,22 @@ class RuntimeScripts(
             true
             """.trimIndent()
           }
-          "napcat" -> "pkill -TERM -f /root/Napcat/opt/QQ/qq || true"
+          "napcat" -> {
+            """
+            NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
+            for PID in ${'$'}NAPCAT_PIDS; do
+              kill -TERM "${'$'}PID" 2>/dev/null || true
+            done
+            pkill -TERM -f 'Xvfb' 2>/dev/null || true
+            sleep 2
+            NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
+            for PID in ${'$'}NAPCAT_PIDS; do
+              kill -KILL "${'$'}PID" 2>/dev/null || true
+            done
+            pkill -KILL -f 'Xvfb' 2>/dev/null || true
+            true
+            """.trimIndent()
+          }
           else -> error("Unknown process: $name")
         }
         installer.ensureBaseDirectories()
@@ -318,8 +333,8 @@ class RuntimeScripts(
                           QR_MTIME="${'$'}CURRENT_MTIME"
                         fi
                       fi
-                      # 登录成功检测：已启用数据库辅助支持能力（登录后才出现）
-                      if grep -q '已启用数据库辅助支持能力' /tmp/napcat-login.log 2>/dev/null; then
+                      # 登录成功检测：配置加载（OneBot11 适配器初始化时输出，表示登录完成）
+                      if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
                         LOGIN_DONE=1
                         break
                       fi

@@ -24,6 +24,7 @@ class InstanceDetailPage extends ConsumerStatefulWidget {
 class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
   bool _qrShown = false;
   String? _qrPayload;
+  bool _loginCancelled = false;
 
   Instance get instance => widget.instance;
 
@@ -36,6 +37,16 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
 
     ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
       final payload = next.napcatQrPayload;
+      // 登录已取消或已完成（busyAction 归零），忽略迟到的 QR 事件
+      final loginActive = next.busyAction == 'start-napcat';
+      if (!loginActive || _loginCancelled) {
+        if (_qrShown) {
+          Navigator.of(context).pop();
+          _qrShown = false;
+          _qrPayload = null;
+        }
+        return;
+      }
       if (payload != null && !_qrShown) {
         _qrShown = true;
         _qrPayload = payload;
@@ -48,6 +59,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
           builder: (_) => NapcatQrSheet(
             payload: _qrPayload!,
             onCancel: () {
+              _loginCancelled = true;
               ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
               Navigator.of(context).pop();
             },
@@ -57,12 +69,12 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
           _qrPayload = null;
         });
       } else if (payload != null && _qrShown && payload != _qrPayload) {
-        // 二维码刷新：关闭旧 sheet 再弹新的
+        // 二维码刷新：更新 payload，sheet 用新 payload 重建
         _qrPayload = payload;
         Navigator.of(context).pop();
         _qrShown = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!_qrShown && mounted) {
+          if (!_qrShown && mounted && !_loginCancelled) {
             _qrShown = true;
             showModalBottomSheet<void>(
               context: context,
@@ -73,6 +85,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
               builder: (_) => NapcatQrSheet(
                 payload: _qrPayload!,
                 onCancel: () {
+                  _loginCancelled = true;
                   ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
                   Navigator.of(context).pop();
                 },
@@ -227,9 +240,12 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed || console.isBusy
                                   ? null
-                                  : () => ref
-                                      .read(processConsoleProvider.notifier)
-                                      .startNapcat(instance),
+                                  : () {
+                                      _loginCancelled = false;
+                                      ref
+                                          .read(processConsoleProvider.notifier)
+                                          .startNapcat(instance);
+                                    },
                               icon: const Icon(Icons.qr_code_2),
                               label: const Text('NapCat'),
                             ),
