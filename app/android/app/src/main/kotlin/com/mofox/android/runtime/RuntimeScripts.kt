@@ -848,6 +848,17 @@ class RuntimeScripts(
           fi
           mkdir -p "${'$'}UBUNTU_PATH/storage/emulated" 2>/dev/null || true
           configure_ubuntu_dns
+          # 将日志函数写入 rootfs，使 proot 内的 bash 也能使用 log_step / log_ok 等。
+          if [ ! -f "${'$'}UBUNTU_PATH/usr/local/bin/mofox_log.sh" ]; then
+            mkdir -p "${'$'}UBUNTU_PATH/usr/local/bin"
+            cat > "${'$'}UBUNTU_PATH/usr/local/bin/mofox_log.sh" <<'MOFOX_LOG_EOF'
+log_step(){ printf "\033[34m▶ %s\033[0m\n" "$*"; }
+log_info(){ printf "\033[36m%s\033[0m\n" "$*"; }
+log_ok(){   printf "\033[32m✓ %s\033[0m\n" "$*"; }
+log_warn(){ printf "\033[33m⚠ %s\033[0m\n" "$*"; }
+log_error(){ printf "\033[31m✗ %s\033[0m\n" "$*"; }
+MOFOX_LOG_EOF
+          fi
           MOFOX_LOCALE_LANG=C.UTF-8
           if [ -f "${'$'}UBUNTU_PATH/etc/default/locale" ] && \
              [ -f "${'$'}UBUNTU_PATH/usr/lib/locale/locale-archive" ] && \
@@ -884,7 +895,7 @@ class RuntimeScripts(
               UV_LINK_MODE=copy \
               GIT_PAGER=cat \
               COMMAND_TO_EXEC="${'$'}COMMAND_TO_EXEC" \
-              /bin/bash -lc "eval \"\${'$'}COMMAND_TO_EXEC\""
+              /bin/bash -lc ". /usr/local/bin/mofox_log.sh 2>/dev/null; eval \"\${'$'}COMMAND_TO_EXEC\""
         }
     """.trimIndent()
 
