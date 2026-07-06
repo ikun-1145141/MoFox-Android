@@ -467,25 +467,6 @@ Future<void> _confirmDeleteInstance(
   WidgetRef ref,
   Instance instance,
 ) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('删除实例？'),
-      content: Text('将删除 ${instance.name} 的本地记录和实例目录。此操作无法撤销。'),
-      actions: <Widget>[
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('删除'),
-        ),
-      ],
-    ),
-  );
-  if (confirmed != true || !context.mounted) return;
-
   final messenger = ScaffoldMessenger.of(context);
   try {
     // 先删除本地记录并刷新 UI，确保实例立即从列表消失。
