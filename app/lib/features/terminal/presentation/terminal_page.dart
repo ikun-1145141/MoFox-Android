@@ -209,8 +209,8 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     final session = ref.watch(terminalSessionProvider(_sessionSpec));
     final error = session.error;
     final terminalHapticsEnabled =
-      ref.watch(appSettingsProvider).valueOrNull?.terminalHapticsEnabled ??
-        true;
+        ref.watch(appSettingsProvider).valueOrNull?.terminalHapticsEnabled ??
+            true;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.title),

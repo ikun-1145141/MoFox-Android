@@ -113,8 +113,8 @@ class Instance {
         channel: json['channel']! as String,
         installNapcat: json['installNapcat']! as bool,
         installWebui: json['installWebui']! as bool,
-        installDir: json['installDir'] as String? ??
-            '/root/instances/${json['id']}',
+        installDir:
+            json['installDir'] as String? ?? '/root/instances/${json['id']}',
         createdAt: DateTime.parse(json['createdAt']! as String),
         installStatus: InstanceInstallStatusX.fromName(
           json['installStatus'] as String?,

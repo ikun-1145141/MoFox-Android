@@ -13,8 +13,7 @@ class ExtractRuntimeStep extends ConsumerStatefulWidget {
   const ExtractRuntimeStep({super.key});
 
   @override
-  ConsumerState<ExtractRuntimeStep> createState() =>
-      _ExtractRuntimeStepState();
+  ConsumerState<ExtractRuntimeStep> createState() => _ExtractRuntimeStepState();
 }
 
 class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
@@ -139,9 +138,8 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
                         statusLabel,
                         style: text.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: failure != null
-                              ? scheme.error
-                              : scheme.onSurface,
+                          color:
+                              failure != null ? scheme.error : scheme.onSurface,
                         ),
                       ),
                     ),

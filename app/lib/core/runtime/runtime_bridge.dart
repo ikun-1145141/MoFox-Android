@@ -43,14 +43,19 @@ class RuntimeBridge {
         'runInstallTask',
         <String, Object>{'task': task, 'args': args},
       );
-      final parsed = RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
-      appLogger.i('runtime: runInstallTask "$task" success=${parsed.success} logs=${parsed.logs.length}');
+      final parsed =
+          RuntimeTaskResult.fromMap(result ?? const <Object?, Object?>{});
+      appLogger.i(
+          'runtime: runInstallTask "$task" success=${parsed.success} logs=${parsed.logs.length}');
       return parsed;
     } on PlatformException catch (e) {
-      appLogger.e('runtime: runInstallTask "$task" PlatformException code=${e.code} msg=${e.message}', error: e);
+      appLogger.e(
+          'runtime: runInstallTask "$task" PlatformException code=${e.code} msg=${e.message}',
+          error: e);
       rethrow;
     } catch (e, s) {
-      appLogger.e('runtime: runInstallTask "$task" error', error: e, stackTrace: s);
+      appLogger.e('runtime: runInstallTask "$task" error',
+          error: e, stackTrace: s);
       rethrow;
     }
   }
@@ -191,7 +196,9 @@ class RuntimeBridge {
       appLogger.d('runtime: openShell -> sessionId=$id');
       return id ?? '';
     } on PlatformException catch (e) {
-      appLogger.e('runtime: openShell PlatformException code=${e.code} msg=${e.message}', error: e);
+      appLogger.e(
+          'runtime: openShell PlatformException code=${e.code} msg=${e.message}',
+          error: e);
       rethrow;
     }
   }
@@ -271,9 +278,7 @@ class ProcessEvent {
 String _cleanInstallLogLine(String line) {
   // 保留 ANSI 颜色转义码（ESC 0x1B + [），前端用 AnsiColorText 渲染。
   // 只剥除其他控制字符（排除 0x1B）。
-  return line
-      .replaceAll(_controlCharsPattern, '')
-      .trimRight();
+  return line.replaceAll(_controlCharsPattern, '').trimRight();
 }
 
 final RegExp _controlCharsPattern =

@@ -26,7 +26,8 @@ class OobePage extends ConsumerWidget {
     final progress = (currentIndex + 1) / totalSteps;
     final isFirst = flow.current == OobeStep.welcome;
     final isLast = flow.current == OobeStep.done;
-    final canGoBack = !isFirst && !isLast && flow.current != OobeStep.extractRuntime;
+    final canGoBack =
+        !isFirst && !isLast && flow.current != OobeStep.extractRuntime;
 
     return Scaffold(
       backgroundColor: scheme.surface,
@@ -43,11 +44,10 @@ class OobePage extends ConsumerWidget {
                     children: <Widget>[
                       Text(
                         isLast ? '全部完成' : '第 ${currentIndex + 1} 步',
-                        style:
-                            Theme.of(context).textTheme.labelLarge?.copyWith(
-                                  color: scheme.primary,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
                       ),
                       Text(
                         '共 $totalSteps 步',

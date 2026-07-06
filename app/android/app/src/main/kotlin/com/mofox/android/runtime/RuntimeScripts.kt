@@ -137,6 +137,7 @@ class RuntimeScripts(
             "extractRootfs" -> extractRootfsBody()
             "installRuntimeDeps" -> loginBody(
                 """
+                log_step "安装运行时依赖…"
                 apt-get update -y
                 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                   python3 python3-pip python3-venv git curl ca-certificates xz-utils locales \
@@ -149,10 +150,13 @@ class RuntimeScripts(
                 LANG=zh_CN.UTF-8
                 LC_ALL=zh_CN.UTF-8
                 MOFOX_LOCALE_EOF
+                log_ok "系统包安装完成"
+                log_info "安装 uv 包管理器…"
                 curl -LsSf https://astral.sh/uv/install.sh | sh || true
                 . /root/.local/bin/env 2>/dev/null || true
                 python3 --version
                 git --version
+                log_ok "运行时依赖就绪"
                 """.trimIndent(),
             )
             "cloneRepo" -> {
@@ -161,15 +165,17 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
                 loginBody(
                     """
+                    log_step "克隆 Neo-MoFox 仓库…"
                     mkdir -p ${shellQuote(installDir)}
                     cd ${shellQuote(installDir)}
                     if [ -d ${shellQuote(repoPath)}/.git ]; then
-                      echo "[runtime] repo already cloned at $repoPath, pulling latest"
+                      log_info "仓库已存在，拉取最新代码…"
                       cd ${shellQuote(repoPath)} && git pull --ff-only || true
                     else
                       git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
                       cd ${shellQuote(repoPath)}
                     fi
+                    log_ok "仓库克隆完成"
                     """.trimIndent(),
                 )
             }
@@ -177,6 +183,7 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
+                    log_step "同步 Python 依赖…"
                     cd ${shellQuote(repoPath)}
                     export PATH="/root/.local/bin:${'$'}PATH"
                     export UV_LINK_MODE=copy
@@ -188,6 +195,7 @@ class RuntimeScripts(
                       . .venv/bin/activate
                       pip install --no-cache-dir -r requirements.txt
                     fi
+                    log_ok "Python 依赖同步完成"
                     """.trimIndent(),
                 )
             }
@@ -195,11 +203,13 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
+                    log_step "生成默认配置…"
                     cd ${shellQuote(repoPath)}
                     mkdir -p config
                     if [ ! -f config/bot_config.toml ]; then
                       python3 -m mofox.config.generate || true
                     fi
+                    log_ok "配置文件就绪"
                     """.trimIndent(),
                 )
             }
@@ -211,26 +221,32 @@ class RuntimeScripts(
                 val webuiKey = args["webuiApiKey"].orEmpty()
                 loginBody(
                     """
+                    log_step "安装 WebUI…"
                     cd ${shellQuote(repoPath)}
                     if [ -d webui ]; then
                       cd webui && (npm install --omit=dev || true) && (npm run build || true)
+                      log_ok "WebUI 构建完成"
+                    else
+                      log_warn "webui 目录不存在，跳过"
                     fi
-                    echo "[webui] api_key=${shellQuote(webuiKey)}"
+                    log_info "WebUI api_key=${shellQuote(webuiKey)}"
                     """.trimIndent(),
                 )
             }
             "installNapcat" -> loginBody(
                 """
-              apt-get update -y
+                log_step "安装 NapCat…"
+                apt-get update -y
                 mkdir -p /root/napcat-installer /root/napcat
                 cd /root/napcat-installer
                 if [ ! -f /root/Napcat/opt/QQ/qq ]; then
+                  log_info "下载 NapCat 安装脚本…"
                   curl -L --fail --connect-timeout 20 --retry 3 \
                     https://nclatest.znin.net/NapNeko/NapCat-Installer/main/script/install.sh \
                     -o napcat-install.sh
                   bash napcat-install.sh --docker n --cli n --proxy 0
                 else
-                  echo "[napcat] existing rootless installation found at /root/Napcat"
+                  log_info "NapCat 已安装，跳过"
                 fi
                 cat > /root/napcat/napcat.sh <<'MOFOX_NAPCAT_EOF'
                 #!/bin/sh
@@ -253,13 +269,14 @@ class RuntimeScripts(
                 MOFOX_NAPCAT_EOF
                 chmod +x /root/napcat/napcat.sh
                 mkdir -p /root/napcat/config
-                echo "[napcat] global NapCat ready"
+                log_ok "NapCat 安装完成"
                 """.trimIndent(),
             )
             "napcatLogin" -> {
                 val botQq = args["botQq"].orEmpty()
                 loginBody(
                     """
+                    log_step "NapCat 扫码登录…"
                     cd /root/napcat
                     export BOT_QQ=${shellQuote(botQq)}
                     DEFAULT_QR_PATH=/root/napcat/cache/qrcode.png
@@ -311,12 +328,12 @@ class RuntimeScripts(
                         fi
                       fi
                       if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
-                        echo "[napcat] 登录成功"
+                        log_ok "NapCat 登录成功"
                         LOGIN_DONE=1
                         break
                       fi
                       if grep -q 'Login Error' /tmp/napcat-login.log 2>/dev/null; then
-                        echo "[napcat] 登录失败"
+                        log_error "NapCat 登录失败"
                         stop_napcat_login_process
                         exit 1
                       fi
@@ -325,7 +342,7 @@ class RuntimeScripts(
                       fi
                     done
                     if [ "${'$'}LOGIN_DONE" != "1" ]; then
-                      echo "[napcat] 登录等待超时或 NapCat 已退出" >&2
+                      log_error "登录等待超时或 NapCat 已退出"
                       stop_napcat_login_process
                       exit 1
                     fi
@@ -339,12 +356,13 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 loginBody(
                     """
+                    log_step "注册实例…"
                     mkdir -p /root/.mofox
                     cat > /root/.mofox/instance.toml <<'MOFOX_EOF'
                     name = "$instanceName"
                     path = "$repoPath"
                     MOFOX_EOF
-                    echo "[runtime] instance $instanceName registered"
+                    log_ok "实例 $instanceName 已注册"
                     """.trimIndent(),
                 )
             }
@@ -355,10 +373,10 @@ class RuntimeScripts(
                     case ${shellQuote(installDir)} in
                       /root/instances/*)
                       rm -rf -- ${shellQuote(installDir)}
-                      echo "[runtime] deleted instance dir: $installDir"
+                      log_ok "已删除实例目录: $installDir"
                       ;;
                       *)
-                      echo "[runtime] refusing to delete outside /root/instances: $installDir" >&2
+                      log_error "拒绝删除 /root/instances 之外的路径: $installDir"
                       exit 2
                       ;;
                     esac
@@ -372,11 +390,12 @@ class RuntimeScripts(
     private fun extractRootfsBody(): String {
         return """
             progress_echo() { echo "[progress] $@"; }
+            log_step "解压 Debian 13 rootfs…"
             install_ubuntu
             change_ubuntu_source
             configure_ubuntu_dns
             setup_fake_sysdata
-            echo "[runtime] rootfs ready at ${'$'}UBUNTU_PATH"
+            log_ok "rootfs 就绪: ${'$'}UBUNTU_PATH"
         """.trimIndent()
     }
 
@@ -390,6 +409,7 @@ class RuntimeScripts(
         val webuiKey = args["webuiApiKey"].orEmpty()
         return loginBody(
             """
+            log_step "写入 core.toml…"
             mkdir -p ${shellQuote(repoPath)}/config
             cat > ${shellQuote(repoPath)}/config/core.toml <<'MOFOX_EOF'
             [bot]
@@ -403,6 +423,7 @@ class RuntimeScripts(
             port = $webuiPort
             api_key = "$webuiKey"
             MOFOX_EOF
+            log_ok "core.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -414,12 +435,14 @@ class RuntimeScripts(
         val apiBaseUrl = "https://api.siliconflow.cn/v1"
         return loginBody(
             """
+            log_step "写入 model.toml…"
             mkdir -p ${shellQuote(repoPath)}/config
             cat > ${shellQuote(repoPath)}/config/model.toml <<'MOFOX_EOF'
             [model]
             api_key = "$apiKey"
             base_url = "$apiBaseUrl"
             MOFOX_EOF
+            log_ok "model.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -430,12 +453,14 @@ class RuntimeScripts(
         val channel = args["channel"] ?: "main"
         return loginBody(
             """
+            log_step "写入 adapter.toml…"
             mkdir -p ${shellQuote(repoPath)}/config
             cat > ${shellQuote(repoPath)}/config/adapter.toml <<'MOFOX_EOF'
             [napcat]
             ws_port = $wsPort
             channel = "$channel"
             MOFOX_EOF
+            log_ok "adapter.toml 写入完成"
             """.trimIndent(),
         )
     }
@@ -445,6 +470,7 @@ class RuntimeScripts(
         val botQq = args["botQq"].orEmpty()
         return loginBody(
             """
+            log_step "写入 NapCat 配置…"
             mkdir -p /root/napcat/config
             cat > /root/napcat/config/onebot11_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF'
             {
@@ -465,6 +491,7 @@ class RuntimeScripts(
               "enableLocalFile2Url": false
             }
             MOFOX_EOF
+            log_ok "NapCat 配置写入完成"
             """.trimIndent(),
         )
     }
@@ -496,6 +523,14 @@ class RuntimeScripts(
           echo "[progress] $*"
           [ -n "${'$'}TMPDIR" ] && echo "$*" > "${'$'}TMPDIR/progress_des" 2>/dev/null || true
         }
+
+        # 彩色日志辅助函数（ANSI SGR）
+        # \033 在 printf 格式串中被直接解释为 ESC 字符，兼容 Android mksh。
+        log_info(){ printf "\033[36m%s\033[0m\\n" "${'$'}*"; }
+        log_ok(){   printf "\033[32m✓ %s\033[0m\\n" "${'$'}*"; }
+        log_warn(){ printf "\033[33m⚠ %s\033[0m\\n" "${'$'}*"; }
+        log_error(){ printf "\033[31m✗ %s\033[0m\\n" "${'$'}*"; }
+        log_step(){ printf "\033[34m▶ %s\033[0m\\n" "${'$'}*"; }
     """.trimIndent()
 
     /**
@@ -597,7 +632,7 @@ class RuntimeScripts(
           add_nameserver 119.29.29.29
           add_nameserver 8.8.8.8
           chmod 644 "${'$'}UBUNTU_PATH/etc/resolv.conf" 2>/dev/null || true
-          echo "[runtime] resolv.conf: ${'$'}(tr '\n' ';' < "${'$'}UBUNTU_PATH/etc/resolv.conf")"
+          log_info "resolv.conf: ${'$'}(tr '\n' ';' < "${'$'}UBUNTU_PATH/etc/resolv.conf")"
         }
     """.trimIndent()
 
@@ -612,21 +647,21 @@ class RuntimeScripts(
 
           NEED_INSTALL=0
           if [ ! -d "${'$'}UBUNTU_PATH/bin" ]; then
-            echo "[state] missing bin directory, force reinstall"
+            log_warn "缺少 bin 目录，需要重新安装"
             NEED_INSTALL=1
           elif [ ! -f "${'$'}UBUNTU_PATH/usr/bin/env" ]; then
-            echo "[state] missing /usr/bin/env, force reinstall"
+            log_warn "缺少 /usr/bin/env，需要重新安装"
             NEED_INSTALL=1
           elif [ ! -d "${'$'}UBUNTU_PATH/etc" ]; then
-            echo "[state] missing etc directory, force reinstall"
+            log_warn "缺少 etc 目录，需要重新安装"
             NEED_INSTALL=1
           fi
 
           if [ "${'$'}NEED_INSTALL" -eq 1 ] || [ -z "${'$'}(ls -A "${'$'}UBUNTU_PATH" 2>/dev/null)" ]; then
-            echo "[state] ${'$'}UBUNTU_PATH not ready, reinstalling"
+            log_info "${'$'}UBUNTU_PATH 未就绪，开始安装…"
             PERSISTENT_BACKUP="${'$'}HOME_PATH/ubuntu_user_backup"
             if [ -d "${'$'}UBUNTU_PATH/root" ]; then
-              echo "[backup] saving /root to ${'$'}PERSISTENT_BACKUP"
+              log_info "备份 /root 到 ${'$'}PERSISTENT_BACKUP"
               mkdir -p "${'$'}PERSISTENT_BACKUP"
               "${'$'}BB/cp" -r "${'$'}UBUNTU_PATH/root" "${'$'}PERSISTENT_BACKUP/root_backup" || true
             fi
@@ -638,15 +673,15 @@ class RuntimeScripts(
             # them and leaves usr/bin/env as a dangling symlink. proot's
             # --link2symlink ptrace shim transparently rewrites link() into
             # symlink() so extraction completes correctly.
-            echo "[cmd] proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
-            echo "[tar] extracting Debian 13 rootfs (~250MB), please wait..."
+            log_info "proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
+            log_step "解压 Debian 13 rootfs (~250MB)，请稍候…"
             "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
               TAR_RC=${'$'}?
-              echo "[error] tar failed (rc=${'$'}TAR_RC), tail of log:"
+              log_error "tar 失败 (rc=${'$'}TAR_RC)，日志末尾："
               "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
               exit "${'$'}TAR_RC"
             }
-            echo "[tar] tar exited 0, verifying rootfs integrity"
+            log_info "tar 退出 0，验证 rootfs 完整性…"
             # busybox tar may exit 0 even when extraction is incomplete (e.g.
             # malformed entries silently skipped). Without this guard the
             # caller will try to write resolv.conf into a missing etc/ and
@@ -658,14 +693,14 @@ class RuntimeScripts(
               fi
             done
             if [ -n "${'$'}MISSING" ]; then
-              echo "[error] tar reported success but rootfs is missing:${'$'}MISSING"
-              echo "[error] tar.log tail (last 60 lines):"
+              log_error "tar 报告成功但 rootfs 缺少:${'$'}MISSING"
+              log_error "tar.log 末尾 (最后 60 行)："
               "${'$'}BB/tail" -n 60 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
-              echo "[error] top-level entries actually extracted:"
+              log_error "实际解压的顶层条目："
               "${'$'}BB/ls" -la "${'$'}UBUNTU_PATH" 2>/dev/null || true
               exit 1
             fi
-            echo "[tar] extraction complete"
+            log_ok "解压完成"
             if [ -d "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME" ]; then
               "${'$'}BB/mv" "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"/* "${'$'}UBUNTU_PATH/" || true
               "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH/${'$'}UBUNTU_NAME"
@@ -674,13 +709,13 @@ class RuntimeScripts(
             _write_color_bashrc "${'$'}UBUNTU_PATH/root/.bashrc"
             echo 'export ANDROID_DATA=/home/' >> "${'$'}UBUNTU_PATH/root/.bashrc"
             if [ -d "${'$'}PERSISTENT_BACKUP/root_backup" ]; then
-              echo "[restore] restoring /root from backup"
+              log_info "从备份恢复 /root"
               "${'$'}BB/cp" -r "${'$'}PERSISTENT_BACKUP/root_backup"/* "${'$'}UBUNTU_PATH/root/" || true
               "${'$'}BB/rm" -rf "${'$'}PERSISTENT_BACKUP"
             fi
           else
             VERSION=${'$'}(cat "${'$'}UBUNTU_PATH/etc/issue.net" 2>/dev/null || echo "debian")
-            echo "[state] Debian already installed -> ${'$'}VERSION"
+            log_info "Debian 已安装 -> ${'$'}VERSION"
           fi
         }
     """.trimIndent()
@@ -792,6 +827,12 @@ class RuntimeScripts(
               LC_ALL="${'$'}MOFOX_LOCALE_LANG" \
               TZ="${'$'}ANDROID_TZ" \
               PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+              CLICOLOR_FORCE=1 \
+              FORCE_COLOR=1 \
+              PIP_FORCE_COLOR=1 \
+              PIP_NO_INPUT=1 \
+              UV_LINK_MODE=copy \
+              GIT_PAGER=cat \
               COMMAND_TO_EXEC="${'$'}COMMAND_TO_EXEC" \
               /bin/bash -lc "eval \"\${'$'}COMMAND_TO_EXEC\""
         }

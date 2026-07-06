@@ -101,58 +101,59 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       );
 
   Future<void> startNapcat(Instance instance) {
-    appLogger.i('process: startNapcat instance=${instance.id} botQq=${instance.botQq}');
+    appLogger.i(
+        'process: startNapcat instance=${instance.id} botQq=${instance.botQq}');
     return _runNapcatAction(
-        action: 'start-napcat',
-        busyLabel: 'NapCat 登录并启动中',
-        run: (runtime) async {
-          final args = _napcatArgs(instance);
-          final streamedLogs = <String>[];
-          final loginEvents = runtime.installEvents().listen((event) {
-            if (event.task != 'napcatLogin') return;
-            streamedLogs.add(event.line);
-            if (event.line.startsWith('MOFOX_QR_PAYLOAD=')) {
-              final separator = event.line.indexOf('=');
-              final payload = event.line.substring(separator + 1);
-              appLogger.i('process: napcat QR payload received (len=${payload.length})');
-              state = state.copyWith(
-                napcatQrPayload: payload,
-              );
-              return;
-            }
-            if (event.line.contains('[napcat] 登录成功')) {
-              appLogger.i('process: napcat login success');
-              state = state.copyWith(napcatQrPayload: null);
-            }
-            _appendNapcatLog(event.line);
-          });
-          late final RuntimeTaskResult loginResult;
-          try {
-            loginResult =
-                await runtime.runInstallTask('napcatLogin', args: args);
-          } finally {
-            await loginEvents.cancel();
+      action: 'start-napcat',
+      busyLabel: 'NapCat 登录并启动中',
+      run: (runtime) async {
+        final args = _napcatArgs(instance);
+        final streamedLogs = <String>[];
+        final loginEvents = runtime.installEvents().listen((event) {
+          if (event.task != 'napcatLogin') return;
+          streamedLogs.add(event.line);
+          if (event.line.startsWith('MOFOX_QR_PAYLOAD=')) {
+            final separator = event.line.indexOf('=');
+            final payload = event.line.substring(separator + 1);
+            appLogger.i(
+                'process: napcat QR payload received (len=${payload.length})');
+            state = state.copyWith(
+              napcatQrPayload: payload,
+            );
+            return;
           }
-          if (!loginResult.success) {
-            appLogger.e('process: napcat login failed: ${loginResult.error}');
-            if (streamedLogs.isEmpty) {
-              for (final line in loginResult.logs) {
-                _appendNapcatLog(line);
-              }
-            }
-            throw loginResult.error ?? 'NapCat 扫码登录失败';
+          if (event.line.contains('[napcat] 登录成功')) {
+            appLogger.i('process: napcat login success');
+            state = state.copyWith(napcatQrPayload: null);
           }
+          _appendNapcatLog(event.line);
+        });
+        late final RuntimeTaskResult loginResult;
+        try {
+          loginResult = await runtime.runInstallTask('napcatLogin', args: args);
+        } finally {
+          await loginEvents.cancel();
+        }
+        if (!loginResult.success) {
+          appLogger.e('process: napcat login failed: ${loginResult.error}');
           if (streamedLogs.isEmpty) {
             for (final line in loginResult.logs) {
               _appendNapcatLog(line);
             }
           }
-          _appendNapcatLog('[control] NapCat 扫码登录完成');
-          state = state.copyWith(napcatQrPayload: null);
-          appLogger.i('process: starting napcat process');
-          await runtime.startProcess('napcat', args: args);
-        },
-      );
+          throw loginResult.error ?? 'NapCat 扫码登录失败';
+        }
+        if (streamedLogs.isEmpty) {
+          for (final line in loginResult.logs) {
+            _appendNapcatLog(line);
+          }
+        }
+        _appendNapcatLog('[control] NapCat 扫码登录完成');
+        state = state.copyWith(napcatQrPayload: null);
+        appLogger.i('process: starting napcat process');
+        await runtime.startProcess('napcat', args: args);
+      },
+    );
   }
 
   Future<void> stopNapcat() => _runNapcatAction(
@@ -187,7 +188,8 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     Instance? instance,
   }) async {
     if (state.isBusy) return;
-    appLogger.i('process: bot $action${instance == null ? '' : ' instance=${instance.id}'}');
+    appLogger.i(
+        'process: bot $action${instance == null ? '' : ' instance=${instance.id}'}');
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(busyAction: action, errorMessage: null);
     _appendBotLog(

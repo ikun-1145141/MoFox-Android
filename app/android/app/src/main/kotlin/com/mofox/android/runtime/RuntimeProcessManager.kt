@@ -54,9 +54,17 @@ class RuntimeProcessManager(
         start(name, args)
     }
 
+    companion object {
+        // ANSI 颜色码（与 shell 端 log_* 函数一致）
+        private const val C_RESET = "\u001B[0m"
+        private const val C_GREEN = "\u001B[32m"
+        private const val C_RED = "\u001B[31m"
+        private const val C_BLUE = "\u001B[34m"
+    }
+
     fun runInstallTask(task: String, args: Map<String, String>): InstallTaskResult {
         if (task == "extractRootfs") {
-            events.emit("install", mapOf("task" to task, "line" to "[run] staging rootfs tarball from assets…"))
+            events.emit("install", mapOf("task" to task, "line" to "${C_BLUE}▶ 准备 rootfs 压缩包…${C_RESET}"))
             val stageLogs = try {
                 installer.install(
                     onProgress = { value -> events.emit("bootstrap", value) },
@@ -64,7 +72,7 @@ class RuntimeProcessManager(
                 )
             } catch (error: Throwable) {
                 val msg = error.message ?: "staging failed"
-                events.emit("install", mapOf("task" to task, "line" to "[error] $msg"))
+                events.emit("install", mapOf("task" to task, "line" to "${C_RED}✗ $msg${C_RESET}"))
                 return InstallTaskResult(false, emptyList(), null, msg)
             }
             val shellResult = runShellTask(task, args)
@@ -74,7 +82,7 @@ class RuntimeProcessManager(
             }
             if (!installer.isBootstrapped()) {
                 val msg = "rootfs extracted but ${installer.ubuntuPath} still missing /usr/bin/env or /etc/os-release (Debian 13 trixie)"
-                events.emit("install", mapOf("task" to task, "line" to "[error] $msg"))
+                events.emit("install", mapOf("task" to task, "line" to "${C_RED}✗ $msg${C_RESET}"))
                 return InstallTaskResult(false, mergedLogs, null, msg)
             }
             return shellResult.copy(logs = mergedLogs)
@@ -95,7 +103,7 @@ class RuntimeProcessManager(
         val process = builder.start()
         val logs = ArrayDeque<String>()
         var qrPayload: String? = null
-        events.emit("install", mapOf("task" to task, "line" to "[run] native task $task started"))
+        events.emit("install", mapOf("task" to task, "line" to "${C_BLUE}▶ 开始执行任务: $task${C_RESET}"))
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
             lines.forEach { line ->
                 logs.addBounded(line)
@@ -113,7 +121,11 @@ class RuntimeProcessManager(
             }
         }
         val code = process.waitFor()
-        events.emit("install", mapOf("task" to task, "line" to "[exit] native task $task exited with $code"))
+        if (code == 0) {
+            events.emit("install", mapOf("task" to task, "line" to "${C_GREEN}✓ 任务完成: $task${C_RESET}"))
+        } else {
+            events.emit("install", mapOf("task" to task, "line" to "${C_RED}✗ 任务失败: $task (退出码 $code)${C_RESET}"))
+        }
         return InstallTaskResult(code == 0, logs.toList(), qrPayload, if (code == 0) null else "Task $task exited with $code")
     }
 

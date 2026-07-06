@@ -54,13 +54,13 @@ class TerminalSession extends ChangeNotifier {
       }
       _sessionId = sessionId;
       _outputSubscription = _runtime.shellOutput(sessionId).listen(
-            terminal.write,
-            onError: (Object error, StackTrace stackTrace) {
-              _error = error;
-              terminal.write('\r\n[终端输出错误] $error\r\n');
-              notifyListeners();
-            },
-          );
+        terminal.write,
+        onError: (Object error, StackTrace stackTrace) {
+          _error = error;
+          terminal.write('\r\n[终端输出错误] $error\r\n');
+          notifyListeners();
+        },
+      );
       await _runtime.resizeShell(
         sessionId,
         terminal.viewWidth,

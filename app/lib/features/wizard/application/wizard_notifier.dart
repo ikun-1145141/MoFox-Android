@@ -180,7 +180,8 @@ class WizardNotifier extends Notifier<WizardState> {
   // ---- 安装执行 ----
 
   void prepareResume(Instance instance) {
-    appLogger.i('wizard: prepareResume instance=${instance.id} name=${instance.name} dir=${instance.installDir}');
+    appLogger.i(
+        'wizard: prepareResume instance=${instance.id} name=${instance.name} dir=${instance.installDir}');
     state = state.copyWith(
       step: WizardStep.install,
       draft: state.draft.copyWith(
@@ -283,7 +284,8 @@ class WizardNotifier extends Notifier<WizardState> {
 
         _markStatus(task, InstallTaskStatus.running);
         _appendLog('[run] ${task.label}…');
-        appLogger.i('wizard: run task=${task.name} native=${_nativeTaskName(task)}');
+        appLogger
+            .i('wizard: run task=${task.name} native=${_nativeTaskName(task)}');
 
         final nativeTask = _nativeTaskName(task);
         if (nativeTask != null) {

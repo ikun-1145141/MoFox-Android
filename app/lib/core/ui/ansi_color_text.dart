@@ -176,8 +176,13 @@ class AnsiParser {
                   underline = false;
                   blink = false;
                   reverse = false;
-                }, (b) => bold = b, (d) => dim = d, (it) => italic = it,
-                    (u) => underline = u, (bl) => blink = bl, (r) => reverse = r);
+                },
+                    (b) => bold = b,
+                    (d) => dim = d,
+                    (it) => italic = it,
+                    (u) => underline = u,
+                    (bl) => blink = bl,
+                    (r) => reverse = r);
               }
               i = j + 1;
               continue;
