@@ -62,6 +62,7 @@ const Object _sentinel = Object();
 class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   StreamSubscription<ProcessEvent>? _events;
   Timer? _statusTimer;
+
   /// 同步忙标志：防止快速点击在 Riverpod 状态传播前绕过 isBusy 守卫。
   bool _actionInProgress = false;
 

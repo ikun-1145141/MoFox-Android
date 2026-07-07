@@ -10,7 +10,8 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    await expectLater(container.read(oobeStatusProvider.future), completion(false));
+    await expectLater(
+        container.read(oobeStatusProvider.future), completion(false));
   });
 
   test('OOBE is complete when the explicit done flag is true', () async {
@@ -19,6 +20,7 @@ void main() {
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
-    await expectLater(container.read(oobeStatusProvider.future), completion(true));
+    await expectLater(
+        container.read(oobeStatusProvider.future), completion(true));
   });
 }

@@ -50,7 +50,14 @@ class RuntimeProcessManager(
         try {
             val managed = processes[name]
             if (managed != null) {
-                runStopScript(name, managed.args)
+                // napcat 进程树复杂（proot → bash → xvfb-run → Xvfb + QQ），
+                // stop 脚本在另一个 proot 里用 pgrep -f 扫描 /proc（即 host 的 /proc），
+                // 可能误杀 napcat 自己的 proot（managed.process）导致 consumeProcess
+                // 读到 broken pipe、甚至级联崩溃整个 app。
+                // 直接 destroy 根 proot 进程即可让整棵树级联退出。
+                if (name != "napcat") {
+                    runStopScript(name, managed.args)
+                }
                 managed.process?.destroy()
                 // 给 SIGTERM 2 秒，然后强制 SIGKILL
                 if (managed.process?.waitFor(2, TimeUnit.SECONDS) == false) {

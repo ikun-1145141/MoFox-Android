@@ -11,4 +11,3 @@ void main() {
     expect(find.byType(MaterialApp), findsOneWidget);
   });
 }
-
