@@ -114,7 +114,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         appLogger.i('process: starting napcat process directly');
         await runtime.startProcess('napcat', args: args);
         // 给 napcat 进程 2 秒稳定时间，避免 refreshStatus 读到刚启动还未就绪的状态
-        await Future.delayed(const Duration(seconds: 2));
+        await Future<void>.delayed(const Duration(seconds: 2));
       },
     );
   }
