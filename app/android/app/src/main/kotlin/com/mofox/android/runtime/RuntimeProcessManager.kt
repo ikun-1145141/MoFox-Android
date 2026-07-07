@@ -192,20 +192,26 @@ class RuntimeProcessManager(
     }
 
     private fun consumeProcess(name: String, process: Process) {
-        BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
-            lines.forEach { line ->
-                // napcat 进程脚本输出 MOFOX_QR_IMAGE=<rootfs_path>，
-                // 映射为 host 层 file: 路径供 Dart 端显示 QR 图片。
-                val eventLine = if (name == "napcat" && line.startsWith("MOFOX_QR_IMAGE=")) {
-                    val hostPath = mapUbuntuPathToHost(line.substringAfter("="))
-                    "MOFOX_QR_IMAGE=$hostPath"
-                } else {
-                    line
+        try {
+            BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
+                lines.forEach { line ->
+                    // napcat 进程脚本输出 MOFOX_QR_IMAGE=<rootfs_path>，
+                    // 映射为 host 层 file: 路径供 Dart 端显示 QR 图片。
+                    val eventLine = if (name == "napcat" && line.startsWith("MOFOX_QR_IMAGE=")) {
+                        val hostPath = mapUbuntuPathToHost(line.substringAfter("="))
+                        "MOFOX_QR_IMAGE=$hostPath"
+                    } else {
+                        line
+                    }
+                    events.emit("process", mapOf("name" to name, "line" to eventLine))
                 }
-                events.emit("process", mapOf("name" to name, "line" to eventLine))
             }
+        } catch (e: java.io.InterruptedIOException) {
+            // 进程被 stop()/destroy() 中断读取，属正常退出路径，忽略。
+        } catch (e: java.io.IOException) {
+            // 流已关闭（destroy/destroyForcibly），属正常退出路径，忽略。
         }
-        val code = process.waitFor()
+        val code = try { process.waitFor() } catch (_: InterruptedException) { -1 }
         val managed = processes[name]
         processes[name] = ManagedProcess(process, "stopped", managed?.args ?: emptyMap())
         events.emit("process", mapOf("name" to name, "line" to "[$name] exited with $code"))

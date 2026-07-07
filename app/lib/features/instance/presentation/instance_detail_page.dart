@@ -61,12 +61,16 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
           builder: (_) => NapcatQrSheet(
             payload: _qrPayload!,
             onCancel: () {
+              // 先标记取消，阻止 listener 在 sheet 关闭期间二次 pop
               _loginCancelled = true;
-              ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
+              // 先 pop sheet，再停止进程；停止进程不再 setState payload=null，
+              // 避免在 pop 动画中触发 listener 导致 Navigator 状态崩溃。
               if (_qrShown && mounted) {
                 Navigator.of(context).pop();
                 _qrShown = false;
+                _qrPayload = null;
               }
+              ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
             },
           ),
         ).whenComplete(() {
@@ -91,11 +95,12 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                 payload: _qrPayload!,
                 onCancel: () {
                   _loginCancelled = true;
-                  ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
                   if (_qrShown && mounted) {
                     Navigator.of(context).pop();
                     _qrShown = false;
+                    _qrPayload = null;
                   }
+                  ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
                 },
               ),
             ).whenComplete(() {

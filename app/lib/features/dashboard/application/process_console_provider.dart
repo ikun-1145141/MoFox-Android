@@ -127,10 +127,11 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
 
   /// 取消正在进行的 NapCat 扫码登录。
   /// 新流程中 NapCat 进程直接启动，取消登录 = 停止 napcat 进程。
+  /// 不在这里清 napcatQrPayload——由调用方在 pop sheet 后清，
+  /// 避免此处 setState 触发 listener 在 sheet 关闭动画中二次 pop 导致崩溃。
   Future<void> cancelNapcatLogin() async {
     appLogger.i('process: cancelNapcatLogin (stop napcat process)');
     final runtime = ref.read(runtimeBridgeProvider);
-    state = state.copyWith(napcatQrPayload: null);
     try {
       await runtime.stopProcess('napcat');
     } catch (error) {
