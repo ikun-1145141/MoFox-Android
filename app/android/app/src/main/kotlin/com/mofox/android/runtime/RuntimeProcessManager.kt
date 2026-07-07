@@ -52,8 +52,14 @@ class RuntimeProcessManager(
             if (managed != null) {
                 runStopScript(name, managed.args)
                 managed.process?.destroy()
+                // 给 SIGTERM 2 秒，然后强制 SIGKILL
+                if (managed.process?.waitFor(2, TimeUnit.SECONDS) == false) {
+                    managed.process?.destroyForcibly()
+                    managed.process?.waitFor(3, TimeUnit.SECONDS)
+                }
             }
-            processes[name] = ManagedProcess(managed?.process, "stopped", managed?.args ?: emptyMap())
+            // process 设为 null，防止 statusFor 通过 isAlive 误判已杀的进程
+            processes[name] = ManagedProcess(null, "stopped", managed?.args ?: emptyMap())
         } finally {
             stopping.remove(name)
         }
@@ -180,7 +186,17 @@ class RuntimeProcessManager(
 
     private fun consumeProcess(name: String, process: Process) {
         BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
-            lines.forEach { line -> events.emit("process", mapOf("name" to name, "line" to line)) }
+            lines.forEach { line ->
+                // napcat 进程脚本输出 MOFOX_QR_IMAGE=<rootfs_path>，
+                // 映射为 host 层 file: 路径供 Dart 端显示 QR 图片。
+                val eventLine = if (name == "napcat" && line.startsWith("MOFOX_QR_IMAGE=")) {
+                    val hostPath = mapUbuntuPathToHost(line.substringAfter("="))
+                    "MOFOX_QR_IMAGE=$hostPath"
+                } else {
+                    line
+                }
+                events.emit("process", mapOf("name" to name, "line" to eventLine))
+            }
         }
         val code = process.waitFor()
         val managed = processes[name]

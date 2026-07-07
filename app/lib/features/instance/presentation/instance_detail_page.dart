@@ -37,10 +37,12 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
 
     ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
       final payload = next.napcatQrPayload;
-      // 登录已取消或已完成（busyAction 归零），忽略迟到的 QR 事件
-      final loginActive = next.busyAction == 'start-napcat';
-      if (!loginActive || _loginCancelled) {
-        if (_qrShown) {
+      // NapCat 进程在运行时才处理 QR；取消后忽略
+      final napcatRunning = next.napcatStatus == 'running';
+      // 用户主动取消：onCancel 已负责关闭 sheet，listener 不再 pop，避免双 pop
+      if (_loginCancelled) return;
+      if (!napcatRunning) {
+        if (_qrShown && mounted) {
           Navigator.of(context).pop();
           _qrShown = false;
           _qrPayload = null;
@@ -61,7 +63,10 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
             onCancel: () {
               _loginCancelled = true;
               ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
-              Navigator.of(context).pop();
+              if (_qrShown && mounted) {
+                Navigator.of(context).pop();
+                _qrShown = false;
+              }
             },
           ),
         ).whenComplete(() {
@@ -87,7 +92,10 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                 onCancel: () {
                   _loginCancelled = true;
                   ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
-                  Navigator.of(context).pop();
+                  if (_qrShown && mounted) {
+                    Navigator.of(context).pop();
+                    _qrShown = false;
+                  }
                 },
               ),
             ).whenComplete(() {

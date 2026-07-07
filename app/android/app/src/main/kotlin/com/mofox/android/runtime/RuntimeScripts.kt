@@ -52,7 +52,33 @@ class RuntimeScripts(
             }
             "napcat" -> {
               val botQq = args["botQq"].orEmpty()
-              val cmd = "cd /root/napcat && export BOT_QQ=${shellQuote(botQq)} && bash /root/napcat/napcat.sh start ${shellQuote(botQq)}"
+              val cmd = """cd /root/napcat
+                export BOT_QQ=${shellQuote(botQq)}
+                mkdir -p /root/napcat/cache
+                rm -f /root/napcat/cache/qrcode.png /tmp/napcat-login.log
+                # 后台监控 QR 码文件并输出标记行
+                (
+                  QR_EMITTED=0
+                  QR_MTIME=""
+                  for i in ${'$'}(seq 1 300); do
+                    sleep 1
+                    QR_PATH=""
+                    [ -s /root/napcat/cache/qrcode.png ] && QR_PATH=/root/napcat/cache/qrcode.png
+                    NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
+                    if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
+                      QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
+                    fi
+                    if [ -n "${'$'}QR_PATH" ] && [ -s "${'$'}QR_PATH" ]; then
+                      CURRENT_MTIME=${'$'}(stat -c %Y "${'$'}QR_PATH" 2>/dev/null || echo "")
+                      if [ "${'$'}QR_EMITTED" = "0" ] || [ -n "${'$'}CURRENT_MTIME" -a "${'$'}CURRENT_MTIME" != "${'$'}QR_MTIME" ]; then
+                        echo "MOFOX_QR_IMAGE=${'$'}QR_PATH"
+                        QR_EMITTED=1
+                        QR_MTIME="${'$'}CURRENT_MTIME"
+                      fi
+                    fi
+                  done
+                ) &
+                exec xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q ${shellQuote(botQq)}""".trimIndent()
                 cmd to ""
             }
             else -> error("Unknown process: $name")
@@ -100,18 +126,23 @@ class RuntimeScripts(
           }
           "napcat" -> {
             """
-            NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
-            for PID in ${'$'}NAPCAT_PIDS; do
-              kill -QUIT "${'$'}PID" 2>/dev/null || true
-            done
+            _stop_napcat_proc() {
+              SIGNAL=${'$'}1
+              PATTERN=${'$'}2
+              PIDS=${'$'}(pgrep -f "${'$'}PATTERN" 2>/dev/null || true)
+              for PID in ${'$'}PIDS; do
+                [ "${'$'}PID" = "${'$'}${'$'}" ] && continue
+                CMDLINE=${'$'}(tr '\0' ' ' < "/proc/${'$'}PID/cmdline" 2>/dev/null || true)
+                case "${'$'}CMDLINE" in
+                  *pgrep*|*stop-process-napcat*|*login_ubuntu*|*mofox_log*|*_stop_napcat_proc*) continue ;;
+                esac
+                kill -"${'$'}SIGNAL" "${'$'}PID" 2>/dev/null || true
+              done
+            }
+            _stop_napcat_proc QUIT '/root/Napcat/opt/QQ/qq'
             sleep 3
-            NAPCAT_PIDS=${'$'}(pgrep -f '/root/Napcat/opt/QQ/qq' 2>/dev/null | grep -v "${'$'}${'$'}" || true)
-            for PID in ${'$'}NAPCAT_PIDS; do
-              kill -KILL "${'$'}PID" 2>/dev/null || true
-            done
-            pgrep -f 'Xvfb' 2>/dev/null | grep -v "${'$'}${'$'}" | while read XPID; do
-              kill -TERM "${'$'}XPID" 2>/dev/null || true
-            done
+            _stop_napcat_proc KILL '/root/Napcat/opt/QQ/qq'
+            _stop_napcat_proc TERM 'Xvfb'
             true
             """.trimIndent()
           }
@@ -203,7 +234,7 @@ class RuntimeScripts(
                     else
                       python3 -m venv .venv
                       . .venv/bin/activate
-                      pip install --no-cache-dir -r requirements.txt
+                      pip install --no-cache-dir -r pyproject.toml
                     fi
                     """.trimIndent(),
                 )
@@ -282,11 +313,23 @@ class RuntimeScripts(
                     rm -f "${'$'}DEFAULT_QR_PATH" "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log "${'$'}CANCEL_FILE"
                     xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q "${'$'}BOT_QQ" > /tmp/napcat-login.log 2>&1 &
                     NAPCAT_PID=${'$'}!
+                    _stop_nc_proc() {
+                      SIGNAL=${'$'}1
+                      PATTERN=${'$'}2
+                      PIDS=${'$'}(pgrep -f "${'$'}PATTERN" 2>/dev/null || true)
+                      for PID in ${'$'}PIDS; do
+                        [ "${'$'}PID" = "${'$'}${'$'}" ] && continue
+                        CMDLINE=${'$'}(tr '\0' ' ' < "/proc/${'$'}PID/cmdline" 2>/dev/null || true)
+                        case "${'$'}CMDLINE" in
+                          *pgrep*|*napcatLogin*|*login_ubuntu*|*mofox_log*|*_stop_nc_proc*|*stop_napcat_login_process*) continue ;;
+                        esac
+                        kill -"${'$'}SIGNAL" "${'$'}PID" 2>/dev/null || true
+                      done
+                    }
                     stop_napcat_login_process() {
-                      pkill -TERM -f '/root/Napcat/opt/QQ/qq' 2>/dev/null || true
-                      pkill -TERM -f 'xvfb-run -a /root/Napcat/opt/QQ/qq' 2>/dev/null || true
-                      pkill -TERM -f 'Xvfb' 2>/dev/null || true
-                      pkill -TERM -f 'dbus-launch' 2>/dev/null || true
+                      _stop_nc_proc TERM '/root/Napcat/opt/QQ/qq'
+                      _stop_nc_proc TERM 'Xvfb'
+                      _stop_nc_proc TERM 'dbus-launch'
                       kill "${'$'}NAPCAT_PID" 2>/dev/null || true
                       for _ in ${'$'}(seq 1 5); do
                         if ! kill -0 "${'$'}NAPCAT_PID" 2>/dev/null; then
@@ -295,9 +338,8 @@ class RuntimeScripts(
                         fi
                         sleep 1
                       done
-                      pkill -KILL -f '/root/Napcat/opt/QQ/qq' 2>/dev/null || true
-                      pkill -KILL -f 'xvfb-run -a /root/Napcat/opt/QQ/qq' 2>/dev/null || true
-                      pkill -KILL -f 'Xvfb' 2>/dev/null || true
+                      _stop_nc_proc KILL '/root/Napcat/opt/QQ/qq'
+                      _stop_nc_proc KILL 'Xvfb'
                       kill -KILL "${'$'}NAPCAT_PID" 2>/dev/null || true
                       wait "${'$'}NAPCAT_PID" 2>/dev/null || true
                     }
@@ -354,6 +396,7 @@ class RuntimeScripts(
                       exit 1
                     fi
                     stop_napcat_login_process
+                    sleep 2
                     """.trimIndent(),
                 )
             }

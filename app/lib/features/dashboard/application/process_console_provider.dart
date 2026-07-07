@@ -107,53 +107,13 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         'process: startNapcat instance=${instance.id} botQq=${instance.botQq}');
     return _runNapcatAction(
       action: 'start-napcat',
-      busyLabel: 'NapCat 登录并启动中',
+      busyLabel: 'NapCat 启动中',
       run: (runtime) async {
         final args = _napcatArgs(instance);
-        final streamedLogs = <String>[];
-        final loginEvents = runtime.installEvents().listen((event) {
-          if (event.task != 'napcatLogin') return;
-          streamedLogs.add(event.line);
-          if (event.line.startsWith('MOFOX_QR_PAYLOAD=')) {
-            final separator = event.line.indexOf('=');
-            final payload = event.line.substring(separator + 1);
-            appLogger.i(
-                'process: napcat QR payload received (len=${payload.length})');
-            state = state.copyWith(
-              napcatQrPayload: payload,
-            );
-            return;
-          }
-          if (event.line.contains('[napcat] 登录成功')) {
-            appLogger.i('process: napcat login success');
-            state = state.copyWith(napcatQrPayload: null);
-          }
-          _appendNapcatLog(event.line);
-        });
-        late final RuntimeTaskResult loginResult;
-        try {
-          loginResult = await runtime.runInstallTask('napcatLogin', args: args);
-        } finally {
-          await loginEvents.cancel();
-        }
-        if (!loginResult.success) {
-          appLogger.e('process: napcat login failed: ${loginResult.error}');
-          if (streamedLogs.isEmpty) {
-            for (final line in loginResult.logs) {
-              _appendNapcatLog(line);
-            }
-          }
-          throw loginResult.error ?? 'NapCat 扫码登录失败';
-        }
-        if (streamedLogs.isEmpty) {
-          for (final line in loginResult.logs) {
-            _appendNapcatLog(line);
-          }
-        }
-        _appendNapcatLog('[control] NapCat 扫码登录完成');
-        state = state.copyWith(napcatQrPayload: null);
-        appLogger.i('process: starting napcat process');
+        appLogger.i('process: starting napcat process directly');
         await runtime.startProcess('napcat', args: args);
+        // 给 napcat 进程 2 秒稳定时间，避免 refreshStatus 读到刚启动还未就绪的状态
+        await Future.delayed(const Duration(seconds: 2));
       },
     );
   }
@@ -165,17 +125,16 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       );
 
   /// 取消正在进行的 NapCat 扫码登录。
-  /// 不走 _runNapcatAction，因为登录任务已经在执行中（busyAction='start-napcat'），
-  /// 这里只是通知 native 层写 cancel 标记文件让登录脚本自行退出。
+  /// 新流程中 NapCat 进程直接启动，取消登录 = 停止 napcat 进程。
   Future<void> cancelNapcatLogin() async {
-    appLogger.i('process: cancelNapcatLogin');
+    appLogger.i('process: cancelNapcatLogin (stop napcat process)');
     final runtime = ref.read(runtimeBridgeProvider);
+    state = state.copyWith(napcatQrPayload: null);
     try {
-      await runtime.cancelNapcatLogin();
+      await runtime.stopProcess('napcat');
     } catch (error) {
       appLogger.e('process: cancelNapcatLogin failed', error: error);
     }
-    state = state.copyWith(napcatQrPayload: null);
   }
 
   Future<void> restartNapcat(Instance instance) => _runNapcatAction(
@@ -260,6 +219,20 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     if (event.name == 'bot') {
       _appendBotLog(event.line);
     } else if (event.name == 'napcat') {
+      // 检测 QR 码标记行：进程脚本后台监控 QR 文件并输出 MOFOX_QR_IMAGE=<path>
+      if (event.line.startsWith('MOFOX_QR_IMAGE=')) {
+        final hostPath = event.line.substring('MOFOX_QR_IMAGE='.length);
+        final payload = 'file:$hostPath';
+        appLogger.i(
+            'process: napcat QR from process stream (len=${payload.length})');
+        state = state.copyWith(napcatQrPayload: payload);
+        return;
+      }
+      // 登录成功标记
+      if (event.line.contains('配置加载')) {
+        appLogger.i('process: napcat login success detected');
+        state = state.copyWith(napcatQrPayload: null);
+      }
       _appendNapcatLog(event.line);
     }
     if (event.line.contains('exited with')) {
