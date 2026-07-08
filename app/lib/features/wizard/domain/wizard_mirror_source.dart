@@ -35,13 +35,6 @@ const List<WizardMirrorSource> wizardMirrorSources = <WizardMirrorSource>[
         'https://ghfast.top/https://raw.githubusercontent.com/MoFox-Studio/Neo-MoFox/main/eula.md',
     region: '中国大陆',
   ),
-  WizardMirrorSource(
-    id: 'gitee',
-    name: 'Gitee 镜像',
-    repoUrl: 'https://gitee.com/MoFox-Studio/Neo-MoFox.git',
-    eulaUrl: 'https://gitee.com/MoFox-Studio/Neo-MoFox/raw/main/eula.md',
-    region: '中国大陆',
-  ),
 ];
 
 WizardMirrorSource wizardMirrorSourceFor(String id) {

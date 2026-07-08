@@ -257,14 +257,37 @@ class RuntimeScripts(
             "installWebui" -> {
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val webuiKey = args["webuiApiKey"].orEmpty()
+                val mirrorId = args["mirrorId"] ?: "github"
+                // 根据镜像站决定下载地址的前缀。
+                // GitHub API 不支持代理（返回 403），所以 API 请求直连，
+                // 只对最终的 release 资产下载 URL 加代理前缀。
+                val ghProxy = when (mirrorId) {
+                    "ghproxy" -> "https://ghfast.top/"
+                    else -> ""
+                }
                 loginBody(
                     """
-                    cd ${shellQuote(repoPath)}
-                    if [ -d webui ]; then
-                      cd webui && (npm install --omit=dev || true) && (npm run build || true)
-                    else
-                      log_warn "webui 目录不存在，跳过"
+                    set -e
+                    PLUGINS_DIR="${'$'}{repoPath}/plugins"
+                    mkdir -p "${'$'}PLUGINS_DIR"
+                    WEBUI_MFP="${'$'}PLUGINS_DIR/neo-mofox-webui.mfp"
+                    # GitHub API 直连（代理会 403），获取最新 release 的 .mfp 资产下载地址
+                    log_info "正在获取 WebUI 最新发行版（镜像: ${shellQuote(mirrorId)}）…"
+                    API_URL="https://api.github.com/repos/ikun-1145141/Neo-MoFox-Webui/releases/latest"
+                    DOWNLOAD_URL="${'$'}(curl -fsSL "${'$'}API_URL" | grep -o '"browser_download_url":\s*"[^"]*\.mfp"' | head -1 | sed 's/"browser_download_url":\s*"//;s/"//')"
+                    if [ -z "${'$'}DOWNLOAD_URL" ]; then
+                      log_error "未找到 WebUI .mfp 下载地址"
+                      exit 1
                     fi
+                    # 如果走镜像代理，给下载地址加前缀
+                    PROXY_URL="${ghProxy}${'$'}DOWNLOAD_URL"
+                    log_info "下载 WebUI: ${'$'}PROXY_URL"
+                    if ! curl -fSL -o "${'$'}WEBUI_MFP" "${'$'}PROXY_URL"; then
+                      log_error "WebUI 下载失败"
+                      rm -f "${'$'}WEBUI_MFP"
+                      exit 1
+                    fi
+                    log_info "WebUI 已安装到 ${'$'}WEBUI_MFP"
                     log_info "WebUI api_key=${shellQuote(webuiKey)}"
                     """.trimIndent(),
                 )
@@ -450,7 +473,8 @@ class RuntimeScripts(
         val botQq = args["botQq"].orEmpty()
         val botNickname = args["botNickname"].orEmpty()
         val ownerQq = args["ownerQq"].orEmpty()
-        val webuiPort = args["webuiPort"] ?: "8080"
+        val webuiHost = args["webuiHost"] ?: "127.0.0.1"
+        val webuiPort = args["webuiPort"] ?: "8000"
         val webuiKey = args["webuiApiKey"].orEmpty()
         return loginBody(
             """
@@ -463,9 +487,10 @@ class RuntimeScripts(
             owner_qq = "$ownerQq"
 
             [http_router]
-            host = "0.0.0.0"
-            port = $webuiPort
-            api_key = "$webuiKey"
+            enable_http_router = true
+            http_router_host = "$webuiHost"
+            http_router_port = $webuiPort
+            api_keys = ["$webuiKey"]
             MOFOX_EOF
             """.trimIndent(),
         )

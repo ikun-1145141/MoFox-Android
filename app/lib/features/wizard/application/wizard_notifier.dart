@@ -473,6 +473,8 @@ class WizardNotifier extends Notifier<WizardState> {
       'wsPort': draft.wsPort.toString(),
       'channel': draft.channel,
       'webuiApiKey': draft.webuiApiKey,
+      'webuiHost': '127.0.0.1',
+      'webuiPort': '8000',
       'mirrorId': draft.mirrorId,
       'installNapcat': true.toString(),
       'installWebui': draft.installWebui.toString(),

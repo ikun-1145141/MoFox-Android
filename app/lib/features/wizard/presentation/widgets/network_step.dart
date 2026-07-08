@@ -76,7 +76,7 @@ class NetworkStep extends ConsumerWidget {
             children: <Widget>[
               Expanded(
                 child: TextFormField(
-                  key: ValueKey<String>('webui-${draft.webuiApiKey}'),
+                  key: const ValueKey<String>('webui-apikey'),
                   initialValue: draft.webuiApiKey,
                   enabled: draft.installWebui,
                   decoration: const InputDecoration(
