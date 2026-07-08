@@ -268,7 +268,7 @@ class RuntimeScripts(
                 loginBody(
                     """
                     set -e
-                    PLUGINS_DIR="${'$'}{repoPath}/plugins"
+                    PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                     mkdir -p "${'$'}PLUGINS_DIR"
                     WEBUI_MFP="${'$'}PLUGINS_DIR/neo-mofox-webui.mfp"
                     # GitHub API 直连（代理会 403），获取最新 release 的 .mfp 资产下载地址
