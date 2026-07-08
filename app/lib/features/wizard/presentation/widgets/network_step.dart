@@ -6,11 +6,32 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/wizard_notifier.dart';
 
-class NetworkStep extends ConsumerWidget {
+class NetworkStep extends ConsumerStatefulWidget {
   const NetworkStep({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NetworkStep> createState() => _NetworkStepState();
+}
+
+class _NetworkStepState extends ConsumerState<NetworkStep> {
+  late final TextEditingController _webuiKeyController;
+
+  @override
+  void initState() {
+    super.initState();
+    _webuiKeyController = TextEditingController(
+      text: ref.read(wizardProvider).draft.webuiApiKey,
+    );
+  }
+
+  @override
+  void dispose() {
+    _webuiKeyController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final draft = ref.watch(wizardProvider).draft;
     final notifier = ref.read(wizardProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
@@ -64,20 +85,22 @@ class NetworkStep extends ConsumerWidget {
             title: const Text('安装 WebUI 管理面板'),
             subtitle: const Text('在浏览器中可视化管理 Bot'),
             value: draft.installWebui,
-            onChanged: (value) => notifier.update(
-              (d) => d.copyWith(
-                installWebui: value,
-                webuiApiKey: value ? d.webuiApiKey : '',
-              ),
-            ),
+            onChanged: (value) {
+              notifier.update(
+                (d) => d.copyWith(
+                  installWebui: value,
+                  webuiApiKey: value ? d.webuiApiKey : '',
+                ),
+              );
+              if (!value) _webuiKeyController.clear();
+            },
           ),
           const SizedBox(height: 16),
           Row(
             children: <Widget>[
               Expanded(
                 child: TextFormField(
-                  key: const ValueKey<String>('webui-apikey'),
-                  initialValue: draft.webuiApiKey,
+                  controller: _webuiKeyController,
                   enabled: draft.installWebui,
                   decoration: const InputDecoration(
                     labelText: 'WebUI 访问密钥',
@@ -93,9 +116,17 @@ class NetworkStep extends ConsumerWidget {
               IconButton.filledTonal(
                 tooltip: '随机生成',
                 onPressed: draft.installWebui
-                    ? () => notifier.update(
-                          (d) => d.copyWith(webuiApiKey: _randomKey()),
-                        )
+                    ? () {
+                        final key = _randomKey();
+                        _webuiKeyController.text = key;
+                        _webuiKeyController.selection =
+                            TextSelection.fromPosition(
+                          TextPosition(offset: key.length),
+                        );
+                        notifier.update(
+                          (d) => d.copyWith(webuiApiKey: key),
+                        );
+                      }
                     : null,
                 icon: const Icon(Icons.casino_outlined),
               ),
