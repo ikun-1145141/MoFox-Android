@@ -9,6 +9,7 @@ import '../../../core/ui/explosion_overlay.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
 import '../../wizard/application/wizard_notifier.dart';
+import '../application/process_console_provider.dart';
 
 /// 管理页：实例卡片网格 + 新建 CTA。
 class DashboardPage extends ConsumerWidget {
@@ -267,6 +268,8 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final instance = widget.instance;
+    // 监听运行时进程状态，已安装实例若 bot 在跑则显示"运行中"
+    final botStatus = ref.watch(processConsoleProvider).botStatus;
 
     return AnimatedBuilder(
       animation: _removeController,
@@ -336,13 +339,13 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _statusColor(instance, scheme),
+                        color: _statusColor(instance, scheme, botStatus),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        _statusLabel(instance),
+                        _statusLabel(instance, botStatus),
                         style: text.labelSmall?.copyWith(
-                          color: _statusTextColor(instance, scheme),
+                          color: _statusTextColor(instance, scheme, botStatus),
                         ),
                       ),
                     ),
@@ -526,7 +529,11 @@ class _MetaItem extends StatelessWidget {
   }
 }
 
-String _statusLabel(Instance instance) {
+String _statusLabel(Instance instance, String botStatus) {
+  if (instance.installStatus == InstanceInstallStatus.installed &&
+      botStatus == 'running') {
+    return '运行中';
+  }
   return switch (instance.installStatus) {
     InstanceInstallStatus.installing => '未完成',
     InstanceInstallStatus.failed => '安装失败',
@@ -534,7 +541,11 @@ String _statusLabel(Instance instance) {
   };
 }
 
-Color _statusColor(Instance instance, ColorScheme scheme) {
+Color _statusColor(Instance instance, ColorScheme scheme, String botStatus) {
+  if (instance.installStatus == InstanceInstallStatus.installed &&
+      botStatus == 'running') {
+    return scheme.primaryContainer;
+  }
   return switch (instance.installStatus) {
     InstanceInstallStatus.installing => scheme.tertiaryContainer,
     InstanceInstallStatus.failed => scheme.errorContainer,
@@ -542,7 +553,12 @@ Color _statusColor(Instance instance, ColorScheme scheme) {
   };
 }
 
-Color _statusTextColor(Instance instance, ColorScheme scheme) {
+Color _statusTextColor(
+    Instance instance, ColorScheme scheme, String botStatus) {
+  if (instance.installStatus == InstanceInstallStatus.installed &&
+      botStatus == 'running') {
+    return scheme.onPrimaryContainer;
+  }
   return switch (instance.installStatus) {
     InstanceInstallStatus.installing => scheme.onTertiaryContainer,
     InstanceInstallStatus.failed => scheme.onErrorContainer,
