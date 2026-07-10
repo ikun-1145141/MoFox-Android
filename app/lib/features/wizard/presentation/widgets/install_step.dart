@@ -183,7 +183,9 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                               margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
-                                color: scheme.surfaceContainerHighest,
+                                // 终端深色背景，不随主题变化，
+                                // 保证 AnsiColorText 的近白前景色在浅色模式下也清晰可读
+                                color: const Color(0xFF1A1B26),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Scrollbar(
