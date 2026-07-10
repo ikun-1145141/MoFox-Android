@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/security/webui_key_store.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
@@ -330,6 +331,10 @@ class WizardNotifier extends Notifier<WizardState> {
             ),
           );
           ref.invalidate(instancesProvider);
+          // 把 WebUI api_key 存入安全存储，供 WebView 免登录使用
+          if (state.draft.installWebui && state.draft.webuiApiKey.isNotEmpty) {
+            await WebuiKeyStore.set(instanceId, state.draft.webuiApiKey);
+          }
           _appendLog('[ok] 实例已注册到本地');
         }
 

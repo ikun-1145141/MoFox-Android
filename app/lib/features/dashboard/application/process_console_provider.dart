@@ -14,6 +14,7 @@ class ProcessConsoleState {
     this.busyAction,
     this.errorMessage,
     this.napcatQrPayload,
+    this.napcatWebuiUrl,
   });
 
   factory ProcessConsoleState.initial() => const ProcessConsoleState(
@@ -29,6 +30,10 @@ class ProcessConsoleState {
   final String? errorMessage;
   final String? napcatQrPayload;
 
+  /// NapCat WebUI 地址（含 token），从 napcat 日志解析。
+  /// 形如 `http://127.0.0.1:6099/webui?token=xxx`。
+  final String? napcatWebuiUrl;
+
   bool get isBusy => busyAction != null;
   String get botStatus => status['bot'] ?? 'stopped';
   String get napcatStatus => status['napcat'] ?? 'stopped';
@@ -40,6 +45,7 @@ class ProcessConsoleState {
     Object? busyAction = _sentinel,
     Object? errorMessage = _sentinel,
     Object? napcatQrPayload = _sentinel,
+    Object? napcatWebuiUrl = _sentinel,
   }) =>
       ProcessConsoleState(
         status: status ?? this.status,
@@ -54,6 +60,9 @@ class ProcessConsoleState {
         napcatQrPayload: identical(napcatQrPayload, _sentinel)
             ? this.napcatQrPayload
             : napcatQrPayload as String?,
+        napcatWebuiUrl: identical(napcatWebuiUrl, _sentinel)
+            ? this.napcatWebuiUrl
+            : napcatWebuiUrl as String?,
       );
 }
 
@@ -235,9 +244,23 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         appLogger.i('process: napcat login success detected');
         state = state.copyWith(napcatQrPayload: null);
       }
+      // 解析 NapCat WebUI 地址（含 token）
+      // 形如：[WebUi] WebUi User Panel Url: http://127.0.0.1:6099/webui?token=xxx
+      final webuiMatch = RegExp(
+        r'WebUi User Panel Url:\s*(https?://[^\s]+)',
+      ).firstMatch(event.line);
+      if (webuiMatch != null) {
+        final url = webuiMatch.group(1)!;
+        appLogger.i('process: napcat webui url detected: $url');
+        state = state.copyWith(napcatWebuiUrl: url);
+      }
       _appendNapcatLog(event.line);
     }
     if (event.line.contains('exited with')) {
+      // 进程退出时清理对应的 WebUI 地址
+      if (event.name == 'napcat') {
+        state = state.copyWith(napcatWebuiUrl: null);
+      }
       unawaited(refreshStatus());
     }
   }

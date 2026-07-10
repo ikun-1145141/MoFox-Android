@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
 import '../../../core/runtime/runtime_bridge.dart';
+import '../../../core/security/webui_key_store.dart';
 import '../../../core/ui/explosion_overlay.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
@@ -476,6 +477,8 @@ Future<void> _confirmDeleteInstance(
     final repo = await ref.read(instanceRepositoryProvider.future);
     await repo.remove(instance.id);
     ref.invalidate(instancesProvider);
+    // 清理安全存储中的 WebUI api_key
+    await WebuiKeyStore.delete(instance.id);
 
     // 再尝试删除 rootfs 中的实例目录；失败只警告，不阻止本地记录删除。
     try {
