@@ -234,7 +234,7 @@ class RuntimeScripts(
                     else
                       python3 -m venv .venv
                       . .venv/bin/activate
-                      pip install --no-cache-dir -r pyproject.toml
+                      pip install --no-cache-dir .
                     fi
                     """.trimIndent(),
                 )
