@@ -263,6 +263,7 @@ class RuntimeScripts(
                 // 只对最终的 release 资产下载 URL 加代理前缀。
                 val ghProxy = when (mirrorId) {
                     "ghproxy" -> "https://ghfast.top/"
+                    "ikun" -> "https://github.ikun114.top/"
                     else -> ""
                 }
                 loginBody(
