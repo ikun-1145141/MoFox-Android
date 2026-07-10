@@ -37,7 +37,7 @@ const List<WizardMirrorSource> wizardMirrorSources = <WizardMirrorSource>[
   ),
   WizardMirrorSource(
     id: 'ikun',
-    name: 'GitHub 代理加速',
+    name: 'ikun镜像加速喵',
     repoUrl:
         'https://github.ikun114.top/https://github.com/MoFox-Studio/Neo-MoFox.git',
     eulaUrl:
