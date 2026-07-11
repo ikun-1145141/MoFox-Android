@@ -160,7 +160,13 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   Future<void> refreshStatus() async {
     try {
       final status = await ref.read(runtimeBridgeProvider).processStatus();
-      state = state.copyWith(status: status, errorMessage: null);
+      state = state.copyWith(
+        status: {
+          ...state.status,
+          ...status,
+        },
+        errorMessage: null,
+      );
     } catch (error) {
       appLogger.w('process: refreshStatus failed: $error');
       state = state.copyWith(errorMessage: '刷新进程状态失败：$error');
@@ -184,6 +190,14 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         '[control] $busyLabel${instance == null ? '' : '：${instance.name}'}');
     try {
       await run(runtime);
+      if (action == 'stop') {
+        state = state.copyWith(
+          status: {
+            ...state.status,
+            'bot': 'stopped',
+          },
+        );
+      }
       await refreshStatus();
     } catch (error) {
       appLogger.e('process: bot $action failed', error: error);
@@ -212,6 +226,15 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     _appendNapcatLog('[control] $busyLabel');
     try {
       await run(runtime);
+      if (action == 'stop-napcat') {
+        state = state.copyWith(
+          status: {
+            ...state.status,
+            'napcat': 'stopped',
+          },
+          napcatWebuiUrl: null,
+        );
+      }
       await refreshStatus();
     } catch (error) {
       appLogger.e('process: napcat $action failed', error: error);

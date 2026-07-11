@@ -183,132 +183,160 @@ await WebuiKeyStore.delete(instance.id);
 新建 `app/lib/features/webview/application/webview_notifier.dart`：
 
 ```dart
-class WebviewNotifier extends Notifier<WebviewController> {
+class WebviewNotifier extends Notifier<WebViewController> {
   @override
-  WebviewController build() {
-    final controller = WebviewController();
-    unawaited(controller.setPlatformNavigationDelegate(
-      NavigationDelegate(onNavigationRequest: (req) {
-        // 只允许 127.0.0.1，外部链接交给系统浏览器
-        if (req.url.startsWith('http://127.0.0.1')) {
-          return NavigationDecision.navigate;
-        }
-        return NavigationDecision.prevent;
-      }),
+  WebViewController build() {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted);
+
+    unawaited(controller.setNavigationDelegate(
+      NavigationDelegate(
+        onNavigationRequest: (req) {
+          // 只允许 127.0.0.1 / localhost，外部链接交给系统浏览器
+          final host = Uri.tryParse(req.url)?.host ?? '';
+          if (host == '127.0.0.1' || host == 'localhost' ||
+              req.url.startsWith('about:')) {
+            return NavigationDecision.navigate;
+          }
+          unawaited(launchUrl(Uri.parse(req.url)));
+          return NavigationDecision.prevent;
+        },
+      ),
     ));
     return controller;
   }
 
-  /// 加载指定实例的 WebUI。
-  /// 先注入 localStorage api_key，再加载首页。
-  Future<void> loadInstance(Instance instance) async {
-    if (!instance.installWebui) return;
+  /// 加载 Neo-MoFox WebUI（注入 localStorage api_key）。
+  Future<void> loadNeoMofox(Instance instance) async {
     final apiKey = await WebuiKeyStore.get(instance.id);
-    if (apiKey == null) return;
-
+    final controller = state;
     // 1. 先加载空白页确保有 document 上下文
-    await controller.loadHtml('<html><body></body></html>');
-    // 2. 注入 localStorage
-    await controller.runJavaScript(
-      'localStorage.setItem("mofox_token", "${_escapeJs(apiKey)}")',
+    await controller.loadHtmlString(
+      '<html><body></body></html>',
+      baseUrl: 'http://127.0.0.1:8000/',
     );
+    // 2. 注入 localStorage（清旧再写新）
+    if (apiKey != null && apiKey.isNotEmpty) {
+      await controller.runJavaScript(
+        'localStorage.clear();'
+        'localStorage.setItem("mofox_token", "${_escapeJs(apiKey)}")',
+      );
+    }
     // 3. 加载 WebUI 首页
     await controller.loadRequest(
       Uri.parse('http://127.0.0.1:8000/webui/frontend'),
     );
   }
 
-  /// 刷新当前页
-  Future<void> reload() => controller.reload();
+  /// 加载 NapCat WebUI（URL 自带 token，无需额外注入）。
+  Future<void> loadNapcat(String webuiUrl) async {
+    final controller = state;
+    await controller.loadHtmlString(
+      '<html><body></body></html>',
+      baseUrl: 'http://127.0.0.1:6099/',
+    );
+    await controller.runJavaScript('localStorage.clear();');
+    await controller.loadRequest(Uri.parse(webuiUrl));
+  }
+
+  Future<void> reload() => state.reload();
+  Future<void> openInBrowser(String url) => launchUrl(Uri.parse(url));
 }
 ```
 
 ### 5.2 生命周期
 
 - WebView 控制器随 `WebViewPage` 的生命周期创建销毁。
-- 切换实例时调 `loadInstance(newInstance)`，会先清旧 localStorage 再注入新 key。
+- 切换实例时调 `loadNeoMofox(newInstance)`，会先清旧 localStorage 再注入新 key。
 - Bot 停止时 WebView 不销毁，但页面会因 API 请求失败显示错误态（前端处理）。
+- NapCat 停止时 `napcatWebuiUrl` 被清空，WebView 显示占位提示。
 
 ---
 
 ## 6. UI 集成方案
 
-### 6.1 方案选择：改造 WebViewPage（管理 Tab）
+### 6.1 方案选择：改造 WebViewPage（管理 Tab）+ 实例详情页按钮入口
 
-**不**在 `InstanceDetailPage` 加 Tab，而是改造现有 `/webview` 路由的 `WebViewPage`。
+改造现有 `/webview` 路由的 `WebViewPage` 作为全屏 WebView 容器，同时在 `InstanceDetailPage` 加两个按钮（WebUI / NapCat WebUI），点击后带 `target` + `instanceId` 参数跳转到 WebViewPage，自动选中对应实例和 target。
 
 **理由**：
 
 - `WebViewPage` 已有 SegmentedButton 切换 Neo-MoFox / NapCat 的壳，改造成本低。
 - WebUI 是全屏体验，放在管理 Tab 比挤在实例详情页的 Tab 里更合理。
 - 实例详情页已有日志 Tab，WebUI 是另一种交互形态，分开更清晰。
+- 实例详情页加按钮提供快捷入口，用户启动 Bot/NapCat 后一键打开对应 WebUI。
 - ARCHITECTURE.md §5.9 已规划 WebView 壳在管理 Tab。
 
 ### 6.2 WebViewPage 改造
 
 ```
-WebViewPage（改造后）
+WebViewPage（改造后，接受路由参数 initialTarget / initialInstanceId）
 ├── AppBar
-│   ├── 标题：当前实例名 / "WebUI"
+│   ├── 标题：当前实例名 / "管理"
 │   ├── 刷新按钮 → webviewNotifier.reload()
-│   ├── 在浏览器打开 → url_launcher 打开 127.0.0.1:8000
-│   └── SegmentedButton（Neo-MoFox / NapCat 切换）
+│   ├── 在浏览器打开 → url_launcher 打开对应 URL
+│   └── bottom: Column
+│       ├── 实例选择 DropdownMenu（多实例时显示）
+│       └── SegmentedButton（Neo-MoFox / NapCat 切换）
 └── Body
-    ├── 实例选择器（Dropdown / 横向列表，选当前要看的实例）
-    └── WebViewWidget
-        ├── Bot 运行中 → 加载 http://127.0.0.1:8000/webui/frontend
-        ├── Bot 未运行 → 占位提示"请先启动 Bot"
-        └── 未安装 WebUI → 占位提示"此实例未安装 WebUI"
+    ├── Neo-MoFox 模式
+    │   ├── 未安装 WebUI → 占位提示
+    │   ├── Bot 未运行 → 占位提示"请先启动 Bot"
+    │   └── Bot 运行中 → WebViewWidget 加载 /webui/frontend
+    └── NapCat 模式
+        ├── NapCat 未运行 → 占位提示
+        ├── 等待 WebUI URL → 占位提示
+        └── 有 URL → WebViewWidget 加载 napcatWebuiUrl
 ```
 
-### 6.3 实例选择
+### 6.3 实例详情页按钮入口
 
-`WebViewPage` 改为 `ConsumerStatefulWidget`：
+`InstanceDetailPage` 在启动/停止/重启按钮行下方加一行两个按钮：
 
 ```dart
-class WebViewPage extends ConsumerStatefulWidget {
-  const WebViewPage({super.key});
-  @override
-  ConsumerState<WebViewPage> createState() => _WebViewPageState();
-}
+// WebUI 按钮（Bot 运行中 + 安装了 WebUI 时可用）
+FilledButton.tonalIcon(
+  onPressed: (installed && !busy && botRunning && instance.installWebui)
+    ? () => context.go(AppRoute.webview, extra: {
+        'target': 'neoMofox',
+        'instanceId': instance.id,
+      })
+    : null,
+  icon: Icon(Icons.dashboard_outlined),
+  label: Text('WebUI'),
+),
 
-class _WebViewPageState extends ConsumerState<WebViewPage> {
-  String? _selectedInstanceId;
-
-  @override
-  Widget build(BuildContext context) {
-    final instances = ref.watch(instancesProvider).valueOrNull ?? [];
-    final webuiInstances = instances.where((i) => i.installWebui).toList();
-    final selected = webuiInstances.firstWhere(
-      (i) => i.id == _selectedInstanceId,
-      orElse: () => webuiInstances.first,
-    );
-    final botStatus = ref.watch(processConsoleProvider).botStatus;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(selected.name),
-        actions: [刷新按钮, 浏览器打开按钮],
-        bottom: PreferredSize(
-          child: Column(
-            children: [
-              实例选择Dropdown,
-              SegmentedButton(Neo-MoFox / NapCat),
-            ],
-          ),
-        ),
-      ),
-      body: botStatus == 'running'
-          ? WebViewWidget(controller: ref.watch(webviewNotifierProvider))
-          : 占位提示,
-    );
-  }
-}
+// NapCat WebUI 按钮（NapCat 运行中 + 安装了 NapCat 时可用）
+FilledButton.tonalIcon(
+  onPressed: (installed && !busy && napcatRunning && instance.installNapcat)
+    ? () => context.go(AppRoute.webview, extra: {
+        'target': 'napcat',
+        'instanceId': instance.id,
+      })
+    : null,
+  icon: Icon(Icons.qr_code_2_outlined),
+  label: Text('NapCat WebUI'),
+),
 ```
 
-### 6.4 NapCat WebUI（后续）
+### 6.4 路由参数
 
-NapCat 控制台的 URL 和认证方式与 Neo-MoFox WebUI 不同，本次只实现 Neo-MoFox WebUI。NapCat 分支保留 SegmentedButton 占位，后续单独实现。
+`app_router.dart` 的 `/webview` 路由接受 `extra` Map：
+
+```dart
+GoRoute(
+  path: AppRoute.webview,
+  builder: (_, state) {
+    final extra = state.extra as Map<String, dynamic>?;
+    return WebViewPage(
+      initialTarget: extra?['target'] as String?,
+      initialInstanceId: extra?['instanceId'] as String?,
+    );
+  },
+),
+```
+
+`WebViewPage` 构造函数接受 `initialTarget`（`'neoMofox'` / `'napcat'`）和 `initialInstanceId`，初始化时选中对应 target 和实例。
 
 ---
 
@@ -374,18 +402,27 @@ await controller.setPlatformNavigationDelegate(
 
 | 步骤 | 文件 | 改动 |
 | --- | --- | --- |
-| 2.1 | 新建 `app/lib/features/webview/application/webview_notifier.dart` | `WebviewNotifier`，loadInstance/reload |
+| 2.1 | 新建 `app/lib/features/webview/application/webview_notifier.dart` | `WebviewNotifier`，loadNeoMofox/loadNapcat/reload |
 | 2.2 | `webview_notifier.dart` | localStorage 注入逻辑 + URL 白名单导航委托 |
+| 2.3 | `process_console_provider.dart` | 加 `napcatWebuiUrl` 字段，从日志解析 URL，进程退出时清空 |
 
 ### Phase 3：WebViewPage 改造
 
 | 步骤 | 文件 | 改动 |
 | --- | --- | --- |
-| 3.1 | `webview_page.dart` | 改为 `ConsumerStatefulWidget` |
-| 3.2 | `webview_page.dart` | 加实例选择器（Dropdown） |
-| 3.3 | `webview_page.dart` | body 替换占位为 `WebViewWidget` |
-| 3.4 | `webview_page.dart` | bot 运行状态判断 + 占位提示 |
+| 3.1 | `webview_page.dart` | 改为 `ConsumerStatefulWidget`，接受 `initialTarget` / `initialInstanceId` |
+| 3.2 | `webview_page.dart` | 加实例选择器（DropdownMenu） |
+| 3.3 | `webview_page.dart` | body 替换占位为 `WebViewWidget`，Neo-MoFox / NapCat 双模式 |
+| 3.4 | `webview_page.dart` | bot/napcat 运行状态判断 + 占位提示 |
 | 3.5 | `webview_page.dart` | 刷新按钮接 `reload()`，浏览器打开接 `url_launcher` |
+| 3.6 | `app_router.dart` | `/webview` 路由接受 `extra` Map 传 target/instanceId |
+
+### Phase 4：实例详情页按钮入口
+
+| 步骤 | 文件 | 改动 |
+| --- | --- | --- |
+| 4.1 | `instance_detail_page.dart` | 加 WebUI 按钮（Bot 运行中可用）→ 跳转 webview target=neoMofox |
+| 4.2 | `instance_detail_page.dart` | 加 NapCat WebUI 按钮（NapCat 运行中可用）→ 跳转 webview target=napcat |
 
 ### Phase 4：网络安全配置
 
@@ -399,10 +436,12 @@ await controller.setPlatformNavigationDelegate(
 | 步骤 | 验证内容 |
 | --- | --- |
 | 5.1 | 创建实例 → 确认 api_key 写入 secure storage |
-| 5.2 | 启动 bot → 打开管理 Tab → WebUI 自动加载，免登录进 dashboard |
+| 5.2 | 启动 bot → 实例详情页点「WebUI」按钮 → WebUI 自动加载，免登录进 dashboard |
 | 5.3 | 停止 bot → WebUI 显示占位提示 |
 | 5.4 | 切换实例 → WebUI 加载新实例的 WebUI |
 | 5.5 | 删除实例 → 确认 secure storage 中 api_key 已清理 |
+| 5.6 | 启动 NapCat → 实例详情页点「NapCat WebUI」按钮 → 加载 NapCat 控制台（自带 token） |
+| 5.7 | 停止 NapCat → WebUI 显示占位提示，napcatWebuiUrl 清空 |
 
 ---
 
@@ -421,7 +460,10 @@ await controller.setPlatformNavigationDelegate(
 | --- | --- |
 | `app/lib/features/wizard/application/wizard_notifier.dart` | 安装完成写 api_key 到 secure storage |
 | `app/lib/features/dashboard/presentation/dashboard_page.dart` | 删除实例时清理 api_key |
-| `app/lib/features/webview/presentation/webview_page.dart` | 改造为真实 WebView |
+| `app/lib/features/dashboard/application/process_console_provider.dart` | 加 `napcatWebuiUrl` 字段，从日志解析 URL，进程退出时清空 |
+| `app/lib/features/webview/presentation/webview_page.dart` | 改造为真实 WebView，接受路由参数 |
+| `app/lib/features/instance/presentation/instance_detail_page.dart` | 加 WebUI / NapCat WebUI 两个按钮入口 |
+| `app/lib/app/router/app_router.dart` | `/webview` 路由接受 `extra` Map 传 target/instanceId |
 | `app/android/app/src/main/res/xml/network_security_config.xml` | 127.0.0.1 cleartext 例外（可能需新建） |
 | `app/android/app/src/main/AndroidManifest.xml` | 引用 networkSecurityConfig（如未引用） |
 
@@ -445,7 +487,7 @@ await controller.setPlatformNavigationDelegate(
 | **WebUI 前端版本更新改 localStorage key 名** | key 名 `mofox_token` 是前端硬编码的，如果上游改名需要同步更新注入逻辑 |
 | **多实例同时运行** | 当前 `ProcessConsoleNotifier` 是全局单例，同时只能跟踪一个 bot 进程。多实例运行是后续需求，当前单实例场景下 WebView 方案可行 |
 | **WebView 内存占用** | WebView 不在实例详情页内嵌，放在管理 Tab 全屏使用，切走时 WebView 挂起不销毁，回来时恢复 |
-| **NapCat WebUI** | 本次只实现 Neo-MoFox WebUI，NapCat 控制台保留 SegmentedButton 占位，后续单独实现 |
+| **NapCat WebUI** | 已实现：从 napcat 日志解析 `WebUi User Panel Url: http://127.0.0.1:6099/webui?token=xxx`，URL 自带 token 直接加载，无需额外注入。NapCat 停止时清空 `napcatWebuiUrl`。 |
 
 ---
 
@@ -454,14 +496,17 @@ await controller.setPlatformNavigationDelegate(
 ```mermaid
 graph TB
     subgraph Flutter UI
-        VP[WebViewPage<br/>管理 Tab]
-        IS[实例选择 Dropdown]
+        IDP[InstanceDetailPage<br/>实例详情页]
+        WB1[WebUI 按钮]
+        WB2[NapCat WebUI 按钮]
+        VP[WebViewPage<br/>管理 Tab / 全屏]
+        IS[实例选择 DropdownMenu]
         SB[SegmentedButton<br/>Neo-MoFox / NapCat]
     end
 
     subgraph State
         WN[WebviewNotifier<br/>Riverpod Notifier]
-        PCP[ProcessConsoleNotifier<br/>botStatus 轮询]
+        PCP[ProcessConsoleNotifier<br/>botStatus / napcatWebuiUrl]
         IP[instancesProvider<br/>实例列表]
     end
 
@@ -470,15 +515,20 @@ graph TB
     end
 
     subgraph WebView
-        WC[WebviewController]
+        WC[WebViewController]
         WV[WebViewWidget]
     end
 
     subgraph proot Debian
         BOT[Neo-MoFox Bot<br/>uv run python main.py]
         FASTAPI[FastAPI :8000<br/>/webui/frontend<br/>/webui/api/*]
+        NAPCAT[NapCat :6099<br/>/webui?token=xxx]
     end
 
+    IDP --> WB1
+    IDP --> WB2
+    WB1 -- "go /webview target=neoMofox" --> VP
+    WB2 -- "go /webview target=napcat" --> VP
     VP --> IS
     IS --> IP
     VP --> SB
@@ -487,45 +537,72 @@ graph TB
     WN --> WKS
     WC --> WV
     WV -- "http://127.0.0.1:8000/webui/frontend" --> FASTAPI
+    WV -- "http://127.0.0.1:6099/webui?token=xxx" --> NAPCAT
     WN -- "runJavaScript<br/>localStorage.setItem" --> WC
-    PCP -- "botStatus == running?" --> VP
+    PCP -- "botStatus / napcatWebuiUrl" --> VP
     BOT --> FASTAPI
+    NAPCAT -- "日志输出 WebUI URL" --> PCP
 ```
 
 ---
 
 ## 12. 时序图
 
+### 12.1 Neo-MoFox WebUI
+
 ```mermaid
 sequenceDiagram
     participant U as 用户
+    participant IDP as InstanceDetailPage
     participant VP as WebViewPage
     participant WN as WebviewNotifier
     participant WKS as WebuiKeyStore
-    participant WC as WebviewController
+    participant WC as WebViewController
     participant BOT as Bot (FastAPI :8000)
 
-    U->>VP: 打开管理 Tab
-    VP->>VP: 读取 instancesProvider
-    VP->>VP: 筛选 installWebui 实例
-    VP->>VP: 选中第一个实例
-    VP->>PCP: watch botStatus
+    U->>IDP: 启动 Bot
+    IDP->>IDP: botStatus = running
+    U->>IDP: 点击「WebUI」按钮
+    IDP->>VP: go /webview {target: neoMofox, instanceId}
+    VP->>VP: 选中实例，检测 botStatus = running
+    VP->>WN: loadNeoMofox(instance)
+    WN->>WKS: get(instance.id)
+    WKS-->>WN: api_key
+    WN->>WC: loadHtmlString("<html></html>")
+    WN->>WC: runJavaScript('localStorage.setItem("mofox_token","key")')
+    WN->>WC: loadRequest("http://127.0.0.1:8000/webui/frontend")
+    WC->>BOT: GET /webui/frontend
+    BOT-->>WC: index.html (SPA)
+    WC->>BOT: GET /webui/api/* (带 X-API-Key header)
+    BOT-->>WC: JSON 数据
+    WC-->>U: WebUI Dashboard（免登录）
+```
 
-    alt Bot 未运行
-        VP-->>U: 显示"请先启动 Bot"占位
-    else Bot 运行中
-        VP->>WN: loadInstance(instance)
-        WN->>WKS: get(instance.id)
-        WKS-->>WN: api_key
-        WN->>WC: loadHtml("<html></html>")
-        WN->>WC: runJavaScript('localStorage.setItem("mofox_token","key")')
-        WN->>WC: loadRequest("http://127.0.0.1:8000/webui/frontend")
-        WC->>BOT: GET /webui/frontend
-        BOT-->>WC: index.html (SPA)
-        WC->>BOT: GET /webui/api/* (带 X-API-Key header)
-        BOT-->>WC: JSON 数据
-        WC-->>U: WebUI Dashboard（免登录）
-    end
+### 12.2 NapCat WebUI
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant IDP as InstanceDetailPage
+    participant PCP as ProcessConsoleNotifier
+    participant VP as WebViewPage
+    participant WN as WebviewNotifier
+    participant WC as WebViewController
+    participant NC as NapCat (:6099)
+
+    U->>IDP: 启动 NapCat
+    NC-->>PCP: 日志: WebUi User Panel Url: http://127.0.0.1:6099/webui?token=xxx
+    PCP->>PCP: 解析 URL，存 napcatWebuiUrl
+    U->>IDP: 点击「NapCat WebUI」按钮
+    IDP->>VP: go /webview {target: napcat, instanceId}
+    VP->>VP: 选中实例，检测 napcatRunning + napcatWebuiUrl
+    VP->>WN: loadNapcat(napcatWebuiUrl)
+    WN->>WC: loadHtmlString("<html></html>")
+    WN->>WC: runJavaScript('localStorage.clear()')
+    WN->>WC: loadRequest("http://127.0.0.1:6099/webui?token=xxx")
+    WC->>NC: GET /webui?token=xxx
+    NC-->>WC: NapCat 控制台页面
+    WC-->>U: NapCat WebUI（自带 token 认证）
 ```
 
 ---
@@ -536,5 +613,5 @@ sequenceDiagram
 
 - §5.9 更新：从"占位"改为"已实现"，补充 localStorage 注入方案和密钥存储。
 - §9 安全：补充 `flutter_secure_storage` 实际使用情况。
-- §5.7 实例详情：明确 WebUI 不在详情页 Tab，在管理 Tab。
+- §5.7 实例详情：补充 WebUI / NapCat WebUI 按钮入口，跳转到管理 Tab 的 WebViewPage。
 - §7 目录结构：补充新建的 `core/security/` 和 `features/webview/application/`。

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../dashboard/application/process_console_provider.dart';
@@ -25,16 +26,36 @@ extension on WebUiTarget {
 }
 
 class WebViewPage extends ConsumerStatefulWidget {
-  const WebViewPage({super.key});
+  const WebViewPage({
+    super.key,
+    this.initialTarget,
+    this.initialInstanceId,
+  });
+
+  /// 路由传入的初始 target：`'neoMofox'` 或 `'napcat'`。
+  final String? initialTarget;
+
+  /// 路由传入的初始实例 ID。
+  final String? initialInstanceId;
+
   @override
   ConsumerState<WebViewPage> createState() => _WebViewPageState();
 }
 
 class _WebViewPageState extends ConsumerState<WebViewPage> {
-  WebUiTarget _target = WebUiTarget.neoMofox;
+  late WebUiTarget _target;
   String? _selectedInstanceId;
   bool _loadedForInstanceId = false;
   String? _loadedNapcatUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _target = widget.initialTarget == 'napcat'
+        ? WebUiTarget.napcat
+        : WebUiTarget.neoMofox;
+    _selectedInstanceId = widget.initialInstanceId;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +89,11 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => context.pop(),
+        ),
         title: Text(selected?.name ?? '管理'),
         actions: <Widget>[
           IconButton(
@@ -135,7 +161,14 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
                   showSelectedIcon: false,
                   onSelectionChanged: (s) => setState(() {
                     _target = s.first;
-                    _selectedInstanceId = null;
+                    final nextCandidates = _target == WebUiTarget.neoMofox
+                        ? webuiInstances
+                        : napcatInstances;
+                    if (_selectedInstanceId != null &&
+                        !nextCandidates.any(
+                            (instance) => instance.id == _selectedInstanceId)) {
+                      _selectedInstanceId = null;
+                    }
                     _loadedForInstanceId = false;
                     _loadedNapcatUrl = null;
                   }),

@@ -301,6 +301,48 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: FilledButton.tonalIcon(
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.botStatus != 'running' ||
+                                      !instance.installWebui
+                                  ? null
+                                  : () => context.go(
+                                        AppRoute.webview,
+                                        extra: <String, dynamic>{
+                                          'target': 'neoMofox',
+                                          'instanceId': instance.id,
+                                        },
+                                      ),
+                              icon: const Icon(Icons.dashboard_outlined),
+                              label: const Text('WebUI'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.tonalIcon(
+                              onPressed: !installed ||
+                                      console.isBusy ||
+                                      console.napcatStatus != 'running' ||
+                                      !instance.installNapcat
+                                  ? null
+                                  : () => context.go(
+                                        AppRoute.webview,
+                                        extra: <String, dynamic>{
+                                          'target': 'napcat',
+                                          'instanceId': instance.id,
+                                        },
+                                      ),
+                              icon: const Icon(Icons.qr_code_2_outlined),
+                              label: const Text('NapCat WebUI'),
+                            ),
+                          ),
+                        ],
+                      ),
                       if (console.errorMessage != null) ...<Widget>[
                         const SizedBox(height: 8),
                         Align(

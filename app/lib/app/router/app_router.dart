@@ -103,7 +103,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: AppRoute.webview,
-            builder: (_, __) => const WebViewPage(),
+            builder: (_, state) {
+              final extra = state.extra as Map<String, dynamic>?;
+              return WebViewPage(
+                initialTarget: extra?['target'] as String?,
+                initialInstanceId: extra?['instanceId'] as String?,
+              );
+            },
           ),
           GoRoute(
             path: AppRoute.terminal,
