@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -82,9 +83,28 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoute.instanceDetail,
-        builder: (_, state) => InstanceDetailPage(
-          instance: state.extra as Instance,
-        ),
+        pageBuilder: (_, state) {
+          final instance = state.extra as Instance;
+          return MaterialPage(
+            key: ValueKey('instanceDetail-${instance.id}'),
+            child: InstanceDetailPage(instance: instance),
+          );
+        },
+      ),
+      GoRoute(
+        path: AppRoute.webview,
+        pageBuilder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          final target = extra?['target'] as String? ?? 'neoMofox';
+          final instanceId = extra?['instanceId'] as String? ?? '';
+          return MaterialPage(
+            key: ValueKey('webview-$target-$instanceId'),
+            child: WebViewPage(
+              initialTarget: target,
+              initialInstanceId: instanceId,
+            ),
+          );
+        },
       ),
       ShellRoute(
         builder: (context, state, child) => ShellPage(child: child),
@@ -100,16 +120,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: AppRoute.dashboard,
             builder: (_, __) => const DashboardPage(),
-          ),
-          GoRoute(
-            path: AppRoute.webview,
-            builder: (_, state) {
-              final extra = state.extra as Map<String, dynamic>?;
-              return WebViewPage(
-                initialTarget: extra?['target'] as String?,
-                initialInstanceId: extra?['instanceId'] as String?,
-              );
-            },
           ),
           GoRoute(
             path: AppRoute.terminal,

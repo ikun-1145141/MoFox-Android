@@ -6,6 +6,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../dashboard/application/process_console_provider.dart';
 import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
+import '../../../app/router/app_router.dart';
 import '../application/webview_notifier.dart';
 
 enum WebUiTarget { neoMofox, napcat }
@@ -92,7 +93,13 @@ class _WebViewPageState extends ConsumerState<WebViewPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           tooltip: '返回',
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go(AppRoute.dashboard);
+            }
+          },
         ),
         title: Text(selected?.name ?? '管理'),
         actions: <Widget>[

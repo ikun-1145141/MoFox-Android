@@ -311,12 +311,10 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                       console.botStatus != 'running' ||
                                       !instance.installWebui
                                   ? null
-                                  : () => context.go(
-                                        AppRoute.webview,
-                                        extra: <String, dynamic>{
-                                          'target': 'neoMofox',
-                                          'instanceId': instance.id,
-                                        },
+                                  : () => _openWebUi(
+                                        context,
+                                        target: 'neoMofox',
+                                        instance: instance,
                                       ),
                               icon: const Icon(Icons.dashboard_outlined),
                               label: const Text('WebUI'),
@@ -330,12 +328,10 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                       console.napcatStatus != 'running' ||
                                       !instance.installNapcat
                                   ? null
-                                  : () => context.go(
-                                        AppRoute.webview,
-                                        extra: <String, dynamic>{
-                                          'target': 'napcat',
-                                          'instanceId': instance.id,
-                                        },
+                                  : () => _openWebUi(
+                                        context,
+                                        target: 'napcat',
+                                        instance: instance,
                                       ),
                               icon: const Icon(Icons.qr_code_2_outlined),
                               label: const Text('NapCat WebUI'),
@@ -378,6 +374,22 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
           ),
         ),
       ),
+    );
+  }
+
+  void _openWebUi(
+    BuildContext context, {
+    required String target,
+    required Instance instance,
+  }) {
+    // WebView is a standalone route. Use push() so the back button returns to
+    // the originating instance detail page instead of replacing the shell stack.
+    context.push(
+      AppRoute.webview,
+      extra: <String, dynamic>{
+        'target': target,
+        'instanceId': instance.id,
+      },
     );
   }
 
