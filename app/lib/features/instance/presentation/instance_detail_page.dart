@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/router/app_router.dart';
 import '../../../core/runtime/runtime_bridge.dart';
@@ -311,10 +312,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                       console.botStatus != 'running' ||
                                       !instance.installWebui
                                   ? null
-                                  : () => _openWebUi(
+                                  : () async => _openWebUi(
                                         context,
                                         target: 'neoMofox',
-                                        instance: instance,
                                       ),
                               icon: const Icon(Icons.dashboard_outlined),
                               label: const Text('WebUI'),
@@ -328,10 +328,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                       console.napcatStatus != 'running' ||
                                       !instance.installNapcat
                                   ? null
-                                  : () => _openWebUi(
+                                  : () async => _openWebUi(
                                         context,
                                         target: 'napcat',
-                                        instance: instance,
                                       ),
                               icon: const Icon(Icons.qr_code_2_outlined),
                               label: const Text('NapCat WebUI'),
@@ -377,20 +376,38 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     );
   }
 
-  void _openWebUi(
+  Future<void> _openWebUi(
     BuildContext context, {
     required String target,
-    required Instance instance,
-  }) {
-    // WebView is a standalone route. Use push() so the back button returns to
-    // the originating instance detail page instead of replacing the shell stack.
-    context.push(
-      AppRoute.webview,
-      extra: <String, dynamic>{
-        'target': target,
-        'instanceId': instance.id,
-      },
-    );
+  }) async {
+    final process = ref.read(processConsoleProvider);
+    final url = target == 'napcat'
+        ? process.napcatWebuiUrl
+        : 'http://127.0.0.1:8000/webui/frontend';
+
+    if (url == null || url.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('NapCat WebUI 地址尚未就绪，请稍候再试')),
+      );
+      return;
+    }
+
+    try {
+      final launched = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法打开系统浏览器')),
+        );
+      }
+    } on Object catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('打开系统浏览器失败：$error')),
+      );
+    }
   }
 
   void _showInstanceInfoSheet(BuildContext context) {

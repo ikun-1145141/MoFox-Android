@@ -1,6 +1,6 @@
 # MoFox Android App
 
-Neo-MoFox 的安卓原生外壳 App。应用负责 OOBE、内嵌 proot Linux 运行时、实例创建向导、终端入口、WebView 与系统级设置。
+Neo-MoFox 的安卓原生外壳 App。应用负责 OOBE、内嵌 proot Linux 运行时、实例创建向导、终端入口、WebUI 外部浏览器跳转与系统级设置。
 
 ## 安装向导流程
 

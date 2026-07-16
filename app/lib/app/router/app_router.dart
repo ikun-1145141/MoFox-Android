@@ -14,7 +14,6 @@ import '../../features/settings/presentation/settings_page.dart';
 import '../../features/settings/presentation/third_party_licenses_page.dart';
 import '../../features/shell/presentation/shell_page.dart';
 import '../../features/terminal/presentation/terminal_page.dart';
-import '../../features/webview/presentation/webview_page.dart';
 import '../../features/instance/domain/instance.dart';
 import '../../features/backup/presentation/backup_page.dart';
 import '../../features/wizard/presentation/wizard_page.dart';
@@ -25,7 +24,6 @@ abstract final class AppRoute {
   static const String home = '/home';
   static const String dashboard = '/dashboard';
   static const String instanceDetail = '/dashboard/instance';
-  static const String webview = '/webview';
   static const String terminal = '/terminal';
   static const String settings = '/settings';
   static const String appearance = '/settings/appearance';
@@ -88,21 +86,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return MaterialPage(
             key: ValueKey('instanceDetail-${instance.id}'),
             child: InstanceDetailPage(instance: instance),
-          );
-        },
-      ),
-      GoRoute(
-        path: AppRoute.webview,
-        pageBuilder: (_, state) {
-          final extra = state.extra as Map<String, dynamic>?;
-          final target = extra?['target'] as String? ?? 'neoMofox';
-          final instanceId = extra?['instanceId'] as String? ?? '';
-          return MaterialPage(
-            key: ValueKey('webview-$target-$instanceId'),
-            child: WebViewPage(
-              initialTarget: target,
-              initialInstanceId: instanceId,
-            ),
           );
         },
       ),

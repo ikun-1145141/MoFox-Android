@@ -98,8 +98,7 @@ class ShellPage extends StatelessWidget {
   }
 
   int _tabFromLocation(String loc) {
-    if (loc.startsWith(AppRoute.dashboard) ||
-        loc.startsWith(AppRoute.webview)) {
+    if (loc.startsWith(AppRoute.dashboard)) {
       return 1;
     }
     if (loc.startsWith(AppRoute.terminal)) return 2;
