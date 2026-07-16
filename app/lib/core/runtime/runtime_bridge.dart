@@ -13,6 +13,14 @@ class RuntimeBridge {
   static const MethodChannel _channel = MethodChannel('mofox/runtime');
   static const EventChannel _events = EventChannel('mofox/runtime/events');
 
+  /// 原生 RuntimeEventBus 只有一个 EventSink，因此整个 Flutter 进程必须只调用一次
+  /// receiveBroadcastStream。安装日志、托管进程日志和 PTY 输出都从这条共享流过滤。
+  ///
+  /// 如果每个 topic 各建一条平台订阅，后建立的订阅会覆盖原生 sink；其中任意一条
+  /// cancel 时又会把 sink 清空，导致安装完成后 Bot/NapCat 已启动却收不到任何日志，
+  /// 直到 App 重启重新订阅。
+  static final Stream<Object?> _eventStream = _events.receiveBroadcastStream();
+
   /// rootfs 是否已解压完成。
   Future<bool> isBootstrapped() async {
     final result = await _channel.invokeMethod<bool>('isBootstrapped');
@@ -23,8 +31,7 @@ class RuntimeBridge {
   ///
   /// 返回流向上抛 0..1 的进度（0 = 校验, 1 = 完成）。
   Stream<double> installBootstrap() {
-    return _events
-        .receiveBroadcastStream(<String, Object?>{'topic': 'bootstrap'})
+    return _eventStream
         .where(_isBootstrapEvent)
         .map((event) => (event as Map<Object?, Object?>)['payload'])
         .where((value) => value is num)
@@ -73,8 +80,7 @@ class RuntimeBridge {
   /// 安装结束（成功/失败）再 cancel。这样可以避免在 task 切换瞬间 sink 被 detach
   /// 导致原生端 emit 的事件被丢掉。
   Stream<InstallEvent> installEvents() {
-    return _events
-        .receiveBroadcastStream(<String, Object?>{'topic': 'install'})
+    return _eventStream
         .where(
           (event) =>
               event is Map<Object?, Object?> && event['topic'] == 'install',
@@ -83,11 +89,10 @@ class RuntimeBridge {
         .where((payload) => payload is Map<Object?, Object?>)
         .cast<Map<Object?, Object?>>()
         .map((payload) {
-          final task = payload['task']?.toString() ?? '';
-          final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
-          return InstallEvent(task: task, line: line);
-        })
-        .where((event) => event.task.isNotEmpty && event.line.isNotEmpty);
+      final task = payload['task']?.toString() ?? '';
+      final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
+      return InstallEvent(task: task, line: line);
+    }).where((event) => event.task.isNotEmpty && event.line.isNotEmpty);
   }
 
   /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, napcat}.
@@ -141,8 +146,7 @@ class RuntimeBridge {
 
   /// 托管进程实时日志流。`name` 为 `bot` 或 `napcat`。
   Stream<ProcessEvent> processEvents() {
-    return _events
-        .receiveBroadcastStream(<String, Object?>{'topic': 'process'})
+    return _eventStream
         .where(
           (event) =>
               event is Map<Object?, Object?> && event['topic'] == 'process',
@@ -151,11 +155,10 @@ class RuntimeBridge {
         .where((payload) => payload is Map<Object?, Object?>)
         .cast<Map<Object?, Object?>>()
         .map((payload) {
-          final name = payload['name']?.toString() ?? '';
-          final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
-          return ProcessEvent(name: name, line: line);
-        })
-        .where((event) => event.name.isNotEmpty && event.line.isNotEmpty);
+      final name = payload['name']?.toString() ?? '';
+      final line = _cleanInstallLogLine(payload['line']?.toString() ?? '');
+      return ProcessEvent(name: name, line: line);
+    }).where((event) => event.name.isNotEmpty && event.line.isNotEmpty);
   }
 
   /// 拉一份 Android 设备和运行负载快照。
@@ -171,11 +174,7 @@ class RuntimeBridge {
   /// 交互式 bash，stdout 切片后通过 EventChannel 抛过来。订阅之前先 `openShell`
   /// 拿到 sessionId。
   Stream<String> shellOutput(String sessionId) {
-    return _events
-        .receiveBroadcastStream(<String, Object?>{
-          'topic': 'pty',
-          'sessionId': sessionId,
-        })
+    return _eventStream
         .where(
           (event) => event is Map<Object?, Object?> && event['topic'] == 'pty',
         )
