@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/router/app_router.dart';
 
@@ -37,7 +38,7 @@ class AboutPage extends ConsumerWidget {
                 icon: Icons.code_outlined,
                 title: '查看源代码',
                 subtitle: '在 GitHub 上查看源代码',
-                onTap: () => _copyRepositoryUrl(context),
+                onTap: () => _openRepository(context),
               ),
               const _Divider(),
               _AboutActionTile(
@@ -71,6 +72,17 @@ class AboutPage extends ConsumerWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已复制 GitHub 链接')),
+    );
+  }
+
+  Future<void> _openRepository(BuildContext context) async {
+    final launched = await launchUrl(
+      Uri.parse(_repositoryUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (launched || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('无法打开浏览器')),
     );
   }
 }
