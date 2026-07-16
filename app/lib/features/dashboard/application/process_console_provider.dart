@@ -256,7 +256,10 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       // 检测 QR 码标记行：进程脚本后台监控 QR 文件并输出 MOFOX_QR_IMAGE=<path>
       if (event.line.startsWith('MOFOX_QR_IMAGE=')) {
         final hostPath = event.line.substring('MOFOX_QR_IMAGE='.length);
-        final payload = 'file:$hostPath';
+        // NapCat 刷新二维码时会覆盖同一个 qrcode.png。附加只用于 UI 缓存键的
+        // 版本号，让 Riverpod listener 能识别同路径的新图片并触发弹窗刷新。
+        final version = DateTime.now().microsecondsSinceEpoch;
+        final payload = 'file:$hostPath#$version';
         appLogger.i(
             'process: napcat QR from process stream (len=${payload.length})');
         state = state.copyWith(napcatQrPayload: payload);

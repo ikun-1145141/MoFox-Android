@@ -55,7 +55,10 @@ class RuntimeScripts(
               val cmd = """cd /root/napcat
                 export BOT_QQ=${shellQuote(botQq)}
                 mkdir -p /root/napcat/cache
-                rm -f /root/napcat/cache/qrcode.png /tmp/napcat-login.log
+                NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
+                # 两个可能位置都必须清理。否则监控线程会先读到上次登录留下的
+                # 过期二维码，并在 NapCat 生成本次二维码之前就推送给 Flutter。
+                rm -f /root/napcat/cache/qrcode.png "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log
                 # 后台监控 QR 码文件并输出标记行
                 (
                   QR_EMITTED=0
@@ -64,7 +67,6 @@ class RuntimeScripts(
                     sleep 1
                     QR_PATH=""
                     [ -s /root/napcat/cache/qrcode.png ] && QR_PATH=/root/napcat/cache/qrcode.png
-                    NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
                     if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
                       QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
                     fi
