@@ -107,6 +107,15 @@ class RuntimeBridgePlugin {
                         val path = call.argument<String>("path") ?: error("Missing path")
                         readFileFromRootfs(installer, path)
                     }
+                    "readFileBytes" -> runAsync(result) {
+                        val path = call.argument<String>("path") ?: error("Missing path")
+                        readFileBytesFromRootfs(installer, path)
+                    }
+                    "writeFiles" -> runAsync(result) {
+                        val files = call.argument<List<Map<String, Any?>>>("files")
+                            ?: error("Missing files")
+                        writeFilesToRootfs(installer, files)
+                    }
                     "fileExists" -> runAsync(result) {
                         val path = call.argument<String>("path") ?: error("Missing path")
                         fileExistsInRootfs(installer, path)
@@ -274,6 +283,65 @@ class RuntimeBridgePlugin {
         return file.readText()
     }
 
+    private fun readFileBytesFromRootfs(
+        installer: RootfsInstaller,
+        rootfsPath: String,
+    ): ByteArray {
+        val file = resolveRootfsPath(installer, rootfsPath)
+        if (!file.exists() || !file.isFile) return ByteArray(0)
+        return file.readBytes()
+    }
+
+    private fun writeFilesToRootfs(
+        installer: RootfsInstaller,
+        entries: List<Map<String, Any?>>,
+    ): Int {
+        require(entries.size <= MAX_IMPORT_FILES) { "备份文件数量超过上限" }
+
+        var totalBytes = 0L
+        val files = entries.map { entry ->
+            val path = entry["path"] as? String ?: error("Missing file path")
+            val bytes = entry["bytes"] as? ByteArray ?: error("Missing file bytes: $path")
+            require(bytes.size <= MAX_IMPORT_FILE_BYTES) { "单个备份文件过大: $path" }
+            totalBytes += bytes.size
+            require(totalBytes <= MAX_IMPORT_TOTAL_BYTES) { "备份解压后体积超过上限" }
+            resolveRootfsPath(installer, path) to bytes
+        }
+
+        for ((target, bytes) in files) {
+            require(!target.isDirectory) { "目标路径是目录: ${target.path}" }
+            val parent = target.parentFile ?: error("Invalid target: ${target.path}")
+            check(parent.mkdirs() || parent.isDirectory) { "无法创建目录: ${parent.path}" }
+            val temp = File(parent, ".${target.name}.mofox-import-${UUID.randomUUID()}")
+            try {
+                temp.writeBytes(bytes)
+                if (target.exists() && !target.delete()) {
+                    error("无法覆盖文件: ${target.path}")
+                }
+                if (!temp.renameTo(target)) {
+                    temp.copyTo(target, overwrite = true)
+                    check(temp.delete()) { "无法清理临时文件: ${temp.path}" }
+                }
+            } finally {
+                if (temp.exists()) temp.delete()
+            }
+        }
+        return files.size
+    }
+
+    private fun resolveRootfsPath(
+        installer: RootfsInstaller,
+        rootfsPath: String,
+    ): File {
+        require(rootfsPath.startsWith('/')) { "rootfs path must be absolute" }
+        require('\u0000' !in rootfsPath) { "rootfs path contains NUL" }
+        val root = installer.ubuntuPath.canonicalFile
+        val target = File(root, rootfsPath.removePrefix("/")).canonicalFile
+        val rootPrefix = root.path + File.separator
+        require(target.path.startsWith(rootPrefix)) { "rootfs path escapes root: $rootfsPath" }
+        return target
+    }
+
     private fun fileExistsInRootfs(
         installer: RootfsInstaller,
         rootfsPath: String,
@@ -320,3 +388,7 @@ class RuntimeBridgePlugin {
 }
 
 private data class ShellSession(val pty: PtyProcess)
+
+private const val MAX_IMPORT_FILES = 10_000
+private const val MAX_IMPORT_FILE_BYTES = 128 * 1024 * 1024
+private const val MAX_IMPORT_TOTAL_BYTES = 512L * 1024 * 1024

@@ -3,6 +3,7 @@
 [Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安卓原生外壳 App。自带完整 Linux 运行时（proot + Debian 13），不依赖 Termux，安装即可用。原生层负责 OOBE、实例管理、内嵌运行时、终端、保活与系统级设置。
 
 > 完整架构请看 [ARCHITECTURE.md](ARCHITECTURE.md)。
+> 使用 App 部署请看 [Neo-MoFox Android 官方部署指南（Beta）](docs/android-deployment-guide.md)。
 
 ## 功能
 

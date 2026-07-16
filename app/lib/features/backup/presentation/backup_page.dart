@@ -249,11 +249,33 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   }
 
   Future<void> _importBackup() async {
-    final instance = _selectedInstance;
+    final instance =
+        _selectedInstance ?? ref.read(instancesProvider).valueOrNull?.first;
     if (instance == null) {
       _showSnackBar('请先选择实例');
       return;
     }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认导入备份？'),
+        content: Text(
+          '备份中的配置、NapCat 登录态和日志会覆盖实例“${instance.name}”中的同名文件。'
+          '此操作无法撤销，建议先导出当前备份。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('继续导入'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     final count = await ref
         .read(backupNotifierProvider.notifier)
         .importBackup(instance: instance);

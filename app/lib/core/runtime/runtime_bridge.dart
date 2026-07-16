@@ -241,6 +241,36 @@ class RuntimeBridge {
     return result ?? '';
   }
 
+  /// 读取 rootfs 内文件的原始字节，供备份二进制配置和登录态使用。
+  Future<Uint8List> readFileBytes(String rootfsPath) async {
+    final result = await _channel.invokeMethod<Uint8List>(
+      'readFileBytes',
+      <String, Object>{'path': rootfsPath},
+    );
+    return result ?? Uint8List(0);
+  }
+
+  /// 将一批文件写入 rootfs。
+  ///
+  /// 原生端会再次校验所有目标路径都位于 rootfs 内，并使用临时文件替换，
+  /// 避免 ZIP 路径穿越或写入中断留下半截文件。
+  Future<int> writeFiles(List<RootfsFileWrite> files) async {
+    final result = await _channel.invokeMethod<int>(
+      'writeFiles',
+      <String, Object>{
+        'files': files
+            .map(
+              (file) => <String, Object>{
+                'path': file.path,
+                'bytes': file.bytes,
+              },
+            )
+            .toList(growable: false),
+      },
+    );
+    return result ?? 0;
+  }
+
   /// 检查 rootfs 内文件是否存在。
   Future<bool> fileExists(String rootfsPath) async {
     final result =
@@ -353,4 +383,11 @@ class RootfsEntry {
       size: (map['size'] as num?)?.toInt() ?? 0,
     );
   }
+}
+
+class RootfsFileWrite {
+  const RootfsFileWrite({required this.path, required this.bytes});
+
+  final String path;
+  final Uint8List bytes;
 }

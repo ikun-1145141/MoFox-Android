@@ -154,41 +154,71 @@ class BackupService {
       return 0;
     }
 
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final repoPath = instance.repoPath;
-    var count = 0;
-
-    for (final file in archive) {
-      if (file.isFile) {
-        final path = file.name;
-
-        // 根据 ZIP 内路径决定恢复到哪个 rootfs 目录
-        String destPath;
-        if (path.startsWith('config/')) {
-          destPath = '$repoPath/$path';
-        } else if (path.startsWith('napcat/config/')) {
-          destPath = '/root/napcat/${path.substring('napcat/'.length)}';
-        } else if (path.startsWith('napcat/login_state/')) {
-          destPath =
-              '/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/${path.substring('napcat/login_state/'.length)}';
-        } else if (path.startsWith('logs/')) {
-          destPath = '$repoPath/$path';
-        } else if (path == 'manifest.json') {
-          continue; // 跳过 manifest
-        } else {
-          appLogger.w('backup: 跳过未知路径 $path');
-          continue;
-        }
-
-        // 通过 RuntimeBridge 写入文件（用 runInstallTask 写一个 writeFile 任务）
-        // 这里简化处理：只统计数量，实际写入需要原生端支持
-        count++;
-        appLogger.d('backup: 恢复 $path -> $destPath');
-      }
+    final files = decodeBackup(bytes: bytes, instance: instance);
+    if (files.isEmpty) {
+      throw const FormatException('备份中没有可恢复的文件');
+    }
+    final count = await _runtime.writeFiles(files);
+    if (count != files.length) {
+      throw StateError('原生层只恢复了 $count/${files.length} 个文件');
     }
 
     appLogger.i('backup: importBackup done, $count files');
     return count;
+  }
+
+  /// 校验 Android 备份并映射到允许恢复的 rootfs 目标。
+  ///
+  /// 公开为静态方法，便于对 ZIP 路径穿越、格式版本和目标映射做单元测试。
+  static List<RootfsFileWrite> decodeBackup({
+    required Uint8List bytes,
+    required Instance instance,
+  }) {
+    final Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes, verify: true);
+    } on Object catch (error) {
+      throw FormatException('无法读取 ZIP 备份: $error');
+    }
+
+    final manifestFile = archive.files
+        .where((file) => file.isFile && file.name == 'manifest.json')
+        .firstOrNull;
+    if (manifestFile == null) {
+      throw const FormatException('不是有效的 MoFox Android 备份：缺少 manifest.json');
+    }
+    final manifest = _decodeManifest(_archiveBytes(manifestFile));
+    if (manifest['type'] != 'mofox-android-backup' ||
+        manifest['version'] != 1) {
+      throw const FormatException('不支持的备份类型或版本');
+    }
+
+    final writes = <RootfsFileWrite>[];
+    final destinations = <String>{};
+    var totalBytes = 0;
+    for (final file in archive.files) {
+      if (!file.isFile || file.name == 'manifest.json') continue;
+      final path = _normalizeArchivePath(file.name);
+      final destination = _backupDestination(path, instance);
+      if (destination == null) {
+        appLogger.w('backup: 跳过未知路径 $path');
+        continue;
+      }
+      if (!destinations.add(destination)) {
+        throw FormatException('备份包含重复目标: $path');
+      }
+      final content = _archiveBytes(file);
+      if (content.length > _maxImportFileBytes) {
+        throw FormatException('单个备份文件过大: $path');
+      }
+      totalBytes += content.length;
+      if (writes.length >= _maxImportFiles ||
+          totalBytes > _maxImportTotalBytes) {
+        throw const FormatException('备份文件数量或解压后体积超过上限');
+      }
+      writes.add(RootfsFileWrite(path: destination, bytes: content));
+    }
+    return writes;
   }
 
   /// 递归读取 rootfs 目录并添加到 archive。
@@ -209,11 +239,11 @@ class BackupService {
           );
         } else {
           final content =
-              await _runtime.readFile('$rootfsDirPath/${entry.name}');
+              await _runtime.readFileBytes('$rootfsDirPath/${entry.name}');
           archive.addFile(
             ArchiveFile.bytes(
               archivePath,
-              Uint8List.fromList(utf8.encode(content)),
+              content,
             ),
           );
         }
@@ -223,6 +253,54 @@ class BackupService {
     }
   }
 }
+
+Map<String, Object?> _decodeManifest(Uint8List bytes) {
+  try {
+    final value = jsonDecode(utf8.decode(bytes));
+    if (value is! Map<String, Object?>) {
+      throw const FormatException('manifest.json 不是对象');
+    }
+    return value;
+  } on FormatException {
+    rethrow;
+  } on Object catch (error) {
+    throw FormatException('manifest.json 无效: $error');
+  }
+}
+
+Uint8List _archiveBytes(ArchiveFile file) => file.content;
+
+String _normalizeArchivePath(String rawPath) {
+  final path = rawPath.replaceAll('\\', '/');
+  final segments = path.split('/');
+  if (path.startsWith('/') ||
+      segments.any(
+          (segment) => segment.isEmpty || segment == '.' || segment == '..')) {
+    throw FormatException('备份包含不安全路径: $rawPath');
+  }
+  return segments.join('/');
+}
+
+String? _backupDestination(String path, Instance instance) {
+  if (path.startsWith('config/')) {
+    return '${instance.repoPath}/$path';
+  }
+  if (path.startsWith('logs/')) {
+    return '${instance.repoPath}/$path';
+  }
+  if (path.startsWith('napcat/config/')) {
+    return '/root/napcat/config/${path.substring('napcat/config/'.length)}';
+  }
+  if (path.startsWith('napcat/login_state/')) {
+    return '/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config/'
+        '${path.substring('napcat/login_state/'.length)}';
+  }
+  return null;
+}
+
+const int _maxImportFiles = 10000;
+const int _maxImportFileBytes = 128 * 1024 * 1024;
+const int _maxImportTotalBytes = 512 * 1024 * 1024;
 
 final backupServiceProvider = Provider<BackupService>((ref) {
   return BackupService(
