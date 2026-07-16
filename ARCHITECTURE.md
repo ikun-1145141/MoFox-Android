@@ -317,7 +317,9 @@ exec "$NATIVE/libproot.so" \
 - 终端是独立 PTY，与 §5.4.5 主 Neo-MoFox 进程**不共享**。用户可以在终端里 `apt install`、`htop`、`tmux a`，主进程不受影响。
 - **彩色主题**：`TerminalTheme` 固定深色背景（`#1A1B26`）+ 标准 16 色 ANSI 调色板，不受 Flutter 亮色主题影响。
 - **.bashrc 注入**：启动时注入 `export TERM=xterm-256color` + 彩色 prompt + 常用 alias（`ls --color=auto`、`grep --color=auto` 等），让终端开箱即彩色。
-- **触感反馈**：长按选择、复制和快捷键按钮震动，可在设置中开关。
+- **文本选择**：保留 xterm 的字符网格选区；两个 Material 选择手柄覆盖在终端上并映射到 cell anchor，Android 自适应悬浮菜单提供复制/全选。工具栏不占布局高度，选择时不会触发 PTY resize 或文本回流。
+- **复制**：直接调用 `terminal.buffer.getText(selection)`，由 xterm 处理真实换行、自动折行和宽字符。
+- **触感反馈**：长按选择、手柄拖动结束、复制和快捷键按钮震动，可在设置中开关。
 - **多入口**：首页顶部"打开终端"（`cwd=/root`）、实例卡片"在 bot 目录开终端"（`cwd=instance.repoPath`）、实例卡片"在实例根目录开终端"（`cwd=instance.installDir`）。
 
 ### 5.6 首页（`app/lib/features/home/`）

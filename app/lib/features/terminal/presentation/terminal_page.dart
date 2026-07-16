@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -51,9 +53,15 @@ class TerminalPage extends ConsumerStatefulWidget {
 }
 
 class _TerminalPageState extends ConsumerState<TerminalPage> {
+  final GlobalKey<TerminalViewState> _terminalViewKey = GlobalKey();
+  final GlobalKey _terminalOverlayKey = GlobalKey();
+
   bool _ctrlActive = false;
   bool _altActive = false;
   bool _hasSelection = false;
+  bool _draggingSelectionHandle = false;
+  Offset? _draggedHandlePosition;
+  OverlayEntry? _selectionToolbarEntry;
   late TerminalSessionSpec _sessionSpec;
   TerminalSession? _session;
 
@@ -100,10 +108,17 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   void _handleSelectionChanged() {
     if (!mounted) return;
     final hasSelection = _session?.controller.selection?.isCollapsed == false;
-    if (_hasSelection == hasSelection) return;
-    setState(() => _hasSelection = hasSelection);
-    if (hasSelection && _terminalHapticsEnabled) {
+    final selectionStarted = !_hasSelection && hasSelection;
+    if (_hasSelection != hasSelection || hasSelection) {
+      setState(() => _hasSelection = hasSelection);
+    }
+    if (selectionStarted && _terminalHapticsEnabled) {
       HapticFeedback.selectionClick();
+    }
+    if (hasSelection && !_draggingSelectionHandle) {
+      _requestSelectionToolbar();
+    } else if (!hasSelection) {
+      _hideSelectionToolbar();
     }
   }
 
@@ -154,44 +169,224 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   }
 
   Future<void> _copySelection() async {
-    final selectedText = _selectedTerminalText();
+    final session = _session;
+    final selection = session?.controller.selection;
+    if (session == null || selection == null || selection.isCollapsed) return;
+    final selectedText = session.terminal.buffer.getText(selection);
     if (selectedText.isEmpty) return;
     await Clipboard.setData(ClipboardData(text: selectedText));
-    if (_terminalHapticsEnabled) HapticFeedback.lightImpact();
-    _session?.controller.clearSelection();
+    if (_terminalHapticsEnabled) unawaited(HapticFeedback.lightImpact());
+    _hideSelectionToolbar();
+    session.controller.clearSelection();
   }
 
-  String _selectedTerminalText() {
+  void _selectAllTerminalText() {
     final session = _session;
-    final selection = session?.controller.selection?.normalized;
-    if (selection == null || selection.isCollapsed) return '';
-
-    final lines = session!.terminal.buffer.lines;
-    final buffer = StringBuffer();
-    for (final segment in selection.toSegments()) {
-      if (segment.line < 0 || segment.line >= lines.length) continue;
-
-      final line = lines[segment.line];
-      final start = (segment.start ?? 0).clamp(0, line.length);
-      final end = (segment.end ?? line.length).clamp(start, line.length);
-      if (buffer.isNotEmpty && !line.isWrapped) buffer.write('\n');
-      buffer.write(_lineText(line, start, end));
-    }
-    return buffer.toString().trimRight();
+    if (session == null) return;
+    final terminal = session.terminal;
+    _hideSelectionToolbar();
+    session.controller.setSelection(
+      terminal.buffer.createAnchor(
+        0,
+        terminal.buffer.height - terminal.viewHeight,
+      ),
+      terminal.buffer.createAnchor(
+        terminal.viewWidth,
+        terminal.buffer.height - 1,
+      ),
+      mode: SelectionMode.line,
+    );
   }
 
-  String _lineText(BufferLine line, int start, int end) {
-    final buffer = StringBuffer();
-    for (var index = start; index < end; index++) {
-      final codePoint = line.getCodePoint(index);
-      final width = line.getWidth(index);
-      if (codePoint == 0) {
-        if (width != 0) buffer.write(' ');
-        continue;
+  void _requestSelectionToolbar() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_draggingSelectionHandle && _hasSelection) {
+        _showSelectionToolbar();
       }
-      buffer.writeCharCode(codePoint);
+    });
+  }
+
+  void _showSelectionToolbar() {
+    final currentEntry = _selectionToolbarEntry;
+    if (currentEntry != null) {
+      currentEntry.markNeedsBuild();
+      return;
     }
-    return buffer.toString().trimRight();
+    final entry = OverlayEntry(
+      builder: _buildSelectionToolbar,
+    );
+    _selectionToolbarEntry = entry;
+    Overlay.of(context, rootOverlay: true).insert(entry);
+  }
+
+  Widget _buildSelectionToolbar(BuildContext context) {
+    final geometry = _selectionGeometry();
+    if (!_hasSelection || _draggingSelectionHandle || geometry == null) {
+      return const SizedBox.shrink();
+    }
+    return AdaptiveTextSelectionToolbar.buttonItems(
+      anchors: TextSelectionToolbarAnchors(
+        primaryAnchor: geometry.toolbarAnchorAbove,
+        secondaryAnchor: geometry.toolbarAnchorBelow,
+      ),
+      buttonItems: <ContextMenuButtonItem>[
+        ContextMenuButtonItem(
+          onPressed: _copySelection,
+          type: ContextMenuButtonType.copy,
+          label: '复制',
+        ),
+        ContextMenuButtonItem(
+          onPressed: _selectAllTerminalText,
+          type: ContextMenuButtonType.selectAll,
+          label: '全选',
+        ),
+      ],
+    );
+  }
+
+  void _hideSelectionToolbar() {
+    _removeSelectionToolbarEntry();
+  }
+
+  void _removeSelectionToolbarEntry() {
+    final entry = _selectionToolbarEntry;
+    if (entry == null) return;
+    _selectionToolbarEntry = null;
+    entry
+      ..remove()
+      ..dispose();
+  }
+
+  _TerminalSelectionGeometry? _selectionGeometry() {
+    final selection = _session?.controller.selection?.normalized;
+    final terminalView = _terminalViewKey.currentState;
+    final overlayBox =
+        _terminalOverlayKey.currentContext?.findRenderObject() as RenderBox?;
+    if (selection == null ||
+        selection.isCollapsed ||
+        terminalView == null ||
+        overlayBox == null ||
+        !overlayBox.hasSize) {
+      return null;
+    }
+
+    final renderTerminal = terminalView.renderTerminal;
+    final cellHeight = renderTerminal.cellSize.height;
+    final startGlobal = renderTerminal.localToGlobal(
+      renderTerminal.getOffset(selection.begin),
+    );
+    final endGlobal = renderTerminal.localToGlobal(
+      renderTerminal.getOffset(selection.end),
+    );
+    final startHandleGlobal = startGlobal.translate(0, cellHeight);
+    final endHandleGlobal = endGlobal.translate(0, cellHeight);
+
+    return _TerminalSelectionGeometry(
+      startHandleLocal: overlayBox.globalToLocal(startHandleGlobal),
+      endHandleLocal: overlayBox.globalToLocal(endHandleGlobal),
+      startHandleGlobal: startHandleGlobal,
+      endHandleGlobal: endHandleGlobal,
+      toolbarAnchorAbove: startGlobal,
+      toolbarAnchorBelow: endHandleGlobal,
+      lineHeight: cellHeight,
+    );
+  }
+
+  void _startHandleDrag(bool isStart, DragStartDetails details) {
+    final geometry = _selectionGeometry();
+    if (geometry == null) return;
+    _draggingSelectionHandle = true;
+    _draggedHandlePosition =
+        isStart ? geometry.startHandleGlobal : geometry.endHandleGlobal;
+    _hideSelectionToolbar();
+  }
+
+  void _updateHandleDrag(bool isStart, DragUpdateDetails details) {
+    final current = _draggedHandlePosition;
+    if (current == null) return;
+    final next = current + details.delta;
+    _draggedHandlePosition = next;
+    _updateSelectionEndpoint(isStart: isStart, globalPosition: next);
+  }
+
+  void _endHandleDrag(DragEndDetails details) {
+    _finishHandleDrag();
+  }
+
+  void _cancelHandleDrag() {
+    _finishHandleDrag();
+  }
+
+  void _finishHandleDrag() {
+    _draggingSelectionHandle = false;
+    _draggedHandlePosition = null;
+    if (_terminalHapticsEnabled) HapticFeedback.selectionClick();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _hasSelection) _showSelectionToolbar();
+    });
+  }
+
+  void _updateSelectionEndpoint({
+    required bool isStart,
+    required Offset globalPosition,
+  }) {
+    final session = _session;
+    final terminalView = _terminalViewKey.currentState;
+    final selection = session?.controller.selection?.normalized;
+    if (session == null || terminalView == null || selection == null) return;
+
+    final renderTerminal = terminalView.renderTerminal;
+    // Material 手柄的锚点位于字符底边；向上移半行后再映射，避免手柄
+    // 刚开始水平拖动就错误跳到下一行。横向按半个字符宽度吸附到最近边界。
+    final localPosition = renderTerminal
+        .globalToLocal(globalPosition)
+        .translate(0, -renderTerminal.cellSize.height / 2);
+    final cell = renderTerminal.getCellOffset(localPosition);
+    final cellOffset = renderTerminal.getOffset(cell);
+    var next = cell;
+    if (localPosition.dx >= cellOffset.dx + renderTerminal.cellSize.width / 2) {
+      next = CellOffset(cell.x + 1, cell.y);
+    }
+
+    final terminal = session.terminal;
+    var begin = selection.begin;
+    var end = selection.end;
+    if (isStart) {
+      begin = _compareCellOffsets(next, end) < 0
+          ? next
+          : _previousCell(end, terminal.viewWidth);
+    } else {
+      end = _compareCellOffsets(next, begin) > 0
+          ? next
+          : _nextCell(
+              begin,
+              terminal.viewWidth,
+              terminal.buffer.height,
+            );
+    }
+
+    session.controller.setSelection(
+      terminal.buffer.createAnchorFromOffset(begin),
+      terminal.buffer.createAnchorFromOffset(end),
+      mode: SelectionMode.line,
+    );
+  }
+
+  int _compareCellOffsets(CellOffset a, CellOffset b) {
+    final rowComparison = a.y.compareTo(b.y);
+    return rowComparison != 0 ? rowComparison : a.x.compareTo(b.x);
+  }
+
+  CellOffset _previousCell(CellOffset cell, int width) {
+    if (cell.x > 0) return CellOffset(cell.x - 1, cell.y);
+    if (cell.y > 0) return CellOffset(width - 1, cell.y - 1);
+    return cell;
+  }
+
+  CellOffset _nextCell(CellOffset cell, int width, int height) {
+    if (cell.x < width) return CellOffset(cell.x + 1, cell.y);
+    if (cell.y < height - 1) return CellOffset(1, cell.y + 1);
+    return cell;
   }
 
   void _resizeShell(int cols, int rows, int pixelWidth, int pixelHeight) {
@@ -200,6 +395,7 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
 
   @override
   void dispose() {
+    _removeSelectionToolbarEntry();
     _detachSession();
     super.dispose();
   }
@@ -240,20 +436,25 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
               child: DecoratedBox(
                 decoration:
                     BoxDecoration(color: _mofoxTerminalTheme.background),
-                child: TerminalView(
-                  session.terminal,
-                  controller: session.controller,
-                  theme: _mofoxTerminalTheme,
-                  autofocus: true,
-                  padding: const EdgeInsets.all(12),
+                child: Stack(
+                  key: _terminalOverlayKey,
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: TerminalView(
+                        session.terminal,
+                        key: _terminalViewKey,
+                        controller: session.controller,
+                        theme: _mofoxTerminalTheme,
+                        autofocus: true,
+                        padding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                    if (_hasSelection) ..._buildSelectionHandles(),
+                  ],
                 ),
               ),
             ),
-            if (_hasSelection)
-              _TerminalSelectionBar(
-                onCopy: _copySelection,
-                onClear: session.controller.clearSelection,
-              ),
             _TerminalShortcutBar(
               hapticsEnabled: terminalHapticsEnabled,
               ctrlActive: _ctrlActive,
@@ -277,56 +478,108 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       ),
     );
   }
+
+  List<Widget> _buildSelectionHandles() {
+    final geometry = _selectionGeometry();
+    if (geometry == null) return const <Widget>[];
+    return <Widget>[
+      _TerminalSelectionHandle(
+        position: geometry.startHandleLocal,
+        lineHeight: geometry.lineHeight,
+        type: TextSelectionHandleType.left,
+        onPanStart: (details) => _startHandleDrag(true, details),
+        onPanUpdate: (details) => _updateHandleDrag(true, details),
+        onPanEnd: _endHandleDrag,
+        onPanCancel: _cancelHandleDrag,
+      ),
+      _TerminalSelectionHandle(
+        position: geometry.endHandleLocal,
+        lineHeight: geometry.lineHeight,
+        type: TextSelectionHandleType.right,
+        onPanStart: (details) => _startHandleDrag(false, details),
+        onPanUpdate: (details) => _updateHandleDrag(false, details),
+        onPanEnd: _endHandleDrag,
+        onPanCancel: _cancelHandleDrag,
+      ),
+    ];
+  }
 }
 
-class _TerminalSelectionBar extends StatelessWidget {
-  const _TerminalSelectionBar({
-    required this.onCopy,
-    required this.onClear,
+class _TerminalSelectionGeometry {
+  const _TerminalSelectionGeometry({
+    required this.startHandleLocal,
+    required this.endHandleLocal,
+    required this.startHandleGlobal,
+    required this.endHandleGlobal,
+    required this.toolbarAnchorAbove,
+    required this.toolbarAnchorBelow,
+    required this.lineHeight,
   });
 
-  final VoidCallback onCopy;
-  final VoidCallback onClear;
+  final Offset startHandleLocal;
+  final Offset endHandleLocal;
+  final Offset startHandleGlobal;
+  final Offset endHandleGlobal;
+  final Offset toolbarAnchorAbove;
+  final Offset toolbarAnchorBelow;
+  final double lineHeight;
+}
+
+class _TerminalSelectionHandle extends StatelessWidget {
+  const _TerminalSelectionHandle({
+    required this.position,
+    required this.lineHeight,
+    required this.type,
+    required this.onPanStart,
+    required this.onPanUpdate,
+    required this.onPanEnd,
+    required this.onPanCancel,
+  });
+
+  static const double _touchTargetSize = 48;
+
+  final Offset position;
+  final double lineHeight;
+  final TextSelectionHandleType type;
+  final GestureDragStartCallback onPanStart;
+  final GestureDragUpdateCallback onPanUpdate;
+  final GestureDragEndCallback onPanEnd;
+  final GestureDragCancelCallback onPanCancel;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.secondaryContainer,
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: SizedBox(
-          height: 48,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: <Widget>[
-                Icon(Icons.text_fields, color: scheme.onSecondaryContainer),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '已选中终端文本',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: scheme.onSecondaryContainer,
-                        ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: onCopy,
-                  icon: const Icon(Icons.content_copy, size: 18),
-                  label: const Text('复制'),
-                ),
-                IconButton(
-                  tooltip: '取消选择',
-                  onPressed: onClear,
-                  icon: const Icon(Icons.close),
-                ),
-              ],
+    final handle = materialTextSelectionControls.buildHandle(
+      context,
+      type,
+      lineHeight,
+    );
+    final handleSize = materialTextSelectionControls.getHandleSize(lineHeight);
+    final anchor =
+        materialTextSelectionControls.getHandleAnchor(type, lineHeight);
+    final visualLeft = _touchTargetSize / 2 - anchor.dx;
+
+    return Positioned(
+      left: position.dx - _touchTargetSize / 2,
+      top: position.dy,
+      width: _touchTargetSize,
+      height: _touchTargetSize,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onPanStart: onPanStart,
+        onPanUpdate: onPanUpdate,
+        onPanEnd: onPanEnd,
+        onPanCancel: onPanCancel,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            Positioned(
+              left: visualLeft,
+              top: -anchor.dy,
+              width: handleSize.width,
+              height: handleSize.height,
+              child: handle,
             ),
-          ),
+          ],
         ),
       ),
     );

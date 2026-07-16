@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/theme/app_theme.dart';
@@ -22,6 +23,9 @@ class MoFoxApp extends ConsumerWidget {
           theme: AppTheme.light(lightScheme),
           darkTheme: AppTheme.dark(darkScheme),
           themeMode: _toFlutterThemeMode(settings?.themeMode),
+          locale: const Locale('zh', 'CN'),
+          supportedLocales: const <Locale>[Locale('zh', 'CN')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           routerConfig: router,
           builder: (context, child) {
             // edge-to-edge：让壁纸 / 状态栏背景透到内容下面，
