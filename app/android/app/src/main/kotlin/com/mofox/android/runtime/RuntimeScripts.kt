@@ -297,9 +297,21 @@ class RuntimeScripts(
             }
             "installNapcat" -> loginBody(
                 """
-                if [ ! -f /root/Napcat/opt/QQ/qq ]; then
+                set -e
+                QQ_ROOT=/root/Napcat/opt/QQ
+                NAPCAT_ENTRY="${'$'}QQ_ROOT/resources/app/app_launcher/napcat/napcat.mjs"
+                NAPCAT_LOADER="${'$'}QQ_ROOT/resources/app/loadNapCat.js"
+                QQ_PACKAGE="${'$'}QQ_ROOT/resources/app/package.json"
+                if [ ! -x "${'$'}QQ_ROOT/qq" ] ||
+                   [ ! -s "${'$'}NAPCAT_ENTRY" ] ||
+                   [ ! -s "${'$'}NAPCAT_LOADER" ] ||
+                  ! jq -e '.main == "./loadNapCat.js"' "${'$'}QQ_PACKAGE" >/dev/null 2>&1; then
                   log_info "执行本地 NapCat 安装脚本…"
-                  bash /usr/local/bin/napcat-install.sh
+                  bash /usr/local/bin/napcat-install.sh || {
+                    code=${'$'}?
+                    log_error "NapCat 安装脚本失败（退出码 ${'$'}code）"
+                    exit "${'$'}code"
+                  }
                 else
                   log_info "NapCat 已安装，跳过"
                 fi
@@ -324,6 +336,40 @@ class RuntimeScripts(
                 esac
                 MOFOX_NAPCAT_EOF
                 chmod +x /root/napcat/napcat.sh
+                """.trimIndent(),
+            )
+            "verifyNapcat" -> loginBody(
+                """
+                QQ_ROOT=/root/Napcat/opt/QQ
+                NAPCAT_ENTRY="${'$'}QQ_ROOT/resources/app/app_launcher/napcat/napcat.mjs"
+                NAPCAT_LOADER="${'$'}QQ_ROOT/resources/app/loadNapCat.js"
+                QQ_PACKAGE="${'$'}QQ_ROOT/resources/app/package.json"
+
+                [ -x "${'$'}QQ_ROOT/qq" ] || {
+                  log_error "NapCat 复查失败：QQ 主程序不存在或不可执行"
+                  exit 21
+                }
+                [ -s "${'$'}NAPCAT_ENTRY" ] || {
+                  log_error "NapCat 复查失败：缺少 napcat.mjs"
+                  exit 22
+                }
+                [ -s "${'$'}NAPCAT_LOADER" ] || {
+                  log_error "NapCat 复查失败：缺少 QQ 启动加载器"
+                  exit 23
+                }
+                jq -e '.main == "./loadNapCat.js"' "${'$'}QQ_PACKAGE" >/dev/null 2>&1 || {
+                  log_error "NapCat 复查失败：QQ package.json 未指向 NapCat 加载器"
+                  exit 24
+                }
+                command -v xvfb-run >/dev/null 2>&1 || {
+                  log_error "NapCat 复查失败：xvfb-run 不可用"
+                  exit 25
+                }
+                [ -x /root/napcat/napcat.sh ] || {
+                  log_error "NapCat 复查失败：MoFox 启动脚本不存在或不可执行"
+                  exit 26
+                }
+                log_ok "NapCat 安装复查通过"
                 """.trimIndent(),
             )
             "napcatLogin" -> {
