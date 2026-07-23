@@ -265,7 +265,46 @@ function download_napcat() {
 
 # ============ QQ 安装 ============
 function get_qq_target_version() {
-    linuxqq_target_version="3.2.25-45758"
+    linuxqq_target_version="3.2.31-260710"
+}
+
+# 从腾讯官方 linuxConfig.js 动态获取最新 QQ Linux 下载地址，失败时回退到硬编码版本。
+# 官方配置：https://cdn-go.cn/qq-web/im.qq.com_new/latest/rainbow/linuxConfig.js
+function fetch_qq_download_urls() {
+    local config_url="https://cdn-go.cn/qq-web/im.qq.com_new/latest/rainbow/linuxConfig.js"
+    local config_file="/tmp/linuxConfig.js"
+    log "正在从官方获取最新 QQ Linux 下载地址…"
+    if ! curl -k -s -L --connect-timeout 10 --max-time 20 "${config_url}" -o "${config_file}"; then
+        log "警告: 无法获取官方配置, 将使用硬编码的回退地址。"
+        return 1
+    fi
+
+    # 从 JS 里提取 deb/rpm 链接（格式: "deb":"https://..."）
+    local x64_deb x64_rpm arm_deb arm_rpm version
+    x64_deb=$(grep -o '"deb":"[^"]*amd64[^"]*"' "${config_file}" | head -1 | sed 's/"deb":"//;s/"$//')
+    arm_deb=$(grep -o '"deb":"[^"]*arm64[^"]*"' "${config_file}" | head -1 | sed 's/"deb":"//;s/"$//')
+    x64_rpm=$(grep -o '"rpm":"[^"]*x86_64[^"]*"' "${config_file}" | head -1 | sed 's/"rpm":"//;s/"$//')
+    arm_rpm=$(grep -o '"rpm":"[^"]*aarch64[^"]*"' "${config_file}" | head -1 | sed 's/"rpm":"//;s/"$//')
+    version=$(grep -o '"version":"[^"]*"' "${config_file}" | head -1 | sed 's/"version":"//;s/"$//')
+
+    rm -f "${config_file}"
+
+    if [ -n "${version}" ]; then
+        linuxqq_target_version="${version}"
+        log "官方最新 QQ Linux 版本: ${version}"
+    fi
+
+    QQ_URL_X64_DEB="${x64_deb}"
+    QQ_URL_X64_RPM="${x64_rpm}"
+    QQ_URL_ARM_DEB="${arm_deb}"
+    QQ_URL_ARM_RPM="${arm_rpm}"
+
+    if [ -z "${QQ_URL_X64_DEB}" ] && [ -z "${QQ_URL_ARM_DEB}" ]; then
+        log "警告: 未能从官方配置解析下载地址, 将使用硬编码的回退地址。"
+        return 1
+    fi
+    log "成功获取官方下载地址。"
+    return 0
 }
 
 function compare_linuxqq_versions() {
@@ -300,23 +339,40 @@ function install_linuxqq_rootless() {
     get_system_arch
     log "开始安装 LinuxQQ 到 ${INSTALL_BASE_DIR}..."
 
+    # 先尝试从官方动态获取下载地址，失败则用硬编码回退
+    QQ_URL_X64_DEB=""
+    QQ_URL_X64_RPM=""
+    QQ_URL_ARM_DEB=""
+    QQ_URL_ARM_RPM=""
+    fetch_qq_download_urls || true
+
+    # 硬编码回退地址（版本 3.2.31-260710, 2026-07-20 发布）
+    if [ -z "${QQ_URL_X64_DEB}" ]; then
+        QQ_URL_X64_DEB="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.32/release/c390e792/QQ_3.2.31_260710_amd64_01.deb"
+        QQ_URL_X64_RPM="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.32/release/c390e792/QQ_3.2.31_260710_x86_64_01.rpm"
+    fi
+    if [ -z "${QQ_URL_ARM_DEB}" ]; then
+        QQ_URL_ARM_DEB="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.32/release/c390e792/QQ_3.2.31_260710_arm64_01.deb"
+        QQ_URL_ARM_RPM="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.32/release/c390e792/QQ_3.2.31_260710_aarch64_01.rpm"
+    fi
+
     local qq_download_url=""
     local qq_package_file=""
 
     if [ "${system_arch}" = "amd64" ]; then
         if [ "${package_installer}" = "rpm" ]; then
-            qq_download_url="https://dldir1.qq.com/qqfile/qq/QQNT/7516007c/linuxqq_3.2.25-45758_x86_64.rpm"
+            qq_download_url="${QQ_URL_X64_RPM}"
             qq_package_file="QQ.rpm"
         else
-            qq_download_url="https://dldir1.qq.com/qqfile/qq/QQNT/7516007c/linuxqq_3.2.25-45758_amd64.deb"
+            qq_download_url="${QQ_URL_X64_DEB}"
             qq_package_file="QQ.deb"
         fi
     elif [ "${system_arch}" = "arm64" ]; then
         if [ "${package_installer}" = "rpm" ]; then
-            qq_download_url="https://dldir1.qq.com/qqfile/qq/QQNT/7516007c/linuxqq_3.2.25-45758_aarch64.rpm"
+            qq_download_url="${QQ_URL_ARM_RPM}"
             qq_package_file="QQ.rpm"
         else
-            qq_download_url="https://dldir1.qq.com/qqfile/qq/QQNT/7516007c/linuxqq_3.2.25-45758_arm64.deb"
+            qq_download_url="${QQ_URL_ARM_DEB}"
             qq_package_file="QQ.deb"
         fi
     fi
