@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/dashboard/presentation/dashboard_page.dart';
+import '../../features/file_manager/domain/rootfs_file_models.dart';
+import '../../features/file_manager/presentation/instance_files_page.dart';
+import '../../features/file_manager/presentation/toml_editor_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/instance/presentation/instance_detail_page.dart';
 import '../../features/oobe/application/oobe_status_provider.dart';
@@ -24,6 +27,8 @@ abstract final class AppRoute {
   static const String home = '/home';
   static const String dashboard = '/dashboard';
   static const String instanceDetail = '/dashboard/instance';
+  static const String instanceFiles = '/instance-files';
+  static const String tomlEditor = '/toml-editor';
   static const String terminal = '/terminal';
   static const String settings = '/settings';
   static const String appearance = '/settings/appearance';
@@ -89,6 +94,44 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      GoRoute(
+        path: AppRoute.instanceFiles,
+        pageBuilder: (_, state) {
+          final extra = state.extra;
+          if (extra is! InstanceFilesRouteArgs) {
+            return MaterialPage(
+              key: const ValueKey('instanceFiles-error'),
+              child: const _RouteArgsErrorPage(
+                message: '文件页参数缺失，请从实例详情进入。',
+              ),
+            );
+          }
+          return MaterialPage(
+            key: ValueKey('instanceFiles-${extra.scope.id}'),
+            child: InstanceFilesPage(args: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: AppRoute.tomlEditor,
+        pageBuilder: (_, state) {
+          final extra = state.extra;
+          if (extra is! TomlEditorRouteArgs) {
+            return MaterialPage(
+              key: const ValueKey('tomlEditor-error'),
+              child: const _RouteArgsErrorPage(
+                message: '编辑器参数缺失，请从文件管理页进入。',
+              ),
+            );
+          }
+          return MaterialPage(
+            key: ValueKey(
+              'tomlEditor-${extra.scope.id}-${extra.relativePath.displayPath}',
+            ),
+            child: TomlEditorPage(args: extra),
+          );
+        },
+      ),
       ShellRoute(
         builder: (context, state, child) => ShellPage(child: child),
         routes: <RouteBase>[
@@ -123,3 +166,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     ],
   );
 });
+
+/// 路由参数类型不匹配时显示的兜底页。
+class _RouteArgsErrorPage extends StatelessWidget {
+  const _RouteArgsErrorPage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('打开失败')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(message, textAlign: TextAlign.center),
+        ),
+      ),
+    );
+  }
+}

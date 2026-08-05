@@ -25,16 +25,21 @@ import java.util.concurrent.Executors
 class RuntimeBridgePlugin {
     private val events = RuntimeEventBus()
     private val executor = Executors.newSingleThreadExecutor()
+    private val fileExecutor = RuntimeFileExecutor()
     private val shellExecutor = Executors.newCachedThreadPool()
     private val shellSessions = ConcurrentHashMap<String, ShellSession>()
+    private var channel: MethodChannel? = null
+    private var eventChannel: EventChannel? = null
 
     fun attach(engine: FlutterEngine, context: Context) {
         val appContext = context.applicationContext
         val installer = RootfsInstaller(appContext)
         val processManager = RuntimeProcessManager(appContext, installer, events)
+        val fileService = RuntimeFileService(RootfsPathResolver(installer.ubuntuPath))
 
-        MethodChannel(engine.dartExecutor.binaryMessenger, "mofox/runtime")
-            .setMethodCallHandler { call, result ->
+        channel = MethodChannel(engine.dartExecutor.binaryMessenger, "mofox/runtime").also {
+            methodChannel ->
+            methodChannel.setMethodCallHandler { call, result ->
                 when (call.method) {
                     "isBootstrapped" -> result.success(installer.isBootstrapped())
                     "getNativeLibraryDir" ->
@@ -129,12 +134,76 @@ class RuntimeBridgePlugin {
                         val dest = call.argument<String>("dest") ?: error("Missing dest")
                         packToTarInRootfs(processManager, paths, dest)
                     }
+                    "listDirectory" -> runFileAsync(result, call) {
+                        val scope = call.requireFileScope()
+                        val pathSegments = call.requirePathSegments()
+                        fileService.listDirectory(
+                            scope = scope,
+                            pathSegments = pathSegments,
+                            limit = call.argument<Int>("limit") ?: 200,
+                            cursor = call.argument<String>("cursor"),
+                        ).toMap()
+                    }
+                    "statPath" -> runFileAsync(result, call) {
+                        fileService.statPath(
+                            scope = call.requireFileScope(),
+                            pathSegments = call.requirePathSegments(),
+                        ).toMap()
+                    }
+                    "readTextDocument" -> runFileAsync(result, call) {
+                        fileService.readTextDocument(
+                            scope = call.requireFileScope(),
+                            pathSegments = call.requirePathSegments(),
+                            maxBytes = call.argument<Int>("maxBytes") ?: MAX_TEXT_FILE_BYTES,
+                        ).toMap()
+                    }
+                    "writeTextDocument" -> runFileAsync(result, call) {
+                        fileService.writeTextDocument(
+                            scope = call.requireFileScope(),
+                            pathSegments = call.requirePathSegments(),
+                            text = call.argument<String>("text") ?: error("Missing text"),
+                            hasUtf8Bom = call.argument<Boolean>("hasUtf8Bom") ?: false,
+                            writeMode = RootfsWriteMode.fromWireName(
+                                call.argument<String>("writeMode")
+                                    ?: error("Missing writeMode"),
+                            ),
+                            expectedRevision = call.argument<String>("expectedRevision"),
+                        ).toMap()
+                    }
+                    "createDirectory" -> runFileAsync(result, call) {
+                        fileService.createDirectory(
+                            scope = call.requireFileScope(),
+                            parentPathSegments = call.requirePathSegments("parentPathSegments"),
+                            name = call.argument<String>("name") ?: error("Missing name"),
+                        )
+                        null
+                    }
+                    "renameEntry" -> runFileAsync(result, call) {
+                        fileService.renameEntry(
+                            scope = call.requireFileScope(),
+                            pathSegments = call.requirePathSegments(),
+                            newName = call.argument<String>("newName") ?: error("Missing newName"),
+                        )
+                        null
+                    }
+                    "deleteEntry" -> runFileAsync(result, call) {
+                        fileService.deleteEntry(
+                            scope = call.requireFileScope(),
+                            pathSegments = call.requirePathSegments(),
+                            recursive = call.argument<Boolean>("recursive") ?: false,
+                        )
+                        null
+                    }
                     else -> result.notImplemented()
                 }
             }
+        }
 
-        EventChannel(engine.dartExecutor.binaryMessenger, "mofox/runtime/events")
-            .setStreamHandler(object : EventChannel.StreamHandler {
+        eventChannel = EventChannel(
+            engine.dartExecutor.binaryMessenger,
+            "mofox/runtime/events",
+        ).also { channel ->
+            channel.setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     this@RuntimeBridgePlugin.events.attach(events)
                 }
@@ -142,6 +211,19 @@ class RuntimeBridgePlugin {
                     this@RuntimeBridgePlugin.events.attach(null)
                 }
             })
+        }
+    }
+
+    fun detach() {
+        channel?.setMethodCallHandler(null)
+        eventChannel?.setStreamHandler(null)
+        channel = null
+        eventChannel = null
+        events.attach(null)
+        shellSessions.keys.toList().forEach(::closeShell)
+        fileExecutor.shutdown()
+        executor.shutdownNow()
+        shellExecutor.shutdownNow()
     }
 
     private fun openShell(processManager: RuntimeProcessManager, cwd: String): String {
@@ -260,8 +342,75 @@ class RuntimeBridgePlugin {
         }
     }
 
+    private fun runFileAsync(
+        result: MethodChannel.Result,
+        call: io.flutter.plugin.common.MethodCall,
+        block: () -> Any?,
+    ) {
+        val requestId = call.argument<String>("requestId")?.takeIf(String::isNotBlank)
+        if (requestId == null) {
+            val error = RuntimeFileException(
+                code = RuntimeFileErrorCode.INVALID_PATH,
+                operation = "decodeRequest",
+                message = "Missing requestId",
+            )
+            result.error(error.code.name, error.message, error.details())
+            return
+        }
+        runFileAsync(result, requestId, block)
+    }
+
+    private fun runFileAsync(
+        result: MethodChannel.Result,
+        requestId: String,
+        block: () -> Any?,
+    ) {
+        try {
+            fileExecutor.execute {
+                try {
+                    result.success(
+                        mapOf(
+                            "requestId" to requestId,
+                            "payload" to block(),
+                        ),
+                    )
+                } catch (error: RuntimeFileException) {
+                    result.error(error.code.name, error.message, error.details(requestId))
+                } catch (_: Throwable) {
+                    val error = RuntimeFileException(
+                        code = RuntimeFileErrorCode.IO_ERROR,
+                        operation = "fileRequest",
+                        message = "File operation failed",
+                        retryable = true,
+                    )
+                    result.error(error.code.name, error.message, error.details(requestId))
+                }
+            }
+        } catch (error: RuntimeFileException) {
+            result.error(error.code.name, error.message, error.details(requestId))
+        }
+    }
+
     private fun io.flutter.plugin.common.MethodCall.requireName(): String {
         return argument<String>("name") ?: error("Missing process name")
+    }
+
+    private fun io.flutter.plugin.common.MethodCall.requireFileScope(): RootfsScope {
+        val raw = argument<Map<String, Any?>>("scope") ?: error("Missing scope")
+        val kind = raw["kind"] as? String ?: error("Missing scope kind")
+        val instanceId = raw["instanceId"] as? String ?: error("Missing instanceId")
+        return RootfsScope(
+            kind = RootfsScopeKind.fromWireName(kind),
+            instanceId = instanceId,
+            instanceRootPath = raw["instanceRootPath"] as? String,
+        )
+    }
+
+    private fun io.flutter.plugin.common.MethodCall.requirePathSegments(
+        name: String = "pathSegments",
+    ): List<String> {
+        val raw = argument<List<*>>(name) ?: error("Missing $name")
+        return raw.map { segment -> segment as? String ?: error("Invalid $name") }
     }
 
     private fun InstallTaskResult.toMap(): Map<String, Any?> {

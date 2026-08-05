@@ -9,6 +9,8 @@ import '../../../core/runtime/runtime_bridge.dart';
 import '../../../core/ui/ansi_color_text.dart';
 import '../../../core/ui/explosion_overlay.dart';
 import '../../dashboard/application/process_console_provider.dart';
+import '../../file_manager/domain/rootfs_file_models.dart';
+import '../../file_manager/domain/rootfs_file_scope.dart';
 import '../application/instance_repository.dart';
 import '../domain/instance.dart';
 import '../../wizard/presentation/widgets/napcat_qr_sheet.dart';
@@ -194,6 +196,17 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                               },
                             ),
                             icon: const Icon(Icons.terminal),
+                          ),
+                          IconButton(
+                            tooltip: '文件管理',
+                            onPressed: () => context.push(
+                              AppRoute.instanceFiles,
+                              extra: InstanceFilesRouteArgs(
+                                instanceName: instance.name,
+                                scope: RootfsFileScope.forInstance(instance),
+                              ),
+                            ),
+                            icon: const Icon(Icons.folder_outlined),
                           ),
                           IconButton(
                             tooltip: '实例信息',

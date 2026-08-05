@@ -2,6 +2,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/dashboard/domain/system_stats.dart';
+import '../../features/file_manager/domain/rootfs_file_exception.dart';
+import '../../features/file_manager/domain/rootfs_file_models.dart';
+import '../../features/file_manager/domain/rootfs_file_scope.dart';
+import '../../features/file_manager/domain/rootfs_relative_path.dart';
 import '../utils/app_logger.dart';
 
 /// 与原生 `RuntimeBridgePlugin` 对话的方法通道单例。
@@ -20,6 +24,7 @@ class RuntimeBridge {
   /// cancel 时又会把 sink 清空，导致安装完成后 Bot/NapCat 已启动却收不到任何日志，
   /// 直到 App 重启重新订阅。
   static final Stream<Object?> _eventStream = _events.receiveBroadcastStream();
+  static int _nextFileRequestId = 0;
 
   /// rootfs 是否已解压完成。
   Future<bool> isBootstrapped() async {
@@ -305,7 +310,290 @@ class RuntimeBridge {
     });
     return result ?? '';
   }
+
+  Future<RootfsDirectoryPage> listDirectory({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+    int limit = 200,
+    String? cursor,
+  }) =>
+      _invokeFileMethod<RootfsDirectoryPage>(
+        'listDirectory',
+        <String, Object?>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+          'limit': limit,
+          'cursor': cursor,
+        },
+        (payload) {
+          final map = _requireMap(payload, 'listDirectory payload');
+          final entries = _requireList(map['entries'], 'entries')
+              .map((entry) => _decodeFileEntry(_requireMap(entry, 'entry')))
+              .toList(growable: false);
+          return RootfsDirectoryPage(
+            entries: entries,
+            nextCursor: _optionalString(map['nextCursor'], 'nextCursor'),
+            directoryModifiedAt: _decodeMillis(
+              map['directoryModifiedAt'],
+              'directoryModifiedAt',
+            ),
+          );
+        },
+      );
+
+  Future<RootfsFileEntry> statPath({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+  }) =>
+      _invokeFileMethod<RootfsFileEntry>(
+        'statPath',
+        <String, Object>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+        },
+        (payload) => _decodeFileEntry(_requireMap(payload, 'statPath payload')),
+      );
+
+  Future<RootfsDocument> readTextDocument({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+    int maxBytes = 1024 * 1024,
+  }) =>
+      _invokeFileMethod<RootfsDocument>(
+        'readTextDocument',
+        <String, Object>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+          'maxBytes': maxBytes,
+        },
+        (payload) {
+          final map = _requireMap(payload, 'readTextDocument payload');
+          final encoding = _requireString(map['encoding'], 'encoding');
+          if (encoding != 'utf-8') {
+            throw const FormatException('原生层返回了不支持的文本编码');
+          }
+          return RootfsDocument(
+            text: _requireString(map['text'], 'text'),
+            hasUtf8Bom: _requireBool(map['hasUtf8Bom'], 'hasUtf8Bom'),
+            newlineStyle: RootfsNewlineStyle.fromWireName(
+              _requireString(map['newlineStyle'], 'newlineStyle'),
+            ),
+            hasFinalNewline:
+                _requireBool(map['hasFinalNewline'], 'hasFinalNewline'),
+            sizeBytes: _requireInt(map['sizeBytes'], 'sizeBytes'),
+            modifiedAt: _decodeMillis(map['modifiedAt'], 'modifiedAt'),
+            revision:
+                RootfsRevision(_requireString(map['revision'], 'revision')),
+          );
+        },
+      );
+
+  Future<RootfsWriteResult> writeTextDocument({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+    required String text,
+    required bool hasUtf8Bom,
+    required RootfsWriteMode writeMode,
+    RootfsRevision? expectedRevision,
+  }) =>
+      _invokeFileMethod<RootfsWriteResult>(
+        'writeTextDocument',
+        <String, Object?>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+          'text': text,
+          'hasUtf8Bom': hasUtf8Bom,
+          'writeMode': writeMode.wireName,
+          'expectedRevision': expectedRevision?.value,
+        },
+        (payload) {
+          final map = _requireMap(payload, 'writeTextDocument payload');
+          return RootfsWriteResult(
+            revision:
+                RootfsRevision(_requireString(map['revision'], 'revision')),
+            sizeBytes: _requireInt(map['sizeBytes'], 'sizeBytes'),
+            modifiedAt: _decodeMillis(map['modifiedAt'], 'modifiedAt'),
+          );
+        },
+      );
+
+  Future<void> createDirectory({
+    required RootfsFileScope scope,
+    required RootfsRelativePath parentPath,
+    required String name,
+  }) =>
+      _invokeFileMethod(
+        'createDirectory',
+        <String, Object>{
+          'scope': scope.toChannelMap(),
+          'parentPathSegments': parentPath.toChannelList(),
+          'name': name,
+        },
+        _requireNullPayload,
+      );
+
+  Future<void> renameEntry({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+    required String newName,
+  }) =>
+      _invokeFileMethod(
+        'renameEntry',
+        <String, Object>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+          'newName': newName,
+        },
+        _requireNullPayload,
+      );
+
+  Future<void> deleteEntry({
+    required RootfsFileScope scope,
+    required RootfsRelativePath path,
+    required bool recursive,
+  }) =>
+      _invokeFileMethod(
+        'deleteEntry',
+        <String, Object>{
+          'scope': scope.toChannelMap(),
+          'pathSegments': path.toChannelList(),
+          'recursive': recursive,
+        },
+        _requireNullPayload,
+      );
+
+  Future<T> _invokeFileMethod<T>(
+    String method,
+    Map<String, Object?> arguments,
+    T Function(Object? payload) decodePayload,
+  ) async {
+    final requestId =
+        'dart-${DateTime.now().microsecondsSinceEpoch}-${_nextFileRequestId++}';
+    try {
+      final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+        method,
+        <String, Object?>{...arguments, 'requestId': requestId},
+      );
+      final envelope = _requireMap(result, '$method response');
+      final responseId = _requireString(envelope['requestId'], 'requestId');
+      if (responseId != requestId) {
+        throw RootfsFileException(
+          code: RootfsFileErrorCode.malformedResponse,
+          message: '文件服务响应与请求不匹配',
+          operation: method,
+          requestId: responseId,
+        );
+      }
+      return decodePayload(envelope['payload']);
+    } on PlatformException catch (error) {
+      throw _decodeFileException(error, fallbackRequestId: requestId);
+    } on RootfsFileException {
+      rethrow;
+    } on FormatException catch (error) {
+      throw RootfsFileException(
+        code: RootfsFileErrorCode.malformedResponse,
+        message: '文件服务返回了无效数据：${error.message}',
+        operation: method,
+        requestId: requestId,
+      );
+    } on ArgumentError catch (error) {
+      throw RootfsFileException(
+        code: RootfsFileErrorCode.malformedResponse,
+        message: '文件服务返回了无效数据：$error',
+        operation: method,
+        requestId: requestId,
+      );
+    } on RangeError catch (error) {
+      throw RootfsFileException(
+        code: RootfsFileErrorCode.malformedResponse,
+        message: '文件服务返回了越界数据：$error',
+        operation: method,
+        requestId: requestId,
+      );
+    }
+  }
 }
+
+void _requireNullPayload(Object? payload) {
+  if (payload != null) {
+    throw const FormatException('文件操作成功响应的 payload 应为空');
+  }
+}
+
+RootfsFileEntry _decodeFileEntry(Map<Object?, Object?> map) {
+  final path = _requireList(map['pathSegments'], 'pathSegments')
+      .map((segment) => _requireString(segment, 'path segment'));
+  return RootfsFileEntry(
+    name: _requireString(map['name'], 'name'),
+    relativePath: RootfsRelativePath(path),
+    kind: RootfsFileKind.fromWireName(_requireString(map['kind'], 'kind')),
+    sizeBytes: _optionalInt(map['sizeBytes'], 'sizeBytes'),
+    modifiedAt: _decodeMillis(map['modifiedAt'], 'modifiedAt'),
+    isHidden: _requireBool(map['isHidden'], 'isHidden'),
+  );
+}
+
+RootfsFileException _decodeFileException(
+  PlatformException error, {
+  required String fallbackRequestId,
+}) {
+  final details = error.details;
+  final map =
+      details is Map<Object?, Object?> ? details : const <Object?, Object?>{};
+  return RootfsFileException(
+    code: RootfsFileErrorCode.fromWireName(error.code),
+    message: error.message ?? '文件操作失败',
+    operation: map['operation'] is String ? map['operation']! as String : null,
+    scopeId: map['scopeId'] is String ? map['scopeId']! as String : null,
+    relativePath:
+        map['relativePath'] is String ? map['relativePath']! as String : null,
+    retryable: map['retryable'] == true,
+    currentRevision: map['currentRevision'] is String
+        ? map['currentRevision']! as String
+        : null,
+    requestId: map['requestId'] is String
+        ? map['requestId']! as String
+        : fallbackRequestId,
+  );
+}
+
+Map<Object?, Object?> _requireMap(Object? value, String field) {
+  if (value is Map<Object?, Object?>) return value;
+  throw FormatException('$field 不是对象');
+}
+
+List<Object?> _requireList(Object? value, String field) {
+  if (value is List<Object?>) return value;
+  throw FormatException('$field 不是数组');
+}
+
+String _requireString(Object? value, String field) {
+  if (value is String) return value;
+  throw FormatException('$field 不是字符串');
+}
+
+String? _optionalString(Object? value, String field) {
+  if (value == null) return null;
+  return _requireString(value, field);
+}
+
+bool _requireBool(Object? value, String field) {
+  if (value is bool) return value;
+  throw FormatException('$field 不是布尔值');
+}
+
+int _requireInt(Object? value, String field) {
+  if (value is int) return value;
+  throw FormatException('$field 不是整数');
+}
+
+int? _optionalInt(Object? value, String field) {
+  if (value == null) return null;
+  return _requireInt(value, field);
+}
+
+DateTime _decodeMillis(Object? value, String field) =>
+    DateTime.fromMillisecondsSinceEpoch(_requireInt(value, field));
 
 bool _isBootstrapEvent(Object? event) {
   return event is Map<Object?, Object?> && event['topic'] == 'bootstrap';

@@ -21,6 +21,7 @@ dependencies:
   # 序列化 / 数据
   freezed_annotation: ^2.4.1
   json_annotation: ^4.9.0
+  toml: ^0.16.0
 
   # 持久化
   drift: ^2.18.0
