@@ -496,17 +496,18 @@ class RuntimeBridge {
         operation: method,
         requestId: requestId,
       );
+    } on RangeError catch (error) {
+      // RangeError 必须在 ArgumentError 之前，因为它是 ArgumentError 的子类。
+      throw RootfsFileException(
+        code: RootfsFileErrorCode.malformedResponse,
+        message: '文件服务返回了越界数据：$error',
+        operation: method,
+        requestId: requestId,
+      );
     } on ArgumentError catch (error) {
       throw RootfsFileException(
         code: RootfsFileErrorCode.malformedResponse,
         message: '文件服务返回了无效数据：$error',
-        operation: method,
-        requestId: requestId,
-      );
-    } on RangeError catch (error) {
-      throw RootfsFileException(
-        code: RootfsFileErrorCode.malformedResponse,
-        message: '文件服务返回了越界数据：$error',
         operation: method,
         requestId: requestId,
       );
