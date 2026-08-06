@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/dashboard/presentation/dashboard_page.dart';
 import '../../features/file_manager/domain/rootfs_file_models.dart';
 import '../../features/file_manager/presentation/instance_files_page.dart';
+import '../../features/file_manager/presentation/text_file_editor_page.dart';
 import '../../features/file_manager/presentation/toml_editor_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/instance/presentation/instance_detail_page.dart';
@@ -29,6 +30,7 @@ abstract final class AppRoute {
   static const String instanceDetail = '/dashboard/instance';
   static const String instanceFiles = '/instance-files';
   static const String tomlEditor = '/toml-editor';
+  static const String textEditor = '/text-editor';
   static const String terminal = '/terminal';
   static const String settings = '/settings';
   static const String appearance = '/settings/appearance';
@@ -129,6 +131,26 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               'tomlEditor-${extra.scope.id}-${extra.relativePath.displayPath}',
             ),
             child: TomlEditorPage(args: extra),
+          );
+        },
+      ),
+      GoRoute(
+        path: AppRoute.textEditor,
+        pageBuilder: (_, state) {
+          final extra = state.extra;
+          if (extra is! TextFileEditorRouteArgs) {
+            return MaterialPage(
+              key: const ValueKey('textEditor-error'),
+              child: const _RouteArgsErrorPage(
+                message: '编辑器参数缺失，请从文件管理页进入。',
+              ),
+            );
+          }
+          return MaterialPage(
+            key: ValueKey(
+              'textEditor-${extra.scope.id}-${extra.relativePath.displayPath}',
+            ),
+            child: TextFileEditorPage(args: extra),
           );
         },
       ),

@@ -9,6 +9,7 @@ import '../application/rootfs_file_repository.dart';
 import '../domain/rootfs_file_exception.dart';
 import '../domain/rootfs_file_models.dart';
 import '../domain/rootfs_file_scope.dart';
+import '../domain/text_file_language.dart';
 import 'widgets/dialogs/file_dialogs.dart';
 import 'widgets/file_breadcrumb.dart';
 import 'widgets/rootfs_file_tile.dart';
@@ -223,8 +224,27 @@ class InstanceFilesPage extends ConsumerWidget {
       ref
           .read(fileBrowserProvider(key).notifier)
           .openDirectory(entry.relativePath);
-    } else if (entry.isToml) {
-      // 进入 TOML 编辑器
+      return;
+    }
+    if (entry.kind != RootfsFileKind.file) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('仅支持打开普通文件')),
+      );
+      return;
+    }
+    final size = entry.sizeBytes ?? 0;
+    if (!isLikelyEditableTextFile(
+      fileName: entry.name,
+      sizeBytes: size,
+    )) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('该文件为二进制文件，不支持编辑')),
+      );
+      return;
+    }
+    final language = detectTextFileLanguage(entry.name);
+    if (language == TextFileLanguage.toml) {
+      // TOML 走专用编辑器（含语法诊断）。
       context.push(
         AppRoute.tomlEditor,
         extra: TomlEditorRouteArgs(
@@ -233,8 +253,13 @@ class InstanceFilesPage extends ConsumerWidget {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('仅支持编辑 TOML 文件')),
+      context.push(
+        AppRoute.textEditor,
+        extra: TextFileEditorRouteArgs(
+          scope: state.scope,
+          relativePath: entry.relativePath,
+          language: language,
+        ),
       );
     }
   }

@@ -2,6 +2,7 @@ import 'package:meta/meta.dart';
 
 import 'rootfs_file_scope.dart';
 import 'rootfs_relative_path.dart';
+import 'text_file_language.dart';
 
 enum RootfsFileKind {
   file('file'),
@@ -175,4 +176,17 @@ class TomlEditorRouteArgs {
   final RootfsFileScope scope;
   final RootfsRelativePath relativePath;
   final bool createMode;
+}
+
+/// 通用文本编辑器路由参数。
+class TextFileEditorRouteArgs {
+  const TextFileEditorRouteArgs({
+    required this.scope,
+    required this.relativePath,
+    required this.language,
+  });
+
+  final RootfsFileScope scope;
+  final RootfsRelativePath relativePath;
+  final TextFileLanguage language;
 }
