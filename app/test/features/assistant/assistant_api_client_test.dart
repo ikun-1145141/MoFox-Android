@@ -27,4 +27,30 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('trimmed long histories are repaired to strict role alternation', () {
+    final payload = AssistantApiClient().buildChatPayload(
+      model: 'test-model',
+      systemPrompt: 'system prompt',
+      messages: const <AssistantMessage>[
+        AssistantMessage(role: AssistantRole.assistant, text: 'orphaned'),
+        AssistantMessage(role: AssistantRole.user, text: 'first'),
+        AssistantMessage(role: AssistantRole.user, text: 'second'),
+        AssistantMessage(role: AssistantRole.assistant, text: 'tool call'),
+        AssistantMessage(role: AssistantRole.system, text: 'result one'),
+        AssistantMessage(role: AssistantRole.system, text: 'result two'),
+      ],
+    );
+    final messages = payload['messages']! as List<Map<String, String>>;
+
+    expect(messages.map((item) => item['role']), <String>[
+      'system',
+      'user',
+      'assistant',
+      'user',
+    ]);
+    expect(messages[1]['content'], contains('first\n\nsecond'));
+    expect(messages.last['content'], contains('result one'));
+    expect(messages.last['content'], contains('result two'));
+  });
 }

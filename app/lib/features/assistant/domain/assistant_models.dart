@@ -14,23 +14,28 @@ class AssistantMessage {
       };
 }
 
-enum AssistantActionType { command, restartBot, restartNapcat }
+enum AssistantActionType { command, restartBot, restartNapcat, mcpTool }
 
 class AssistantAction {
   const AssistantAction({
     required this.type,
     required this.reason,
     this.command,
+    this.toolName,
+    this.arguments = const <String, Object?>{},
   });
 
   final AssistantActionType type;
   final String reason;
   final String? command;
+  final String? toolName;
+  final Map<String, Object?> arguments;
 
   String get title => switch (type) {
         AssistantActionType.command => '运行终端命令',
         AssistantActionType.restartBot => '重启 Bot',
         AssistantActionType.restartNapcat => '重启 NapCat',
+        AssistantActionType.mcpTool => '查询官方文档',
       };
 
   static AssistantDecodedReply decodeReply(String raw) {
@@ -48,12 +53,24 @@ class AssistantAction {
         'command' => AssistantActionType.command,
         'restart_bot' => AssistantActionType.restartBot,
         'restart_napcat' => AssistantActionType.restartNapcat,
+        'mcp_tool' => AssistantActionType.mcpTool,
         _ => null,
       };
       if (type == null) return AssistantDecodedReply(text: visible);
       final command = json['command']?.toString().trim();
       if (type == AssistantActionType.command &&
           (command == null || command.isEmpty)) {
+        return AssistantDecodedReply(text: visible);
+      }
+      final toolName = json['name']?.toString().trim();
+      if (type == AssistantActionType.mcpTool &&
+          !const <String>{'search_mofox_docs', 'read_mofox_doc'}
+              .contains(toolName)) {
+        return AssistantDecodedReply(text: visible);
+      }
+      final arguments = json['arguments'];
+      if (type == AssistantActionType.mcpTool &&
+          arguments is! Map<String, Object?>) {
         return AssistantDecodedReply(text: visible);
       }
       return AssistantDecodedReply(
@@ -64,6 +81,10 @@ class AssistantAction {
               ? json['reason']!.toString().trim()
               : 'AI 建议执行此操作',
           command: command,
+          toolName: toolName,
+          arguments: arguments is Map<String, Object?>
+              ? arguments
+              : const <String, Object?>{},
         ),
       );
     } on Object {

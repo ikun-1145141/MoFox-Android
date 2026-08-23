@@ -76,9 +76,29 @@ class AssistantApiClient {
         'stream': true,
         'messages': <Map<String, String>>[
           <String, String>{'role': 'system', 'content': systemPrompt},
-          ...messages.map(_historyMessageJson),
+          ..._compatibleHistory(messages),
         ],
       };
+
+  List<Map<String, String>> _compatibleHistory(
+    List<AssistantMessage> messages,
+  ) {
+    final normalized = <Map<String, String>>[];
+    for (final message in messages) {
+      final current = _historyMessageJson(message);
+      final role = current['role']!;
+      if (normalized.isEmpty && role != AssistantRole.user.name) continue;
+      if (normalized.isNotEmpty && normalized.last['role'] == role) {
+        normalized.last = <String, String>{
+          'role': role,
+          'content': '${normalized.last['content']}\n\n${current['content']}',
+        };
+      } else {
+        normalized.add(current);
+      }
+    }
+    return normalized;
+  }
 
   Map<String, String> _historyMessageJson(AssistantMessage message) {
     if (message.role != AssistantRole.system) return message.toApiJson();

@@ -35,4 +35,17 @@ void main() {
     expect(reply.text, isEmpty);
     expect(reply.historyText, '准备执行：确认工作目录');
   });
+
+  test('decodes a live documentation MCP tool call', () {
+    final reply = AssistantAction.decodeReply(
+      '<mofox_action>{"type":"mcp_tool",'
+      '"name":"search_mofox_docs",'
+      '"arguments":{"query":"模型配置","limit":3},'
+      '"reason":"查询官方说明"}</mofox_action>',
+    );
+
+    expect(reply.action?.type, AssistantActionType.mcpTool);
+    expect(reply.action?.toolName, 'search_mofox_docs');
+    expect(reply.action?.arguments['query'], '模型配置');
+  });
 }

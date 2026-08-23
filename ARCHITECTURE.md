@@ -327,6 +327,7 @@ exec "$NATIVE/libproot.so" \
 
 - **产品形态**：终端 AppBar 的 AI 入口；手机使用终端下方自适应面板，≥800 dp 使用终端/助手左右分栏。打开、关闭或切换布局不会重建人的 PTY。
 - **模型配置**：设置页 `/settings/assistant` 保存 OpenAI-compatible Base URL、模型名和启用状态；启用与 HTTP 授权开关切换后立即持久化，API Key 单独存入 `flutter_secure_storage`，不进入 SharedPreferences。
+- **官方文档 MCP**：`MofoxDocsMcpClient` 实现 MCP initialize、`tools/list` 和 `tools/call`，提供 `search_mofox_docs` / `read_mofox_doc`。搜索实时调用官方站使用的 Algolia DocSearch 索引，读取实时抓取 `docs.mofox-sama.com` 的 `.vp-doc` 正文；仅做 5 分钟内存缓存，不在 APK 内置文档快照。
 - **流式对话**：`AssistantApiClient` 使用 Dio 解析 SSE 或非流式兼容响应；请求支持停止、超时、错误分类和最近 12 条消息上限。
 - **上下文**：默认只附加系统资源、托管进程状态和当前实例的非敏感摘要。最近 Bot/NapCat 日志必须由用户在会话中单独同意，截取各 20 行并在本地脱敏；终端内容只发送用户主动选择的文本。
 - **结构化动作**：模型只能在 `<mofox_action>` JSON envelope 中提出单个 `command`、`restart_bot` 或 `restart_napcat`。未知或非法 schema 不产生操作按钮。
@@ -649,7 +650,7 @@ MoFox-Android/
 - **AGPL-3.0**：与 Neo-MoFox 主程序保持一致，闭源分发须开放完整源码。
 - **不上报**：App 默认零遥测、零崩溃上报。本地崩溃日志写入 `<appDocDir>/logs/mofox_<date>.log`，用户可在设置中主动导出分享。
 - **Token 存储**：登录态 / Neo-MoFox API Token 存 `flutter_secure_storage`（AndroidKeystore）。
-- **AI 凭据与上下文**：助手 API Key 存 `flutter_secure_storage`；默认不发送终端历史和 Bot 日志，用户主动附加的内容先在本地裁剪、脱敏。模型动作必须通过本地 schema；副驾驶应用双层策略，YOLO 经显式风险确认后不限制命令内容。
+- **AI 凭据与上下文**：助手 API Key 存 `flutter_secure_storage`；默认不发送终端历史和 Bot 日志，用户主动附加的内容先在本地裁剪、脱敏。官方文档查询词会发送到站点使用的 Algolia，页面正文从 `docs.mofox-sama.com` 实时读取并作为工具结果发给所配置的模型服务。模型动作必须通过本地 schema；副驾驶应用双层策略，YOLO 经显式风险确认后不限制命令内容。
 - **浏览器边界**：应用不嵌入网页、不注入 JavaScript，也不读取浏览器 Cookie/localStorage；WebUI 会话由用户选择的默认浏览器管理。
 - **网络**：AI 外网请求默认必须走 HTTPS；用户可为自备服务显式开启“不安全 HTTP”，界面会警告 API Key 和内容将明文传输。本机 WebUI 使用回环地址上的 HTTP。`AndroidManifest` 当前启用 `usesCleartextTraffic=true`，运行时服务必须只绑定 `127.0.0.1`，不得暴露到局域网接口。
 - **proot rootless**：不需要 root 权限，所有"root"都是 proot 假装的。
