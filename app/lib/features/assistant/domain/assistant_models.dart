@@ -77,6 +77,14 @@ class AssistantDecodedReply {
 
   final String text;
   final AssistantAction? action;
+
+  /// 保证模型历史中每个工具结果之前都有对应的 assistant 轮次。
+  String get historyText {
+    if (text.isNotEmpty) return text;
+    final pending = action;
+    if (pending == null) return '';
+    return '准备执行：${pending.reason}';
+  }
 }
 
 class AssistantCommandResult {

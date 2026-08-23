@@ -113,7 +113,8 @@ class RuntimeBridgePlugin {
                     "runAssistantCommand" -> runAsync(result) {
                         val command = call.argument<String>("command") ?: error("Missing command")
                         val cwd = call.argument<String>("cwd") ?: "/root"
-                        val commandResult = processManager.runAssistantCommand(command, cwd)
+                        val unrestricted = call.argument<Boolean>("unrestricted") ?: false
+                        val commandResult = processManager.runAssistantCommand(command, cwd, unrestricted)
                         mapOf(
                             "exitCode" to commandResult.exitCode,
                             "output" to commandResult.output,

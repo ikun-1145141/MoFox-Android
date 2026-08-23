@@ -237,16 +237,22 @@ class RuntimeBridge {
     );
   }
 
-  /// 在独立、受限的一次性进程中执行 AI 助手已经通过本地策略的命令。
+  /// 在独立的一次性进程中执行 AI 助手命令。
   ///
-  /// 该进程不与人的 PTY 共享状态，并由原生端再次执行白名单校验、超时和输出上限。
+  /// 该进程不与人的 PTY 共享状态，并由原生端执行超时和输出上限。
+  /// [unrestricted] 仅供用户显式开启的 YOLO 模式使用。
   Future<AssistantCommandResult> runAssistantCommand(
     String command, {
     required String cwd,
+    bool unrestricted = false,
   }) async {
     final result = await _channel.invokeMethod<Map<Object?, Object?>>(
       'runAssistantCommand',
-      <String, Object>{'command': command, 'cwd': cwd},
+      <String, Object>{
+        'command': command,
+        'cwd': cwd,
+        'unrestricted': unrestricted,
+      },
     );
     return AssistantCommandResult.fromMap(
       result ?? const <Object?, Object?>{},

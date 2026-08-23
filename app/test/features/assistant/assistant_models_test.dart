@@ -25,4 +25,14 @@ void main() {
     expect(unknown.action, isNull);
     expect(malformed.text, '说明');
   });
+
+  test('action-only replies still create an assistant history turn', () {
+    final reply = AssistantAction.decodeReply(
+      '<mofox_action>{"type":"command","command":"pwd",'
+      '"reason":"确认工作目录"}</mofox_action>',
+    );
+
+    expect(reply.text, isEmpty);
+    expect(reply.historyText, '准备执行：确认工作目录');
+  });
 }

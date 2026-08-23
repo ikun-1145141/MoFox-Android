@@ -80,9 +80,9 @@ class RuntimeProcessManager(
     }
 
     @Synchronized
-    fun runAssistantCommand(command: String, cwd: String): AssistantCommandResult {
+    fun runAssistantCommand(command: String, cwd: String, unrestricted: Boolean = false): AssistantCommandResult {
         if (!installer.isBootstrapped()) error("Runtime bootstrap is not installed")
-        validateAssistantCommand(command, cwd)
+        validateAssistantCommand(command, cwd, unrestricted)
         if (assistantProcess.get()?.isAlive == true) error("An assistant command is already running")
         val script = scripts.assistantCommandScript(cwd, command)
         val builder = ProcessBuilder(commandBuilder.scriptCommand(script))
@@ -136,11 +136,12 @@ class RuntimeProcessManager(
         assistantProcess.getAndSet(null)?.destroyForcibly()
     }
 
-    private fun validateAssistantCommand(command: String, cwd: String) {
+    private fun validateAssistantCommand(command: String, cwd: String, unrestricted: Boolean) {
         require(command.isNotBlank() && command.length <= 512) { "Invalid assistant command length" }
         require(command.none { it.code < 0x20 || it.code == 0x7f }) { "Control characters are forbidden" }
         require(cwd.length <= 512 && cwd.split('/').none { it == ".." }) { "Invalid assistant cwd" }
         require(cwd == "/root" || cwd.startsWith("/root/instances/")) { "Assistant cwd is outside the allowed scope" }
+        if (unrestricted) return
         require(!Regex("[;&|><`]|\\$\\(").containsMatchIn(command)) { "Shell operators are forbidden" }
         require(!Regex("(?i)(api[_-]?key|password|token|cookie|secret|/etc/(shadow|passwd)|\\.ssh/)").containsMatchIn(command)) {
             "Sensitive data access is forbidden"

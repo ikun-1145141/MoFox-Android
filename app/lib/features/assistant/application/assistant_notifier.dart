@@ -202,8 +202,11 @@ class AssistantNotifier
       final decoded = AssistantAction.decodeReply(buffer.toString());
       final messages = <AssistantMessage>[
         ...state.messages,
-        if (decoded.text.isNotEmpty)
-          AssistantMessage(role: AssistantRole.assistant, text: decoded.text),
+        if (decoded.historyText.isNotEmpty)
+          AssistantMessage(
+            role: AssistantRole.assistant,
+            text: decoded.historyText,
+          ),
       ];
       final action = decoded.action;
       if (action == null) {
@@ -214,7 +217,10 @@ class AssistantNotifier
         );
         return;
       }
-      final decision = _policy.evaluate(action);
+      final decision = _policy.evaluate(
+        action,
+        unrestricted: settings.yoloEnabled,
+      );
       if (decision.decision == AssistantPolicyDecision.deny) {
         state = state.copyWith(
           messages: <AssistantMessage>[
@@ -274,7 +280,7 @@ class AssistantNotifier
       executionOutput: null,
     );
     try {
-      final output = await _execute(action);
+      final output = await _execute(action, unrestricted: yolo);
       if (_stopped) return;
       final summary = _redact(output.isEmpty ? '操作已完成。' : output);
       final nextSteps = state.yoloSteps + (yolo ? 1 : 0);
@@ -343,13 +349,17 @@ class AssistantNotifier
         _policy.canFillTerminal(action!.command ?? '');
   }
 
-  Future<String> _execute(AssistantAction action) async {
+  Future<String> _execute(
+    AssistantAction action, {
+    required bool unrestricted,
+  }) async {
     final runtime = ref.read(runtimeBridgeProvider);
     switch (action.type) {
       case AssistantActionType.command:
         final result = await runtime.runAssistantCommand(
           action.command!,
           cwd: _spec.cwd,
+          unrestricted: unrestricted,
         );
         final suffix = <String>[
           '退出码：${result.exitCode}',
@@ -424,8 +434,8 @@ class AssistantNotifier
 你不能声称自己已经执行操作。需要操作时，只能在回复末尾输出一个严格动作块：
 <mofox_action>{"type":"command","command":"单行命令","reason":"原因"}</mofox_action>
 或 type 使用 restart_bot / restart_napcat，且省略 command。动作块之外正常回答，禁止一次给多个动作。
-优先用 restart_bot、restart_napcat；诊断命令应使用单个只读命令，不用管道、重定向、分号、&&、脚本或交互程序。
-当前模式：${yolo ? 'YOLO；允许动作会自动执行，但本地安全策略拥有最终决定权' : '副驾驶；动作需要用户确认或填入终端'}。
+优先用 restart_bot、restart_napcat。副驾驶模式的命令应使用单个只读命令，不用管道、重定向、分号、&&、脚本或交互程序。
+当前模式：${yolo ? 'YOLO；你可以给出任意单行 Shell 命令，命令会不经确认直接执行' : '副驾驶；动作需要用户确认或填入终端'}。
 
 当前本地上下文：
 $context

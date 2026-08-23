@@ -43,7 +43,10 @@ class AssistantPolicy {
     'pip3',
   };
 
-  AssistantPolicyResult evaluate(AssistantAction action) {
+  AssistantPolicyResult evaluate(
+    AssistantAction action, {
+    bool unrestricted = false,
+  }) {
     if (action.type != AssistantActionType.command) {
       return const AssistantPolicyResult(
         AssistantPolicyDecision.allow,
@@ -51,13 +54,21 @@ class AssistantPolicy {
       );
     }
     final command = action.command?.trim() ?? '';
-    if (command.isEmpty || command.length > 512) {
+    if (command.isEmpty ||
+        command.length > 512 ||
+        _controlCharacters.hasMatch(command)) {
       return const AssistantPolicyResult(
         AssistantPolicyDecision.deny,
-        '命令为空或过长',
+        '命令为空、过长或包含控制字符',
       );
     }
-    if (_controlCharacters.hasMatch(command) || _hardDenied.hasMatch(command)) {
+    if (unrestricted) {
+      return const AssistantPolicyResult(
+        AssistantPolicyDecision.allow,
+        'YOLO 模式：不限制命令内容',
+      );
+    }
+    if (_hardDenied.hasMatch(command)) {
       return const AssistantPolicyResult(
         AssistantPolicyDecision.deny,
         '命令命中本地硬性安全规则',

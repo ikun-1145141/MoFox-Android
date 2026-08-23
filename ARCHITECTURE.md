@@ -332,8 +332,8 @@ exec "$NATIVE/libproot.so" \
 - **结构化动作**：模型只能在 `<mofox_action>` JSON envelope 中提出单个 `command`、`restart_bot` 或 `restart_napcat`。未知或非法 schema 不产生操作按钮。
 - **副驾驶模式**：命令可复制或填入当前 PTY，但填入时不附加回车；已注册且通过策略的语义操作/只读命令显示确认按钮。
 - **YOLO 模式**：默认关闭，用户输入确认短语后才启用。通过相同本地策略的动作可自动执行，单轮最多 5 次；面板常驻急停，关闭面板、离开页面或 App 进入后台会停止当前链路。
-- **双层策略**：Dart `AssistantPolicy` 与 Kotlin `validateAssistantCommand` 都执行命令长度、控制字符、操作符、私密路径和 executable 白名单校验。YOLO 只能跳过确认，不能跳过硬禁止规则。
-- **独立执行器**：`runAssistantCommand/cancelAssistantCommand` 使用与人类 PTY 隔离的一次性 proot 进程；cwd 仅允许 `/root` 或 `/root/instances/**`，30 秒超时，输出上限 32 KiB。当前自动白名单只覆盖系统只读诊断、只读 Git 子命令、版本/包状态查询。
+- **双模式策略**：副驾驶模式由 Dart `AssistantPolicy` 与 Kotlin `validateAssistantCommand` 双层检查命令、路径和 executable 白名单；用户显式确认 YOLO 后，两层均不限制命令内容。
+- **独立执行器**：`runAssistantCommand/cancelAssistantCommand` 使用与人类 PTY 隔离的一次性 proot 进程；cwd 仅允许 `/root` 或 `/root/instances/**`，30 秒超时，输出上限 32 KiB。YOLO 可执行任意单行 Shell 命令，但仍受急停、超时和输出上限约束。
 - **详细提案**：交互、安全边界和后续阶段见 `docs/terminal-ai-assistant-plan.md`。
 
 ### 5.6 首页（`app/lib/features/home/`）
@@ -649,7 +649,7 @@ MoFox-Android/
 - **AGPL-3.0**：与 Neo-MoFox 主程序保持一致，闭源分发须开放完整源码。
 - **不上报**：App 默认零遥测、零崩溃上报。本地崩溃日志写入 `<appDocDir>/logs/mofox_<date>.log`，用户可在设置中主动导出分享。
 - **Token 存储**：登录态 / Neo-MoFox API Token 存 `flutter_secure_storage`（AndroidKeystore）。
-- **AI 凭据与上下文**：助手 API Key 存 `flutter_secure_storage`；默认不发送终端历史和 Bot 日志，用户主动附加的内容先在本地裁剪、脱敏。模型动作必须通过本地 schema 与双层策略，YOLO 不能关闭硬性禁区。
+- **AI 凭据与上下文**：助手 API Key 存 `flutter_secure_storage`；默认不发送终端历史和 Bot 日志，用户主动附加的内容先在本地裁剪、脱敏。模型动作必须通过本地 schema；副驾驶应用双层策略，YOLO 经显式风险确认后不限制命令内容。
 - **浏览器边界**：应用不嵌入网页、不注入 JavaScript，也不读取浏览器 Cookie/localStorage；WebUI 会话由用户选择的默认浏览器管理。
 - **网络**：AI 外网请求默认必须走 HTTPS；用户可为自备服务显式开启“不安全 HTTP”，界面会警告 API Key 和内容将明文传输。本机 WebUI 使用回环地址上的 HTTP。`AndroidManifest` 当前启用 `usesCleartextTraffic=true`，运行时服务必须只绑定 `127.0.0.1`，不得暴露到局域网接口。
 - **proot rootless**：不需要 root 权限，所有"root"都是 proot 假装的。
@@ -688,7 +688,7 @@ CI 阶段：
 | **NapCat 网络敏感** | NapCat 安装走 GitHub 原始链接，国内可能慢。OOBE 内置 4 个 GitHub 加速代理，按延迟自动选最快。 |
 | **默认浏览器不可用或被禁用** | `launchUrl(..., mode: externalApplication)` 返回失败时显示提示；不回退到内置 WebView。 |
 | **保活仍可能被杀** | 国产 ROM 后台限制极激进。文档明确告诉用户开"自启"+"电池白名单"，并提供一键跳转。**承诺尽力而为，不保证 100%。** |
-| **AI/YOLO 误操作与隐私** | 助手默认副驾驶；YOLO 需显式确认、有限循环和常驻急停。所有动作经过双层本地策略，最近日志需单独授权并脱敏，硬禁止规则不可关闭。 |
+| **AI/YOLO 误操作与隐私** | 助手默认副驾驶；YOLO 需显式风险确认、有限循环和常驻急停。YOLO 不限制命令，可能修改或删除运行时数据；最近日志仍需单独授权并脱敏。 |
 
 ---
 

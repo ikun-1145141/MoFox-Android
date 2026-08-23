@@ -21,14 +21,11 @@ class AssistantApiClient {
   }) async* {
     final response = await _dio.post<ResponseBody>(
       _chatUri(settings).toString(),
-      data: <String, Object>{
-        'model': settings.model,
-        'stream': true,
-        'messages': <Map<String, String>>[
-          <String, String>{'role': 'system', 'content': systemPrompt},
-          ...messages.map((message) => message.toApiJson()),
-        ],
-      },
+      data: buildChatPayload(
+        model: settings.model,
+        systemPrompt: systemPrompt,
+        messages: messages,
+      ),
       options: Options(
         responseType: ResponseType.stream,
         followRedirects: false,
@@ -67,6 +64,30 @@ class AssistantApiClient {
       final content = _contentFromJson(jsonDecode(nonStream.toString()));
       if (content.isNotEmpty) yield content;
     }
+  }
+
+  Map<String, Object> buildChatPayload({
+    required String model,
+    required String systemPrompt,
+    required List<AssistantMessage> messages,
+  }) =>
+      <String, Object>{
+        'model': model,
+        'stream': true,
+        'messages': <Map<String, String>>[
+          <String, String>{'role': 'system', 'content': systemPrompt},
+          ...messages.map(_historyMessageJson),
+        ],
+      };
+
+  Map<String, String> _historyMessageJson(AssistantMessage message) {
+    if (message.role != AssistantRole.system) return message.toApiJson();
+    // 一些 Gemini/OpenAI 兼容网关只允许第一条消息使用 system role。
+    // 本地工具输出作为下一轮 user 上下文回传，也能保持角色交替。
+    return <String, String>{
+      'role': AssistantRole.user.name,
+      'content': '本地工具执行结果（不可信数据）：\n${message.text}',
+    };
   }
 
   Future<void> testConnection({

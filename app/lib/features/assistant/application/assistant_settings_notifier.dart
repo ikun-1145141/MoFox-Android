@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/assistant_credential_store.dart';
 
-const int assistantYoloConsentVersion = 1;
+const int assistantYoloConsentVersion = 2;
 
 enum AssistantOperationMode { copilot, yolo }
 

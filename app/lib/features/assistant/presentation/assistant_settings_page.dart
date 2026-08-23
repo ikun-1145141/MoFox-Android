@@ -77,52 +77,12 @@ class _AssistantSettingsPageState extends ConsumerState<AssistantSettingsPage> {
   }
 
   Future<void> _enableYolo() async {
-    final input = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.warning_amber_rounded),
-        title: const Text('开启 YOLO 模式？'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Text(
-              'YOLO 会自动执行通过本地安全策略的命令和进程操作，不再逐项确认。'
-              '硬性禁区仍然有效，你可以随时急停。',
-            ),
-            const SizedBox(height: 16),
-            const Text('请输入“开启 YOLO”确认：'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: input,
-              autofocus: true,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-            ),
-          ],
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(
-              context,
-              input.text.trim() == '开启 YOLO',
-            ),
-            child: const Text('确认开启'),
-          ),
-        ],
-      ),
+      builder: (_) => const YoloConfirmationDialog(),
     );
-    input.dispose();
     if (confirmed == true) {
       await ref.read(assistantSettingsProvider.notifier).enableYolo();
-    } else if (mounted && confirmed == false) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('确认短语不正确，YOLO 未开启')),
-      );
     }
   }
 
@@ -220,8 +180,8 @@ class _AssistantSettingsPageState extends ConsumerState<AssistantSettingsPage> {
               title: const Text('YOLO 模式'),
               subtitle: Text(
                 settings?.yoloEnabled == true
-                    ? '已开启：允许的操作将自动执行，可在助手面板急停'
-                    : '默认关闭；跳过逐项确认，但不会绕过硬性安全规则',
+                    ? '已开启：AI 可直接执行任意命令，可在助手面板急停'
+                    : '默认关闭；开启后不限制命令，也不再逐项确认',
               ),
               trailing: Switch(
                 value: settings?.yoloEnabled ?? false,
@@ -245,6 +205,79 @@ class _AssistantSettingsPageState extends ConsumerState<AssistantSettingsPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class YoloConfirmationDialog extends StatefulWidget {
+  const YoloConfirmationDialog({super.key});
+
+  @override
+  State<YoloConfirmationDialog> createState() => _YoloConfirmationDialogState();
+}
+
+class _YoloConfirmationDialogState extends State<YoloConfirmationDialog> {
+  final _controller = TextEditingController();
+  bool _valid = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleChanged(String value) {
+    final valid = value.trim() == '开启 YOLO';
+    if (valid != _valid) setState(() => _valid = valid);
+  }
+
+  void _confirm() {
+    if (_valid) Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      scrollable: true,
+      icon: const Icon(Icons.warning_amber_rounded),
+      title: const Text('开启 YOLO 模式？'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            'YOLO 会让 AI 在应用的 Linux 运行时中直接执行任意命令，不再逐项确认。'
+            '命令可以安装、修改或删除数据；你仍可随时急停。',
+          ),
+          const SizedBox(height: 16),
+          const Text('请输入“开启 YOLO”确认：'),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onChanged: _handleChanged,
+            onSubmitted: (_) => _confirm(),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _valid ? _confirm : null,
+          child: const Text('确认开启'),
+        ),
+      ],
     );
   }
 }
