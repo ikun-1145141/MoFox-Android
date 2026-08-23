@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/router/app_router.dart';
+import '../../assistant/application/assistant_settings_notifier.dart';
 import '../application/app_settings_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
@@ -16,6 +17,7 @@ class SettingsPage extends ConsumerWidget {
         ? '加载中'
         : '${appSettings.themeMode.label} · ${appSettings.dynamicColorEnabled ? '动态取色' : '品牌色'} · ${appSettings.mainImageMode.label}';
     final terminalHapticsEnabled = appSettings?.terminalHapticsEnabled ?? true;
+    final assistant = ref.watch(assistantSettingsProvider).valueOrNull;
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -50,6 +52,32 @@ class SettingsPage extends ConsumerWidget {
                           .read(appSettingsProvider.notifier)
                           .setTerminalHapticsEnabled(value),
                 ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _Section(
+            title: 'AI 运维助手',
+            children: <Widget>[
+              _SettingTile(
+                leading: Icon(
+                  assistant?.yoloEnabled == true
+                      ? Icons.bolt
+                      : Icons.auto_awesome_outlined,
+                ),
+                title: '模型与操作模式',
+                subtitle: assistant == null
+                    ? '加载中'
+                    : assistant.configured
+                        ? '${assistant.model} · ${assistant.yoloEnabled ? 'YOLO' : '副驾驶'}'
+                        : !assistant.enabled &&
+                                assistant.baseUrl.isNotEmpty &&
+                                assistant.model.isNotEmpty &&
+                                assistant.hasApiKey
+                            ? '已配置 · 未启用'
+                            : '配置不完整',
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => context.push(AppRoute.assistantSettings),
               ),
             ],
           ),

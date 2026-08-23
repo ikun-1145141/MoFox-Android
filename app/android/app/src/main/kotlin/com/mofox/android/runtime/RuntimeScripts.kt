@@ -181,6 +181,23 @@ class RuntimeScripts(
         return file
     }
 
+    /** AI 助手一次性命令脚本。命令在进入 Debian 后以指定 cwd 执行。 */
+    fun assistantCommandScript(cwd: String, command: String): File {
+        installer.ensureBaseDirectories()
+        val file = File(installer.scriptsDir, "assistant-command.sh")
+        val inner = "cd ${shellQuote(cwd)} 2>/dev/null || cd /root; exec /bin/bash -lc ${shellQuote(command)}"
+        val content = buildString {
+            append("#!/system/bin/sh\n")
+            append("set -e\n")
+            append(commonHeader())
+            append('\n')
+            append("login_ubuntu ${shellQuote(inner)}\n")
+        }.replace("\r\n", "\n").replace("\r", "\n")
+        file.writeText(content)
+        file.setExecutable(true, false)
+        return file
+    }
+
     private fun bodyFor(task: String, args: Map<String, String>): String {
         return when (task) {
             "extractRootfs" -> extractRootfsBody()

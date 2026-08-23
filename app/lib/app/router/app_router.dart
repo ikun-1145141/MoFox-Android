@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/dashboard/presentation/dashboard_page.dart';
+import '../../features/assistant/presentation/assistant_settings_page.dart';
 import '../../features/file_manager/domain/rootfs_file_models.dart';
 import '../../features/file_manager/presentation/instance_files_page.dart';
 import '../../features/file_manager/presentation/text_file_editor_page.dart';
@@ -34,6 +35,7 @@ abstract final class AppRoute {
   static const String terminal = '/terminal';
   static const String settings = '/settings';
   static const String appearance = '/settings/appearance';
+  static const String assistantSettings = '/settings/assistant';
   static const String keepaliveStatus = '/settings/keepalive';
   static const String about = '/settings/about';
   static const String thirdPartyLicenses = '/settings/about/licenses';
@@ -77,6 +79,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.appearance,
         builder: (_, __) => const AppearancePage(),
+      ),
+      GoRoute(
+        path: AppRoute.assistantSettings,
+        builder: (_, __) => const AssistantSettingsPage(),
       ),
       GoRoute(
         path: AppRoute.backup,
@@ -176,6 +182,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               return TerminalPage(
                 cwd: extra?['cwd'] ?? '/root',
                 title: extra?['title'] ?? '终端',
+                instanceId: extra?['instanceId'],
               );
             },
           ),

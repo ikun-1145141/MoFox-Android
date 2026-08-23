@@ -4,6 +4,7 @@
 
 > 完整架构请看 [ARCHITECTURE.md](ARCHITECTURE.md)。
 > 使用 App 部署请看 [Neo-MoFox Android 官方部署指南（Beta）](docs/android-deployment-guide.md)。
+> AI 助手设计与安全边界请看 [终端 AI 运维助手增强方案](docs/terminal-ai-assistant-plan.md)。
 
 ## 功能
 
@@ -12,6 +13,7 @@
 - **实例创建向导**：镜像源检测 → EULA → 实例信息 → 账号 → 模型 → 网络 → 摘要 → 安装，八步表单 + 彩色安装日志。
 - **首页概览**：CPU / 内存 / 存储使用率，主图模式（沉浸 / 紧凑 / 隐藏）。
 - **彩色终端**：xterm.dart + flutter_pty 直连 Debian bash，固定深色主题 + .bashrc 注入彩色 prompt。
+- **AI 运维助手**：终端内置自然语言排障、日志解释和结构化操作卡片，支持默认副驾驶与显式开启的受控 YOLO 模式。
 - **WebUI 壳**：Neo-MoFox WebUI 与 NapCat 控制台切换。
 - **外观设置**：主题模式（跟随系统 / 浅色 / 深色）、Android 12+ 动态取色、主图模式。
 - **保活体检**：通知权限、电池白名单、前台服务、开机自启、厂商自启动一键检查与跳转。

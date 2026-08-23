@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
 import '../../settings/application/app_settings_provider.dart';
+import '../../assistant/application/assistant_notifier.dart';
+import '../../assistant/presentation/assistant_panel.dart';
 import '../application/terminal_session_provider.dart';
 
 /// 终端彩色主题：深色背景 + 标准 16 色 ANSI 调色板。
@@ -43,16 +45,19 @@ class TerminalPage extends ConsumerStatefulWidget {
     super.key,
     this.cwd = '/root',
     this.title = '终端',
+    this.instanceId,
   });
 
   final String cwd;
   final String title;
+  final String? instanceId;
 
   @override
   ConsumerState<TerminalPage> createState() => _TerminalPageState();
 }
 
-class _TerminalPageState extends ConsumerState<TerminalPage> {
+class _TerminalPageState extends ConsumerState<TerminalPage>
+    with WidgetsBindingObserver {
   final GlobalKey<TerminalViewState> _terminalViewKey = GlobalKey();
   final GlobalKey _terminalOverlayKey = GlobalKey();
 
@@ -64,10 +69,12 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
   OverlayEntry? _selectionToolbarEntry;
   late TerminalSessionSpec _sessionSpec;
   TerminalSession? _session;
+  bool _assistantOpen = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _sessionSpec = TerminalSessionSpec(cwd: widget.cwd, title: widget.title);
   }
 
@@ -393,11 +400,97 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
     _session?.resize(cols, rows);
   }
 
+  String? _selectedTerminalText() {
+    final session = _session;
+    final selection = session?.controller.selection;
+    if (session == null || selection == null || selection.isCollapsed) {
+      return null;
+    }
+    return session.terminal.buffer.getText(selection);
+  }
+
+  Widget _buildTerminalArea({required bool terminalHapticsEnabled}) {
+    final session = _session!;
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: _mofoxTerminalTheme.background),
+            child: Stack(
+              key: _terminalOverlayKey,
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Positioned.fill(
+                  child: TerminalView(
+                    session.terminal,
+                    key: _terminalViewKey,
+                    controller: session.controller,
+                    theme: _mofoxTerminalTheme,
+                    autofocus: true,
+                    padding: const EdgeInsets.all(12),
+                  ),
+                ),
+                if (_hasSelection) ..._buildSelectionHandles(),
+              ],
+            ),
+          ),
+        ),
+        _TerminalShortcutBar(
+          hapticsEnabled: terminalHapticsEnabled,
+          ctrlActive: _ctrlActive,
+          altActive: _altActive,
+          onCtrl: _toggleCtrl,
+          onAlt: _toggleAlt,
+          onEsc: () => _sendTerminalSequence('\x1b'),
+          onTab: () => _sendTerminalSequence('\t'),
+          onEnter: () => _sendTerminalSequence('\r'),
+          onArrowUp: () => _sendTerminalSequence('\x1b[A'),
+          onArrowDown: () => _sendTerminalSequence('\x1b[B'),
+          onArrowRight: () => _sendTerminalSequence('\x1b[C'),
+          onArrowLeft: () => _sendTerminalSequence('\x1b[D'),
+          onCtrlX: () => _sendCtrl('X'),
+          onCtrlO: () => _sendCtrl('O'),
+          onCtrlW: () => _sendCtrl('W'),
+          onCtrlK: () => _sendCtrl('K'),
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    if (_assistantOpen) {
+      ref
+          .read(
+            assistantProvider(
+              AssistantSessionSpec(
+                cwd: widget.cwd,
+                instanceId: widget.instanceId,
+              ),
+            ).notifier,
+          )
+          .stop();
+    }
     _removeSelectionToolbarEntry();
     _detachSession();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && _assistantOpen) {
+      ref
+          .read(
+            assistantProvider(
+              AssistantSessionSpec(
+                cwd: widget.cwd,
+                instanceId: widget.instanceId,
+              ),
+            ).notifier,
+          )
+          .stop();
+    }
   }
 
   @override
@@ -411,6 +504,13 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
       appBar: AppBar(
         title: Text(widget.title),
         actions: <Widget>[
+          IconButton(
+            tooltip: _assistantOpen ? '关闭 AI 助手' : '打开 AI 助手',
+            onPressed: () => setState(() => _assistantOpen = !_assistantOpen),
+            icon: Icon(
+              _assistantOpen ? Icons.auto_awesome : Icons.auto_awesome_outlined,
+            ),
+          ),
           IconButton(
             tooltip: '复制路径',
             onPressed: () => Clipboard.setData(ClipboardData(text: widget.cwd)),
@@ -433,45 +533,39 @@ class _TerminalPageState extends ConsumerState<TerminalPage> {
                 ],
               ),
             Expanded(
-              child: DecoratedBox(
-                decoration:
-                    BoxDecoration(color: _mofoxTerminalTheme.background),
-                child: Stack(
-                  key: _terminalOverlayKey,
-                  clipBehavior: Clip.none,
-                  children: <Widget>[
-                    Positioned.fill(
-                      child: TerminalView(
-                        session.terminal,
-                        key: _terminalViewKey,
-                        controller: session.controller,
-                        theme: _mofoxTerminalTheme,
-                        autofocus: true,
-                        padding: const EdgeInsets.all(12),
-                      ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final terminal = _buildTerminalArea(
+                    terminalHapticsEnabled: terminalHapticsEnabled,
+                  );
+                  if (!_assistantOpen) return terminal;
+                  final panel = AssistantPanel(
+                    spec: AssistantSessionSpec(
+                      cwd: widget.cwd,
+                      instanceId: widget.instanceId,
                     ),
-                    if (_hasSelection) ..._buildSelectionHandles(),
-                  ],
-                ),
+                    onFillTerminal: (command) => _session?.write(command),
+                    readTerminalSelection: _selectedTerminalText,
+                    onClose: () => setState(() => _assistantOpen = false),
+                  );
+                  if (constraints.maxWidth >= 800) {
+                    return Row(
+                      children: <Widget>[
+                        Expanded(flex: 3, child: terminal),
+                        const VerticalDivider(width: 1),
+                        Expanded(flex: 2, child: panel),
+                      ],
+                    );
+                  }
+                  return Column(
+                    children: <Widget>[
+                      Expanded(flex: 5, child: terminal),
+                      const Divider(height: 1),
+                      Expanded(flex: 6, child: panel),
+                    ],
+                  );
+                },
               ),
-            ),
-            _TerminalShortcutBar(
-              hapticsEnabled: terminalHapticsEnabled,
-              ctrlActive: _ctrlActive,
-              altActive: _altActive,
-              onCtrl: _toggleCtrl,
-              onAlt: _toggleAlt,
-              onEsc: () => _sendTerminalSequence('\x1b'),
-              onTab: () => _sendTerminalSequence('\t'),
-              onEnter: () => _sendTerminalSequence('\r'),
-              onArrowUp: () => _sendTerminalSequence('\x1b[A'),
-              onArrowDown: () => _sendTerminalSequence('\x1b[B'),
-              onArrowRight: () => _sendTerminalSequence('\x1b[C'),
-              onArrowLeft: () => _sendTerminalSequence('\x1b[D'),
-              onCtrlX: () => _sendCtrl('X'),
-              onCtrlO: () => _sendCtrl('O'),
-              onCtrlW: () => _sendCtrl('W'),
-              onCtrlK: () => _sendCtrl('K'),
             ),
           ],
         ),

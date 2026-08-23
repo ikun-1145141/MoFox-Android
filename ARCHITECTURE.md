@@ -2,7 +2,7 @@
 
 > 本文档是 MoFox-Android 安卓壳的**单一真实来源**。任何对运行时方案、UI 结构、技术栈或目录约定的改动，都必须先更新本文档再落代码。
 >
-> 最后同步：2026-07-17。
+> 最后同步：2026-08-23。
 
 ---
 
@@ -45,7 +45,7 @@ MoFox-Android 是 [Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安�
 | WebUI 入口 | `url_launcher`（`LaunchMode.externalApplication`） | 将 Neo-MoFox / NapCat 本机 URL 交给系统默认浏览器 |
 | 保活 | Android 原生 `MoFoxForegroundService` | 前台服务 + 常驻通知 + 开机广播 |
 | 归档 | `archive ^4.0.7` | 实例备份 ZIP 编解码与导入校验 |
-| 网络下载 | `dio` | 离线包 / 镜像下载 / EULA 拉取 |
+| 网络与 AI | `dio` | 离线包 / 镜像下载 / EULA 拉取 / OpenAI-compatible 流式对话 |
 | 权限 | `permission_handler` | 通知 / 存储 / 自启 |
 | 日志 | `logger ^2.3.0` + `share_plus ^10.0.0` | 双路输出（控制台 + 文件），支持导出分享 |
 | 二维码 | `qr_flutter` | NapCat 扫码登录 |
@@ -188,6 +188,7 @@ class WizardState {
 | `/terminal` | `TerminalPage` | 终端 |
 | `/settings` | `SettingsPage` | 设置 |
 | `/settings/appearance` | `AppearancePage` | 外观与主题 |
+| `/settings/assistant` | `AssistantSettingsPage` | AI 服务、凭据与副驾驶/YOLO 模式 |
 | `/settings/keepalive` | `KeepaliveStatusPage` | 保活体检 |
 | `/settings/backup` | `BackupPage` | 实例备份导入与导出 |
 | `/settings/about` | `AboutPage` | 关于 |
@@ -322,6 +323,19 @@ exec "$NATIVE/libproot.so" \
 - **触感反馈**：长按选择、手柄拖动结束、复制和快捷键按钮震动，可在设置中开关。
 - **多入口**：首页顶部"打开终端"（`cwd=/root`）、实例卡片"在 bot 目录开终端"（`cwd=instance.repoPath`）、实例卡片"在实例根目录开终端"（`cwd=instance.installDir`）。
 
+#### 5.5.1 AI 运维助手（`app/lib/features/assistant/`）
+
+- **产品形态**：终端 AppBar 的 AI 入口；手机使用终端下方自适应面板，≥800 dp 使用终端/助手左右分栏。打开、关闭或切换布局不会重建人的 PTY。
+- **模型配置**：设置页 `/settings/assistant` 保存 OpenAI-compatible Base URL、模型名和启用状态；启用与 HTTP 授权开关切换后立即持久化，API Key 单独存入 `flutter_secure_storage`，不进入 SharedPreferences。
+- **流式对话**：`AssistantApiClient` 使用 Dio 解析 SSE 或非流式兼容响应；请求支持停止、超时、错误分类和最近 12 条消息上限。
+- **上下文**：默认只附加系统资源、托管进程状态和当前实例的非敏感摘要。最近 Bot/NapCat 日志必须由用户在会话中单独同意，截取各 20 行并在本地脱敏；终端内容只发送用户主动选择的文本。
+- **结构化动作**：模型只能在 `<mofox_action>` JSON envelope 中提出单个 `command`、`restart_bot` 或 `restart_napcat`。未知或非法 schema 不产生操作按钮。
+- **副驾驶模式**：命令可复制或填入当前 PTY，但填入时不附加回车；已注册且通过策略的语义操作/只读命令显示确认按钮。
+- **YOLO 模式**：默认关闭，用户输入确认短语后才启用。通过相同本地策略的动作可自动执行，单轮最多 5 次；面板常驻急停，关闭面板、离开页面或 App 进入后台会停止当前链路。
+- **双层策略**：Dart `AssistantPolicy` 与 Kotlin `validateAssistantCommand` 都执行命令长度、控制字符、操作符、私密路径和 executable 白名单校验。YOLO 只能跳过确认，不能跳过硬禁止规则。
+- **独立执行器**：`runAssistantCommand/cancelAssistantCommand` 使用与人类 PTY 隔离的一次性 proot 进程；cwd 仅允许 `/root` 或 `/root/instances/**`，30 秒超时，输出上限 32 KiB。当前自动白名单只覆盖系统只读诊断、只读 Git 子命令、版本/包状态查询。
+- **详细提案**：交互、安全边界和后续阶段见 `docs/terminal-ai-assistant-plan.md`。
+
 ### 5.6 首页（`app/lib/features/home/`）
 
 - 系统概览卡片：CPU、内存、存储使用率，通过 `systemStatsProvider`（5 秒轮询 `RuntimeBridge.systemStats()`）。
@@ -342,7 +356,7 @@ exec "$NATIVE/libproot.so" \
 
 ### 5.8 设置（`app/lib/features/settings/`）
 
-- **SettingsPage**：分组列表入口，包含外观、终端、运行时状态、保活体检、备份与导出、关于。
+- **SettingsPage**：分组列表入口，包含外观、终端、AI 运维助手、运行时状态、保活体检、备份与导出、关于。
 - **AppearancePage**（`/settings/appearance`）：
   - 主题模式（跟随系统 / 浅色 / 深色），`SegmentedButton` 切换。
   - 动态取色开关（Android 12+ Material You，从壁纸取色，回退品牌色）。
@@ -514,6 +528,11 @@ MoFox-Android/
     │   │   ├── ui/ansi_color_text.dart        # ANSI 彩色文本渲染
     │   │   └── utils/app_logger.dart          # 双路日志（控制台 + 文件）
     │   └── features/
+    │       ├── assistant/             # 终端 AI 运维助手
+    │       │   ├── application/       # 会话状态、设置与本地安全策略
+    │       │   ├── data/              # 兼容 API 客户端与安全凭据
+    │       │   ├── domain/            # 消息、动作与命令结果模型
+    │       │   └── presentation/      # 终端面板与设置页
     │       ├── oobe/                  # 一次性引导（4 步）
     │       │   ├── application/oobe_flow_notifier.dart
     │       │   ├── application/oobe_status_provider.dart
@@ -619,7 +638,7 @@ MoFox-Android/
 | 首页 | `/home` | 系统概览（CPU/内存/存储）+ 主图（沉浸/紧凑/隐藏） |
 | 管理 | `/dashboard` | 实例卡片网格 + 创建实例 FAB + 实例详情 |
 | 终端 | `/terminal` | xterm.dart 直连 Debian bash，彩色主题 |
-| 设置 | `/settings` | 外观、终端、运行时状态、保活体检、备份导出、关于 |
+| 设置 | `/settings` | 外观、终端、AI 助手、运行时状态、保活体检、备份导出、关于 |
 
 底部 `NavigationBar`（< 600 dp）或侧边 `NavigationRail`（≥ 600 dp），**不**做侧栏菜单（手机优先）。
 
@@ -630,8 +649,9 @@ MoFox-Android/
 - **AGPL-3.0**：与 Neo-MoFox 主程序保持一致，闭源分发须开放完整源码。
 - **不上报**：App 默认零遥测、零崩溃上报。本地崩溃日志写入 `<appDocDir>/logs/mofox_<date>.log`，用户可在设置中主动导出分享。
 - **Token 存储**：登录态 / Neo-MoFox API Token 存 `flutter_secure_storage`（AndroidKeystore）。
+- **AI 凭据与上下文**：助手 API Key 存 `flutter_secure_storage`；默认不发送终端历史和 Bot 日志，用户主动附加的内容先在本地裁剪、脱敏。模型动作必须通过本地 schema 与双层策略，YOLO 不能关闭硬性禁区。
 - **浏览器边界**：应用不嵌入网页、不注入 JavaScript，也不读取浏览器 Cookie/localStorage；WebUI 会话由用户选择的默认浏览器管理。
-- **网络**：外网请求必须走 HTTPS；本机 WebUI 使用回环地址上的 HTTP。`AndroidManifest` 当前启用 `usesCleartextTraffic=true`，运行时服务必须只绑定 `127.0.0.1`，不得暴露到局域网接口。
+- **网络**：AI 外网请求默认必须走 HTTPS；用户可为自备服务显式开启“不安全 HTTP”，界面会警告 API Key 和内容将明文传输。本机 WebUI 使用回环地址上的 HTTP。`AndroidManifest` 当前启用 `usesCleartextTraffic=true`，运行时服务必须只绑定 `127.0.0.1`，不得暴露到局域网接口。
 - **proot rootless**：不需要 root 权限，所有"root"都是 proot 假装的。
 - **rootfs 完整性**：解压后写 `version.txt` + SHA-256，启动时校验。
 
@@ -641,7 +661,7 @@ MoFox-Android/
 
 | 层 | 工具 | 范围 |
 | --- | --- | --- |
-| 单元 | `flutter_test` | Notifier 状态机、命令拼装、错误格式化 |
+| 单元 | `flutter_test` | Notifier 状态机、命令拼装、AI 动作解析/策略、错误格式化 |
 | Widget | `flutter_test` | 向导每一步、设置面板、终端壳 |
 | 集成 | `integration_test` | 真机 / 模拟器跑完整 OOBE、实例安装与外部浏览器 intent |
 | Kotlin | JUnit + Robolectric | RootfsInstaller、CommandBuilder、FakeProcSysdata |
@@ -668,6 +688,7 @@ CI 阶段：
 | **NapCat 网络敏感** | NapCat 安装走 GitHub 原始链接，国内可能慢。OOBE 内置 4 个 GitHub 加速代理，按延迟自动选最快。 |
 | **默认浏览器不可用或被禁用** | `launchUrl(..., mode: externalApplication)` 返回失败时显示提示；不回退到内置 WebView。 |
 | **保活仍可能被杀** | 国产 ROM 后台限制极激进。文档明确告诉用户开"自启"+"电池白名单"，并提供一键跳转。**承诺尽力而为，不保证 100%。** |
+| **AI/YOLO 误操作与隐私** | 助手默认副驾驶；YOLO 需显式确认、有限循环和常驻急停。所有动作经过双层本地策略，最近日志需单独授权并脱敏，硬禁止规则不可关闭。 |
 
 ---
 
@@ -684,6 +705,7 @@ CI 阶段：
   - [x] 彩色终端（xterm 主题 + .bashrc 注入）
   - [x] ANSI 彩色日志渲染（AnsiColorText）
   - [x] App 级日志系统（双路输出 + 导出分享）
+  - [x] 终端 AI 运维助手（兼容模型配置、流式对话、动作卡片、副驾驶/YOLO、独立受控执行器）
 - **v0.2**
   - [x] 外观设置页（主题模式 / 动态取色 / 主图模式）
   - [x] 保活体检页

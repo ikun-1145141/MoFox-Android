@@ -9,6 +9,7 @@ import java.io.InputStreamReader
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 class RuntimeProcessManager(
     context: Context,
@@ -21,6 +22,7 @@ class RuntimeProcessManager(
     private val processes = ConcurrentHashMap<String, ManagedProcess>()
     /** 正在进行的 stop/restart 操作标记，防止快速点击导致并发停止脚本互相打架。 */
     private val stopping = ConcurrentHashMap<String, Boolean>()
+    private val assistantProcess = AtomicReference<Process?>(null)
 
     fun status(): Map<String, String> {
         return mapOf(
@@ -75,6 +77,97 @@ class RuntimeProcessManager(
     fun restart(name: String, args: Map<String, String> = emptyMap()) {
         stop(name)
         start(name, args)
+    }
+
+    @Synchronized
+    fun runAssistantCommand(command: String, cwd: String): AssistantCommandResult {
+        if (!installer.isBootstrapped()) error("Runtime bootstrap is not installed")
+        validateAssistantCommand(command, cwd)
+        if (assistantProcess.get()?.isAlive == true) error("An assistant command is already running")
+        val script = scripts.assistantCommandScript(cwd, command)
+        val builder = ProcessBuilder(commandBuilder.scriptCommand(script))
+            .directory(installer.homeDir)
+            .redirectErrorStream(true)
+        builder.environment().putAll(commandBuilder.environment())
+        val process = builder.start()
+        if (!assistantProcess.compareAndSet(null, process)) {
+            process.destroyForcibly()
+            error("An assistant command is already running")
+        }
+        val output = StringBuilder()
+        var truncated = false
+        val reader = executor.submit {
+            val buffer = CharArray(2048)
+            InputStreamReader(process.inputStream, Charsets.UTF_8).use { stream ->
+                while (true) {
+                    val count = stream.read(buffer)
+                    if (count <= 0) break
+                    if (output.length < MAX_ASSISTANT_OUTPUT_CHARS) {
+                        val remaining = MAX_ASSISTANT_OUTPUT_CHARS - output.length
+                        output.append(buffer, 0, minOf(count, remaining))
+                        if (count > remaining) truncated = true
+                    } else {
+                        truncated = true
+                    }
+                }
+            }
+        }
+        var timedOut = false
+        val exitCode = try {
+            if (process.waitFor(ASSISTANT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.exitValue()
+            } else {
+                timedOut = true
+                process.destroyForcibly()
+                process.waitFor(5, TimeUnit.SECONDS)
+                -1
+            }
+        } finally {
+            try {
+                reader.get(5, TimeUnit.SECONDS)
+            } finally {
+                assistantProcess.compareAndSet(process, null)
+            }
+        }
+        return AssistantCommandResult(exitCode, output.toString(), timedOut, truncated)
+    }
+
+    fun cancelAssistantCommand() {
+        assistantProcess.getAndSet(null)?.destroyForcibly()
+    }
+
+    private fun validateAssistantCommand(command: String, cwd: String) {
+        require(command.isNotBlank() && command.length <= 512) { "Invalid assistant command length" }
+        require(command.none { it.code < 0x20 || it.code == 0x7f }) { "Control characters are forbidden" }
+        require(cwd.length <= 512 && cwd.split('/').none { it == ".." }) { "Invalid assistant cwd" }
+        require(cwd == "/root" || cwd.startsWith("/root/instances/")) { "Assistant cwd is outside the allowed scope" }
+        require(!Regex("[;&|><`]|\\$\\(").containsMatchIn(command)) { "Shell operators are forbidden" }
+        require(!Regex("(?i)(api[_-]?key|password|token|cookie|secret|/etc/(shadow|passwd)|\\.ssh/)").containsMatchIn(command)) {
+            "Sensitive data access is forbidden"
+        }
+        require(!Regex("(?i)(^|\\s)(/sdcard|/storage|/data|/dev|/sys|/proc/[^\\s]*/(environ|cmdline)|/root/\\.[^\\s]*)").containsMatchIn(command)) {
+            "Private paths are forbidden"
+        }
+        require(!Regex("(^|\\s)\\.\\.(/|\\s|$)").containsMatchIn(command)) { "Parent traversal is forbidden" }
+        val parts = command.trim().split(Regex("\\s+"))
+        val executable = parts.first().lowercase()
+        val allowed = setOf("pwd", "ls", "df", "du", "free", "uname", "id", "whoami", "date", "uptime", "git", "python", "python3", "pip", "pip3")
+        require(executable in allowed) { "Command is not in the assistant allowlist" }
+        if (executable == "git") {
+            require(parts.getOrNull(1) in setOf("status", "branch", "rev-parse")) {
+                "Only read-only git commands are allowed"
+            }
+        }
+        if (executable == "python" || executable == "python3") {
+            require(parts.getOrNull(1) in setOf("--version", "-V", "--help", "-h")) {
+                "Python code execution is forbidden"
+            }
+        }
+        if (executable == "pip" || executable == "pip3") {
+            require(parts.getOrNull(1) in setOf("list", "show", "check")) {
+                "Package changes are forbidden"
+            }
+        }
     }
 
     fun runInstallTask(task: String, args: Map<String, String>): InstallTaskResult {
@@ -229,6 +322,8 @@ private fun ArrayDeque<String>.addBounded(line: String) {
 }
 
 private const val MAX_INSTALL_RESULT_LOG_LINES = 300
+private const val MAX_ASSISTANT_OUTPUT_CHARS = 32_768
+private const val ASSISTANT_TIMEOUT_SECONDS = 30L
 
 data class ManagedProcess(
     val process: Process?,
@@ -241,6 +336,13 @@ data class InstallTaskResult(
     val logs: List<String>,
     val qrPayload: String?,
     val error: String?,
+)
+
+data class AssistantCommandResult(
+    val exitCode: Int,
+    val output: String,
+    val timedOut: Boolean,
+    val truncated: Boolean,
 )
 
 class RuntimeEventBus {

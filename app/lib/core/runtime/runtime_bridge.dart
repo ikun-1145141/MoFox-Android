@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../features/dashboard/domain/system_stats.dart';
+import '../../features/assistant/domain/assistant_models.dart';
 import '../../features/file_manager/domain/rootfs_file_exception.dart';
 import '../../features/file_manager/domain/rootfs_file_models.dart';
 import '../../features/file_manager/domain/rootfs_file_scope.dart';
@@ -235,6 +236,26 @@ class RuntimeBridge {
       <String, Object>{'sessionId': sessionId},
     );
   }
+
+  /// 在独立、受限的一次性进程中执行 AI 助手已经通过本地策略的命令。
+  ///
+  /// 该进程不与人的 PTY 共享状态，并由原生端再次执行白名单校验、超时和输出上限。
+  Future<AssistantCommandResult> runAssistantCommand(
+    String command, {
+    required String cwd,
+  }) async {
+    final result = await _channel.invokeMethod<Map<Object?, Object?>>(
+      'runAssistantCommand',
+      <String, Object>{'command': command, 'cwd': cwd},
+    );
+    return AssistantCommandResult.fromMap(
+      result ?? const <Object?, Object?>{},
+    );
+  }
+
+  /// 停止当前 AI 一次性命令；没有命令运行时为无操作。
+  Future<void> cancelAssistantCommand() =>
+      _channel.invokeMethod<void>('cancelAssistantCommand');
 
   /// 读取 rootfs 内的文件内容（文本）。文件不存在返回空字符串。
   Future<String> readFile(String rootfsPath) async {

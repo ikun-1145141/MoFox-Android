@@ -422,6 +422,7 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
                           extra: <String, String>{
                             'cwd': instance.repoPath,
                             'title': '${instance.name} - Bot 目录',
+                            'instanceId': instance.id,
                           },
                         ),
                         icon: const Icon(Icons.terminal, size: 18),

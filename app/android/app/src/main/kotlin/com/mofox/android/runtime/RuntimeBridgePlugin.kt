@@ -30,11 +30,13 @@ class RuntimeBridgePlugin {
     private val shellSessions = ConcurrentHashMap<String, ShellSession>()
     private var channel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
+    private var processManager: RuntimeProcessManager? = null
 
     fun attach(engine: FlutterEngine, context: Context) {
         val appContext = context.applicationContext
         val installer = RootfsInstaller(appContext)
         val processManager = RuntimeProcessManager(appContext, installer, events)
+        this.processManager = processManager
         val fileService = RuntimeFileService(RootfsPathResolver(installer.ubuntuPath))
 
         channel = MethodChannel(engine.dartExecutor.binaryMessenger, "mofox/runtime").also {
@@ -106,6 +108,21 @@ class RuntimeBridgePlugin {
                         val sessionId = call.argument<String>("sessionId")
                             ?: error("Missing sessionId")
                         closeShell(sessionId)
+                        null
+                    }
+                    "runAssistantCommand" -> runAsync(result) {
+                        val command = call.argument<String>("command") ?: error("Missing command")
+                        val cwd = call.argument<String>("cwd") ?: "/root"
+                        val commandResult = processManager.runAssistantCommand(command, cwd)
+                        mapOf(
+                            "exitCode" to commandResult.exitCode,
+                            "output" to commandResult.output,
+                            "timedOut" to commandResult.timedOut,
+                            "truncated" to commandResult.truncated,
+                        )
+                    }
+                    "cancelAssistantCommand" -> runAsync(result) {
+                        processManager.cancelAssistantCommand()
                         null
                     }
                     "readFile" -> runAsync(result) {
@@ -220,6 +237,8 @@ class RuntimeBridgePlugin {
         channel = null
         eventChannel = null
         events.attach(null)
+        processManager?.cancelAssistantCommand()
+        processManager = null
         shellSessions.keys.toList().forEach(::closeShell)
         fileExecutor.shutdown()
         executor.shutdownNow()
