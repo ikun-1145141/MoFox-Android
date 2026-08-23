@@ -147,6 +147,28 @@ class AssistantNotifier
     }
   }
 
+  Future<void> retryMessage(int index) async {
+    if (state.isBusy || index < 0 || index >= state.messages.length) return;
+    final message = state.messages[index];
+    if (message.role == AssistantRole.system) return;
+    _stopped = false;
+    state = state.copyWith(
+      messages: state.messages.sublist(0, index),
+      phase: AssistantPhase.idle,
+      streamedText: '',
+      pendingAction: null,
+      policyResult: null,
+      errorMessage: null,
+      executionOutput: null,
+      yoloSteps: 0,
+    );
+    if (message.role == AssistantRole.user) {
+      await send(message.text);
+    } else {
+      await _requestModel();
+    }
+  }
+
   Future<void> _requestModel() async {
     final settings = await ref.read(assistantSettingsProvider.future);
     if (!settings.configured) {

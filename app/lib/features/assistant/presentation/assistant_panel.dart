@@ -197,18 +197,27 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                for (final message in state.messages)
-                  if (message.role != AssistantRole.system)
-                    _MessageBubble(message: message),
+                for (var index = 0; index < state.messages.length; index++)
+                  if (state.messages[index].role != AssistantRole.system)
+                    AssistantMessageBubble(
+                      message: state.messages[index],
+                      onRetry: state.isBusy
+                          ? null
+                          : () => notifier.retryMessage(index),
+                    ),
                 if (state.streamedText.isNotEmpty)
-                  _MessageBubble(
+                  AssistantMessageBubble(
                     message: AssistantMessage(
                       role: AssistantRole.assistant,
                       text: state.streamedText,
                     ),
                   ),
-                if (state.executionOutput != null)
-                  _ExecutionCard(output: state.executionOutput!),
+                if (state.phase == AssistantPhase.executing ||
+                    state.executionOutput != null)
+                  AssistantExecutionCard(
+                    running: state.phase == AssistantPhase.executing,
+                    output: state.executionOutput,
+                  ),
                 if (state.pendingAction != null)
                   _ActionCard(
                     action: state.pendingAction!,
@@ -273,14 +282,40 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
   }
 }
 
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({required this.message});
+class AssistantMessageBubble extends StatefulWidget {
+  const AssistantMessageBubble({
+    required this.message,
+    this.onRetry,
+    super.key,
+  });
 
   final AssistantMessage message;
+  final VoidCallback? onRetry;
+
+  @override
+  State<AssistantMessageBubble> createState() => _AssistantMessageBubbleState();
+}
+
+class _AssistantMessageBubbleState extends State<AssistantMessageBubble> {
+  final _selectionKey = GlobalKey<SelectionAreaState>();
+
+  void _selectAll() {
+    _selectionKey.currentState?.selectableRegion
+        .selectAll(SelectionChangedCause.toolbar);
+  }
+
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.message.text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('消息已复制')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final user = message.role == AssistantRole.user;
+    final user = widget.message.role == AssistantRole.user;
     final scheme = Theme.of(context).colorScheme;
     return Align(
       alignment: user ? Alignment.centerRight : Alignment.centerLeft,
@@ -292,11 +327,51 @@ class _MessageBubble extends StatelessWidget {
           color: user ? scheme.primaryContainer : scheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: SelectableText(message.text),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            SelectionArea(
+              key: _selectionKey,
+              child: Text(widget.message.text),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 2,
+              runSpacing: 2,
+              children: <Widget>[
+                TextButton.icon(
+                  onPressed: _selectAll,
+                  icon: const Icon(Icons.select_all, size: 18),
+                  label: const Text('选择'),
+                  style: _messageActionStyle,
+                ),
+                TextButton.icon(
+                  onPressed: _copy,
+                  icon: const Icon(Icons.copy_outlined, size: 18),
+                  label: const Text('复制'),
+                  style: _messageActionStyle,
+                ),
+                TextButton.icon(
+                  onPressed: widget.onRetry,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('重试'),
+                  style: _messageActionStyle,
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
 }
+
+final ButtonStyle _messageActionStyle = TextButton.styleFrom(
+  visualDensity: VisualDensity.compact,
+  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+  minimumSize: const Size(0, 32),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
 
 class _ActionCard extends StatelessWidget {
   const _ActionCard({
@@ -371,26 +446,75 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-class _ExecutionCard extends StatelessWidget {
-  const _ExecutionCard({required this.output});
+class AssistantExecutionCard extends StatefulWidget {
+  const AssistantExecutionCard({
+    required this.running,
+    this.output,
+    super.key,
+  });
 
-  final String output;
+  final bool running;
+  final String? output;
+
+  @override
+  State<AssistantExecutionCard> createState() => _AssistantExecutionCardState();
+}
+
+class _AssistantExecutionCardState extends State<AssistantExecutionCard> {
+  late bool _expanded = widget.running;
+
+  @override
+  void didUpdateWidget(covariant AssistantExecutionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.running && !widget.running) _expanded = false;
+    if (!oldWidget.running && widget.running) _expanded = true;
+  }
 
   @override
   Widget build(BuildContext context) {
     return Card(
       color: Theme.of(context).colorScheme.secondaryContainer,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.fromLTRB(12, 6, 8, 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const Text('执行结果'),
-            const SizedBox(height: 6),
-            SelectableText(
-              output,
-              style: const TextStyle(fontFamily: 'monospace'),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(widget.running ? '正在执行命令…' : '执行结果'),
+                ),
+                TextButton.icon(
+                  onPressed: widget.running
+                      ? null
+                      : () => setState(() => _expanded = !_expanded),
+                  icon: Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  label: Text(_expanded ? '收起' : '展开'),
+                ),
+              ],
             ),
+            if (widget.running) const LinearProgressIndicator(),
+            if (_expanded && widget.output != null) ...<Widget>[
+              const SizedBox(height: 6),
+              SelectionArea(
+                child: Text(
+                  widget.output!,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => Clipboard.setData(
+                    ClipboardData(text: widget.output!),
+                  ),
+                  icon: const Icon(Icons.copy_outlined),
+                  label: const Text('复制结果'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
