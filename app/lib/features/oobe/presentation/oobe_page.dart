@@ -11,7 +11,7 @@ import 'widgets/keepalive_step.dart';
 import 'widgets/system_check_step.dart';
 import 'widgets/welcome_step.dart';
 
-/// OOBE 一次性引导：欢迎 → 体检 → 保活 → 完成。
+/// OOBE 一次性引导：欢迎 → 体检 → 运行环境 → 保活 → 完成。
 class OobePage extends ConsumerWidget {
   const OobePage({super.key});
 
@@ -95,9 +95,10 @@ class OobePage extends ConsumerWidget {
                   if (canGoBack) const SizedBox(width: 12),
                   Expanded(
                     child: FilledButton(
-                      // extractRuntime 这步要等原生任务跑完才能放行：
-                      // running 时禁用，failure 时也禁用（用户应当点卡片里的「重试」按钮）。
-                      onPressed: _canAdvance(flow.current, flow.result)
+                      onPressed: _canUsePrimaryAction(
+                        flow.current,
+                        flow.result,
+                      )
                           ? () async {
                               if (isLast) {
                                 await markOobeDone(ref);
@@ -106,10 +107,17 @@ class OobePage extends ConsumerWidget {
                                 }
                                 return;
                               }
+                              if (flow.current == OobeStep.extractRuntime &&
+                                  flow.result is! OobeStepSuccess) {
+                                await notifier.runRuntimeInstall();
+                                return;
+                              }
                               notifier.completeStep();
                             }
                           : null,
-                      child: Text(_primaryLabel(flow.current)),
+                      child: Text(
+                        _primaryLabel(flow.current, flow.result),
+                      ),
                     ),
                   ),
                 ],
@@ -134,20 +142,23 @@ class OobePage extends ConsumerWidget {
     );
   }
 
-  String _primaryLabel(OobeStep step) => switch (step) {
+  String _primaryLabel(OobeStep step, OobeStepResult result) => switch (step) {
         OobeStep.welcome => '同意并继续',
-        OobeStep.extractRuntime => '继续',
+        OobeStep.extractRuntime => switch (result) {
+            OobeStepPending() => '开始准备',
+            OobeStepRunning() => '正在准备…',
+            OobeStepFailure() => '重试',
+            OobeStepSuccess() => '继续',
+          },
         OobeStep.done => '开始使用',
         _ => '下一步',
       };
 
-  /// 当前步是否允许点「下一步」放行。
-  ///
-  /// 只有 extractRuntime 在执行原生任务，需要等 success 才放行；
-  /// 其它步默认可放行。
-  bool _canAdvance(OobeStep step, OobeStepResult result) {
+  /// 运行环境页的主按钮兼任“开始 / 重试 / 继续”；执行中不可重复触发。
+  bool _canUsePrimaryAction(OobeStep step, OobeStepResult result) {
     if (step != OobeStep.extractRuntime) return true;
-    return result is OobeStepSuccess;
+    return result is! OobeStepRunning &&
+        (result is! OobeStepFailure || result.recoverable);
   }
 }
 

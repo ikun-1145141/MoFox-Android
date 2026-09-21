@@ -119,8 +119,9 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       action: 'start-napcat',
       busyLabel: 'NapCat 启动中',
       run: (runtime) async {
+        await _ensureNapcatReady(runtime);
         final args = _napcatArgs(instance);
-        appLogger.i('process: starting napcat process directly');
+        appLogger.i('process: starting napcat process');
         await runtime.startProcess('napcat', args: args);
         // 给 napcat 进程 2 秒稳定时间，避免 refreshStatus 读到刚启动还未就绪的状态
         await Future<void>.delayed(const Duration(seconds: 2));
@@ -151,11 +152,49 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   Future<void> restartNapcat(Instance instance) => _runNapcatAction(
         action: 'restart-napcat',
         busyLabel: 'NapCat 重启中',
-        run: (runtime) => runtime.restartProcess(
-          'napcat',
-          args: _napcatArgs(instance),
-        ),
+        run: (runtime) async {
+          await _ensureNapcatReady(runtime);
+          await runtime.restartProcess(
+            'napcat',
+            args: _napcatArgs(instance),
+          );
+        },
       );
+
+  /// OOBE 允许跳过 NapCat，因此第一次真正使用它时在这里做幂等安装。
+  /// 原生安装任务会检测已有文件；已安装设备只做快速校验，不会重复下载。
+  Future<void> _ensureNapcatReady(RuntimeBridge runtime) async {
+    const taskNames = <String>['installNapcat', 'verifyNapcat'];
+    final streamedTasks = <String>{};
+    final subscription = runtime
+        .installEvents()
+        .where(
+          (event) => taskNames.contains(event.task),
+        )
+        .listen((event) {
+      streamedTasks.add(event.task);
+      _appendNapcatLog(event.line);
+    });
+
+    try {
+      for (final task in taskNames) {
+        final label = task == 'installNapcat' ? '准备 NapCat' : '校验 NapCat';
+        _appendNapcatLog('[control] $label…');
+        final result = await runtime.runInstallTask(task);
+        if (!streamedTasks.contains(task)) {
+          for (final line in result.logs) {
+            _appendNapcatLog(line);
+          }
+        }
+        if (!result.success) {
+          throw _NapcatSetupException(result.error ?? '$label失败');
+        }
+        _appendNapcatLog('[control] $label完成');
+      }
+    } finally {
+      await subscription.cancel();
+    }
+  }
 
   Future<void> refreshStatus() async {
     try {
@@ -317,6 +356,15 @@ List<String> _tail(List<String> logs) {
 }
 
 const int _maxLogs = 400;
+
+class _NapcatSetupException implements Exception {
+  const _NapcatSetupException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 final processConsoleProvider =
     NotifierProvider<ProcessConsoleNotifier, ProcessConsoleState>(

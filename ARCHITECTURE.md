@@ -117,12 +117,12 @@ WebUI 不在 Flutter 组件树内渲染。实例详情页使用 `url_launcher` �
 
 1. **欢迎与隐私同意**（`welcome_step`）：展示品牌、协议（AGPL-3.0）、隐私政策、EULA，用户点击"同意并继续"。
 2. **系统体检**（`system_check_step`）：当前为 UI 占位检查，展示 arm64-v8a、磁盘、内存和 Android API 要求；尚未接入 `RuntimeBridge.probe()`，不能作为真实硬件检测结果。
-3. **解压运行时**（`extract_runtime_step`）：解压 Debian 13 (trixie) rootfs、首次启动 proot、`apt update && apt install` 基础工具链，并安装全局 NapCat。最后单独执行 NapCat 完整性复查（QQ 可执行文件、`napcat.mjs`、启动加载器、`package.json` 注入、`xvfb-run` 与 MoFox 启动脚本）；任一项缺失均以非 0 退出码中止 OOBE。自动开跑，失败可重试。日志用 `AnsiColorText` 彩色渲染。
+3. **解压运行时**（`extract_runtime_step`）：用户先确认组件，再开始解压 Debian 13 (trixie) rootfs、首次启动 proot、`apt update && apt install` 基础工具链。NapCat 默认不安装，只有用户显式开启开关后才安装并执行完整性复查（QQ 可执行文件、`napcat.mjs`、启动加载器、`package.json` 注入、`xvfb-run` 与 MoFox 启动脚本）；失败可重试。日志用 `AnsiColorText` 彩色渲染。
 4. **保活授权引导**（`keepalive_step`）：通知权限、忽略电池优化、厂商自启动引导。
 
 完成后写 `SharedPreferences.oobe_done = true`，路由 redirect 自动跳到 `/home`。
 
-> **OOBE ≠ Wizard**：OOBE 只做全局一次性的事情（rootfs 解压、apt 依赖、NapCat 安装与复查、保活授权）。创建 Bot 实例走 §5.2 的 Wizard，可反复创建多个实例。
+> **OOBE ≠ Wizard**：OOBE 只做全局一次性的事情（rootfs 解压、apt 依赖、可选的 NapCat 安装与复查、保活授权）。跳过 NapCat 后，首次主动启动时会幂等补装并复查。创建 Bot 实例走 §5.2 的 Wizard，可反复创建多个实例。
 
 ### 5.2 实例创建向导（`app/lib/features/wizard/`）
 
@@ -433,6 +433,10 @@ sequenceDiagram
     K->>P: exec proot ... apt update && apt install ...
     P-->>K: stdout 日志
     K-->>F: EventChannel 推送日志
+    opt 用户选择安装 NapCat
+        F->>K: runInstallTask("installNapcat")
+        F->>K: runInstallTask("verifyNapcat")
+    end
     F->>F: 保活授权引导
     F->>F: markOobeDone()
     F-->>U: 跳转首页 /home

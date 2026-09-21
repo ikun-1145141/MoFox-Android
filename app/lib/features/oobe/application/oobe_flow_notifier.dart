@@ -12,11 +12,15 @@ class OobeFlowState {
   const OobeFlowState({
     required this.current,
     required this.result,
+    required this.installNapcat,
     this.logs = const <String>[],
   });
 
   final OobeStep current;
   final OobeStepResult result;
+
+  /// 是否在首次初始化时一并安装 NapCat。默认关闭，必须由用户主动选择。
+  final bool installNapcat;
 
   /// `extractRuntime` 阶段的实时日志（成功后保留供翻看）。
   final List<String> logs;
@@ -24,17 +28,20 @@ class OobeFlowState {
   OobeFlowState copyWith({
     OobeStep? current,
     OobeStepResult? result,
+    bool? installNapcat,
     List<String>? logs,
   }) =>
       OobeFlowState(
         current: current ?? this.current,
         result: result ?? this.result,
+        installNapcat: installNapcat ?? this.installNapcat,
         logs: logs ?? this.logs,
       );
 
   static const OobeFlowState initial = OobeFlowState(
     current: OobeStep.welcome,
     result: OobeStepPending(),
+    installNapcat: false,
   );
 }
 
@@ -64,6 +71,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       result: next == OobeStep.done
           ? const OobeStepSuccess()
           : const OobeStepPending(),
+      installNapcat: state.installNapcat,
       logs: state.logs,
     );
   }
@@ -84,12 +92,20 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       result: step == OobeStep.extractRuntime && _runtimeInstallCompleted
           ? const OobeStepSuccess()
           : const OobeStepPending(),
+      installNapcat: state.installNapcat,
       logs: state.logs,
     );
   }
 
+  /// 修改可选组件。安装执行期间或完成后锁定，避免任务计划与界面选择不一致。
+  void setInstallNapcat(bool value) {
+    if (_runtimeInstallStarted || _runtimeInstallCompleted) return;
+    state = state.copyWith(installNapcat: value);
+  }
+
   /// 跑 OOBE 的 extractRuntime 阶段：
-  /// `extractRootfs` → `installRuntimeDeps` → `installNapcat` → `verifyNapcat`。
+  /// 始终执行 `extractRootfs` → `installRuntimeDeps`；只有用户显式选择时才继续
+  /// `installNapcat` → `verifyNapcat`。
   ///
   /// 这些全是「全局一次性」的事情。每次只跑一遍，靠 `_runtimeInstallStarted`
   /// 防止用户来回切步骤导致重入。失败后会把 flag 重置，按重试按钮可以再来一次。
@@ -100,13 +116,19 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
     }
     if (_runtimeInstallStarted) return;
     _runtimeInstallStarted = true;
-    appLogger.i('oobe: runRuntimeInstall start');
+    final installNapcat = state.installNapcat;
+    appLogger.i(
+      'oobe: runRuntimeInstall start installNapcat=$installNapcat',
+    );
 
     final platform = ref.read(platformGatewayProvider);
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
       result: const OobeStepRunning('解压运行环境…'),
-      logs: <String>['[info] 开始安装 MoFox 运行环境'],
+      logs: <String>[
+        '[info] 开始安装 MoFox 运行环境',
+        if (!installNapcat) '[info] 已选择跳过可选组件 NapCat',
+      ],
     );
     _pendingLogs.clear();
 
@@ -116,20 +138,15 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
 
     try {
       await _setKeepScreenOn(platform, enabled: true);
-      const tasks = <_RuntimeTask>[
-        _RuntimeTask(name: 'extractRootfs', label: '解压 Debian 13 rootfs'),
-        _RuntimeTask(name: 'installRuntimeDeps', label: '安装 apt 基础依赖'),
-        _RuntimeTask(name: 'installNapcat', label: '安装全局 NapCat'),
-        _RuntimeTask(name: 'verifyNapcat', label: '复查 NapCat 安装'),
-      ];
+      final tasks = oobeRuntimeTasks(installNapcat: installNapcat);
       for (final task in tasks) {
         state = state.copyWith(result: OobeStepRunning(task.label));
         _appendLog('[run] ${task.label}…');
-        appLogger.i('oobe: run task=${task.name}');
-        final result = await runtime.runInstallTask(task.name);
+        appLogger.i('oobe: run task=${task.nativeName}');
+        final result = await runtime.runInstallTask(task.nativeName);
         if (!result.success) {
           final msg = result.error ?? '${task.label} 失败';
-          appLogger.e('oobe: task=${task.name} failed: $msg');
+          appLogger.e('oobe: task=${task.nativeName} failed: $msg');
           _appendLog('[error] $msg');
           _flushLogs();
           _runtimeInstallStarted = false;
@@ -140,10 +157,16 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
         }
         _appendLog('[ok] ${task.label} 完成');
       }
-      _appendLog('[done] 运行环境就绪');
+      _appendLog(
+        installNapcat
+            ? '[done] 运行环境和 NapCat 已就绪'
+            : '[done] 基础运行环境已就绪（未安装 NapCat）',
+      );
       _flushLogs();
       _runtimeInstallCompleted = true;
-      appLogger.i('oobe: runtime install completed');
+      appLogger.i(
+        'oobe: runtime install completed installNapcat=$installNapcat',
+      );
       state = state.copyWith(result: const OobeStepSuccess());
     } on PlatformException catch (e) {
       final msg = e.message ?? '原生错误 (${e.code})';
@@ -201,12 +224,6 @@ String _trimLogLine(String line) {
 
 const int _maxRuntimeLogLines = 300;
 const int _maxRuntimeLogLineChars = 600;
-
-class _RuntimeTask {
-  const _RuntimeTask({required this.name, required this.label});
-  final String name;
-  final String label;
-}
 
 final oobeFlowProvider =
     NotifierProvider<OobeFlowNotifier, OobeFlowState>(OobeFlowNotifier.new);

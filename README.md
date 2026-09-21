@@ -8,7 +8,7 @@
 
 ## 功能
 
-- **OOBE 一次性引导**：欢迎 → 系统体检 → 解压 rootfs → 保活授权，四步完成。
+- **OOBE 一次性引导**：欢迎 → 系统体检 → 准备 rootfs（NapCat 可选）→ 保活授权，四步完成。
 - **实例管理**：支持创建多个 Bot 实例，每个实例独立目录（`/root/instances/<id>/`），可启停、续装、查看日志。
 - **实例创建向导**：镜像源检测 → EULA → 实例信息 → 账号 → 模型 → 网络 → 摘要 → 安装，八步表单 + 彩色安装日志。
 - **首页概览**：CPU / 内存 / 存储使用率，主图模式（沉浸 / 紧凑 / 隐藏）。
@@ -157,7 +157,7 @@ python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 - `Missing runtime asset: jniLibs/<abi>/libproot.so` 或 `assets/rootfs/debian-13-*.tar.xz`：本地 APK 没带运行时资产。按上面"本地手动准备运行时资产"准备齐全后重建。
 - 真机首启卡在 `安装系统依赖` / `apt install`：通常是设备网络或镜像源问题。OOBE 内置镜像源切换（清华 / 中科大 / 阿里 / 官方），可在向导日志页或设置内切换重试。
-- 真机首启卡在 `安装 NapCat`：NapCat 走 GitHub 原始链接，国内可能慢。OOBE 内置多个 GitHub 加速代理自动测延迟。
+- 安装 NapCat 卡住：NapCat 走 GitHub 原始链接，国内可能慢。可在 OOBE 中暂不安装；首次主动启动 NapCat 时 App 会再次安装并校验。
 - `找不到 flutter`：确认 Flutter 已加入 `PATH`，或安装 / 配置 `fvm` 的默认版本。脚本也会尝试 `~/fvm/default/bin/flutter(.bat)`。
 - Release APK 默认未签名；正式分发前需要按 Android 签名流程配置 keystore。
 

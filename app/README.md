@@ -17,14 +17,14 @@ Neo-MoFox 的安卓原生外壳 App。应用负责 OOBE、内嵌 proot Linux 运
 7. 摘要确认：展示用户协议状态、镜像源、实例配置和默认组件。
 8. 安装执行：从所选镜像源克隆 Neo-MoFox、同步依赖、生成配置、安装 WebUI、写入 NapCat 配置。
 
-## 默认组件
+## 可选组件
 
-NapCat 与 WebUI 不再提供选择开关，所有新实例默认安装并配置：
+OOBE 默认只安装 Debian 与基础依赖，不强制下载 NapCat：
 
-- NapCat：用于 OneBot v11 协议接入和 QQ 扫码登录。
-- WebUI：用于浏览器中可视化管理 Bot。
+- NapCat：OOBE 中可主动勾选；若暂时跳过，首次启动 NapCat 时会自动完成幂等安装与校验。
+- WebUI：实例向导中可选择是否安装，用于浏览器中可视化管理 Bot。
 
-NapCat 二维码会在用户启动 NapCat 时展示，安装向导只负责安装和写入配置。
+实例安装向导会提前写入 NapCat 配置；二维码会在用户启动 NapCat 时展示。
 
 ## 断点续装与未完成实例
 
