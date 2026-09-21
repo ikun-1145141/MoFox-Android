@@ -9,6 +9,7 @@ import '../domain/rootfs_file_exception.dart';
 import '../domain/rootfs_file_models.dart';
 import '../domain/toml_diagnostic.dart';
 import 'widgets/toml_editing_controller.dart';
+import 'widgets/line_number_gutter.dart';
 
 /// TOML 文件编辑页。
 ///
@@ -29,6 +30,7 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
   late final FocusNode _focusNode;
   late final ScrollController _scrollController;
   bool _controllerSynced = false;
+  String _lastSubmittedText = '';
 
   @override
   void initState() {
@@ -41,6 +43,11 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
 
   void _onTextChanged() {
     if (!_controllerSynced) return;
+    if (_controller.text == _lastSubmittedText) {
+      if (mounted) setState(() {});
+      return;
+    }
+    _lastSubmittedText = _controller.text;
     ref
         .read(tomlEditorProvider(_editorKey).notifier)
         .updateText(_controller.text);
@@ -63,10 +70,12 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(tomlEditorProvider(_editorKey));
-    // 首次 ready 时把加载的文本灌入控制器，且只灌一次（避免覆盖用户输入）。
-    if (state.loadStatus == TomlEditorLoadStatus.ready && !_controllerSynced) {
-      _controllerSynced = true;
-      _controller.text = state.text;
+    // 首次加载，或用户明确选择了磁盘版本时同步控制器。
+    // 冲突状态下 state.isDirty 为 true，因此不会覆盖屏幕上的草稿。
+    if (state.loadStatus == TomlEditorLoadStatus.ready &&
+        (!_controllerSynced ||
+            (!state.isDirty && _controller.text != state.text))) {
+      _replaceControllerText(state.text);
     }
     return PopScope(
       canPop: !state.isDirty,
@@ -107,6 +116,16 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
     );
   }
 
+  void _replaceControllerText(String text) {
+    _controllerSynced = false;
+    _lastSubmittedText = text;
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _controllerSynced = true;
+  }
+
   Widget _buildBody(BuildContext context, TomlEditorState state) {
     switch (state.loadStatus) {
       case TomlEditorLoadStatus.loading:
@@ -141,6 +160,12 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
   Widget _buildEditor(BuildContext context, TomlEditorState state) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final editorStyle = textTheme.bodyMedium?.copyWith(
+          fontFamily: 'monospace',
+          fontFamilyFallback: const ['RobotoMono', 'Courier New'],
+          height: 1.4,
+        ) ??
+        const TextStyle(fontFamily: 'monospace', fontSize: 14, height: 1.4);
     return Column(
       children: [
         // 路径面包屑
@@ -196,10 +221,10 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
         Expanded(
           child: Row(
             children: [
-              _LineNumberGutter(
+              LineNumberGutter(
                 controller: _controller,
                 scrollController: _scrollController,
-                textStyle: textTheme.bodyMedium!,
+                textStyle: editorStyle,
               ),
               Expanded(
                 child: TextField(
@@ -208,11 +233,7 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
                   scrollController: _scrollController,
                   maxLines: null,
                   expands: true,
-                  style: textTheme.bodyMedium?.copyWith(
-                    fontFamily: 'monospace',
-                    fontFamilyFallback: const ['RobotoMono', 'Courier New'],
-                    height: 1.4,
-                  ),
+                  style: editorStyle,
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.symmetric(
@@ -344,21 +365,35 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
     _confirmDiscard(context);
   }
 
-  void _showConflictDialog(BuildContext context) {
-    showDialog<void>(
+  Future<void> _showConflictDialog(BuildContext context) async {
+    final choice = await showDialog<_ConflictChoice>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('文件已被外部修改'),
-        content: const Text('磁盘上的文件已被其他程序修改。已重新加载最新内容。'
-            '如需保留你的修改，请先保存为新文件。'),
+        content: const Text('磁盘上的文件已被其他程序修改。'
+            '你的本地草稿仍然保留；可以重新加载磁盘版本，或明确选择覆盖。'),
         actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_ConflictChoice.keepEditing),
+            child: const Text('继续编辑'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(_ConflictChoice.reloadDisk),
+            child: const Text('重新加载'),
+          ),
           FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('了解'),
+            onPressed: () => Navigator.of(ctx).pop(_ConflictChoice.overwrite),
+            child: const Text('覆盖保存'),
           ),
         ],
       ),
     );
+    if (!mounted) return;
+    if (choice == _ConflictChoice.reloadDisk) {
+      ref.read(tomlEditorProvider(_editorKey).notifier).discardLocalChanges();
+    } else if (choice == _ConflictChoice.overwrite) {
+      await _save(this.context);
+    }
   }
 
   void _showDiagnosticsSheet(BuildContext context, TomlEditorState state) {
@@ -423,6 +458,8 @@ class _TomlEditorPageState extends ConsumerState<TomlEditorPage> {
   }
 }
 
+enum _ConflictChoice { keepEditing, reloadDisk, overwrite }
+
 /// 读取 notifier 当前 saveError 或回退到异常 message。
 String state_saveErrorOrFallback(RootfsFileException error) {
   return switch (error.code) {
@@ -431,78 +468,6 @@ String state_saveErrorOrFallback(RootfsFileException error) {
     RootfsFileErrorCode.permissionDenied => '没有写权限',
     _ => error.message,
   };
-}
-
-class _LineNumberGutter extends StatefulWidget {
-  const _LineNumberGutter({
-    required this.controller,
-    required this.scrollController,
-    required this.textStyle,
-  });
-
-  final TomlEditingController controller;
-  final ScrollController scrollController;
-  final TextStyle textStyle;
-
-  @override
-  State<_LineNumberGutter> createState() => _LineNumberGutterState();
-}
-
-class _LineNumberGutterState extends State<_LineNumberGutter> {
-  @override
-  void initState() {
-    super.initState();
-    widget.controller.addListener(_handleChange);
-    widget.scrollController.addListener(_handleChange);
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_handleChange);
-    widget.scrollController.removeListener(_handleChange);
-    super.dispose();
-  }
-
-  void _handleChange() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final lineCount = '\n'.allMatches(widget.controller.text).length + 1;
-    final gutterStyle = widget.textStyle.copyWith(
-      color: scheme.outline,
-      fontSize: widget.textStyle.fontSize! * 0.85,
-    );
-    final metrics = widget.scrollController.positions.isNotEmpty
-        ? widget.scrollController.position
-        : null;
-    final pixels = metrics?.pixels ?? 0;
-    return Container(
-      width: 48,
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      child: ClipRect(
-        child: OverflowBox(
-          minWidth: 48,
-          maxWidth: 48,
-          minHeight: 0,
-          maxHeight: double.infinity,
-          alignment: Alignment.topCenter,
-          child: Transform.translate(
-            offset: Offset(0, -pixels),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                for (var i = 1; i <= lineCount; i++)
-                  Text('$i', style: gutterStyle),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _StatusView extends StatelessWidget {

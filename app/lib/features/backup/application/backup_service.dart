@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/platform/platform_gateway.dart';
+import '../../../core/platform/screen_wake_lock.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../instance/domain/instance.dart';
@@ -339,29 +340,32 @@ class BackupState {
 }
 
 class BackupNotifier extends StateNotifier<BackupState> {
-  BackupNotifier(this._service) : super(const BackupState());
+  BackupNotifier(this._service, this._wakeLock) : super(const BackupState());
 
   final BackupService _service;
+  final ScreenWakeLockController _wakeLock;
 
   Future<String?> exportFullBackup({
     required Instance instance,
     bool includeLogs = true,
   }) async {
     state = state.copyWith(isExporting: true, message: '正在打包…', error: null);
-    try {
-      final uri = await _service.exportFullBackup(
-        instance: instance,
-        includeLogs: includeLogs,
-      );
-      state = state.copyWith(
-        isExporting: false,
-        message: uri != null ? '导出成功' : '已取消',
-      );
-      return uri;
-    } catch (e) {
-      state = state.copyWith(isExporting: false, error: e.toString());
-      return null;
-    }
+    return _wakeLock.keepAwakeWhile(() async {
+      try {
+        final uri = await _service.exportFullBackup(
+          instance: instance,
+          includeLogs: includeLogs,
+        );
+        state = state.copyWith(
+          isExporting: false,
+          message: uri != null ? '导出成功' : '已取消',
+        );
+        return uri;
+      } catch (e) {
+        state = state.copyWith(isExporting: false, error: e.toString());
+        return null;
+      }
+    });
   }
 
   Future<String?> exportSingle({
@@ -370,39 +374,46 @@ class BackupNotifier extends StateNotifier<BackupState> {
     required String exportName,
   }) async {
     state = state.copyWith(isExporting: true, message: '正在导出…', error: null);
-    try {
-      final uri = await _service.exportSingle(
-        rootfsPath: rootfsPath,
-        exportName: exportName,
-      );
-      state = state.copyWith(
-        isExporting: false,
-        message: uri != null ? '导出成功' : '已取消',
-      );
-      return uri;
-    } catch (e) {
-      state = state.copyWith(isExporting: false, error: e.toString());
-      return null;
-    }
+    return _wakeLock.keepAwakeWhile(() async {
+      try {
+        final uri = await _service.exportSingle(
+          rootfsPath: rootfsPath,
+          exportName: exportName,
+        );
+        state = state.copyWith(
+          isExporting: false,
+          message: uri != null ? '导出成功' : '已取消',
+        );
+        return uri;
+      } catch (e) {
+        state = state.copyWith(isExporting: false, error: e.toString());
+        return null;
+      }
+    });
   }
 
   Future<int> importBackup({required Instance instance}) async {
     state = state.copyWith(isImporting: true, message: '正在导入…', error: null);
-    try {
-      final count = await _service.importBackup(instance: instance);
-      state = state.copyWith(
-        isImporting: false,
-        message: count > 0 ? '导入成功（$count 个文件）' : '已取消',
-      );
-      return count;
-    } catch (e) {
-      state = state.copyWith(isImporting: false, error: e.toString());
-      return 0;
-    }
+    return _wakeLock.keepAwakeWhile(() async {
+      try {
+        final count = await _service.importBackup(instance: instance);
+        state = state.copyWith(
+          isImporting: false,
+          message: count > 0 ? '导入成功（$count 个文件）' : '已取消',
+        );
+        return count;
+      } catch (e) {
+        state = state.copyWith(isImporting: false, error: e.toString());
+        return 0;
+      }
+    });
   }
 }
 
 final backupNotifierProvider =
     StateNotifierProvider<BackupNotifier, BackupState>((ref) {
-  return BackupNotifier(ref.watch(backupServiceProvider));
+  return BackupNotifier(
+    ref.watch(backupServiceProvider),
+    ref.watch(screenWakeLockProvider),
+  );
 });

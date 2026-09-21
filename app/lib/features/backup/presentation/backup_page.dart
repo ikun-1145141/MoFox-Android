@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../instance/application/instance_repository.dart';
-import '../../instance/domain/instance.dart';
-import '../application/backup_service.dart';
+import 'package:mofox_android/features/backup/application/backup_service.dart';
+import 'package:mofox_android/features/instance/application/instance_repository.dart';
+import 'package:mofox_android/features/instance/domain/instance.dart';
 
 /// 备份与导出页面。
 ///
@@ -19,7 +19,7 @@ class BackupPage extends ConsumerStatefulWidget {
 }
 
 class _BackupPageState extends ConsumerState<BackupPage> {
-  Instance? _selectedInstance;
+  String? _selectedInstanceId;
   bool _includeLogs = true;
 
   @override
@@ -40,22 +40,30 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               instances.when(
                 data: (list) {
                   if (list.isEmpty) {
+                    _synchronizeSelection(null);
                     return const _InfoTile(text: '暂无实例，请先创建');
                   }
-                  return DropdownButtonFormField<Instance>(
-                    value: _selectedInstance ?? list.first,
+                  final selected = _selectionFor(list);
+                  _synchronizeSelection(selected.id);
+                  return DropdownButtonFormField<String>(
+                    key: ValueKey<String>(
+                      'backup-instance-selector-${selected.id}',
+                    ),
+                    initialValue: selected.id,
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(horizontal: 16),
                     ),
                     items: list
-                        .map((inst) => DropdownMenuItem(
-                              value: inst,
-                              child: Text('${inst.name} (${inst.botQq})'),
-                            ))
+                        .map(
+                          (inst) => DropdownMenuItem(
+                            value: inst.id,
+                            child: Text('${inst.name} (${inst.botQq})'),
+                          ),
+                        )
                         .toList(),
                     onChanged: (value) =>
-                        setState(() => _selectedInstance = value),
+                        setState(() => _selectedInstanceId = value),
                   );
                 },
                 loading: () => const _InfoTile(text: '加载中…'),
@@ -80,8 +88,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.chevron_right),
-                onTap:
-                    backupState.isExporting ? null : () => _exportFullBackup(),
+                onTap: backupState.isExporting ? null : _exportFullBackup,
               ),
               const _Divider(),
               SwitchListTile(
@@ -170,7 +177,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.chevron_right),
-                onTap: backupState.isImporting ? null : () => _importBackup(),
+                onTap: backupState.isImporting ? null : _importBackup,
               ),
             ],
           ),
@@ -214,7 +221,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   }
 
   Future<void> _exportFullBackup() async {
-    final instance = _selectedInstance;
+    final instance = _currentSelection();
     if (instance == null) {
       _showSnackBar('请先选择实例');
       return;
@@ -230,7 +237,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   }
 
   Future<void> _exportSingle(String name, String relativePath) async {
-    final instance = _selectedInstance;
+    final instance = _currentSelection();
     if (instance == null) {
       _showSnackBar('请先选择实例');
       return;
@@ -249,8 +256,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   }
 
   Future<void> _importBackup() async {
-    final instance =
-        _selectedInstance ?? ref.read(instancesProvider).valueOrNull?.first;
+    final instance = _currentSelection();
     if (instance == null) {
       _showSnackBar('请先选择实例');
       return;
@@ -260,7 +266,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       builder: (context) => AlertDialog(
         title: const Text('确认导入备份？'),
         content: Text(
-          '备份中的配置、NapCat 登录态和日志会覆盖实例“${instance.name}”中的同名文件。'
+          '备份中的配置、NapCat 登录态和日志会覆盖实例“${instance.name}”中的同名文件。 '
           '此操作无法撤销，建议先导出当前备份。',
         ),
         actions: <Widget>[
@@ -289,6 +295,30 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  Instance _selectionFor(List<Instance> instances) {
+    final selectedId = _selectedInstanceId;
+    if (selectedId != null) {
+      for (final instance in instances) {
+        if (instance.id == selectedId) return instance;
+      }
+    }
+    return instances.first;
+  }
+
+  Instance? _currentSelection() {
+    final instances = ref.read(instancesProvider).valueOrNull;
+    if (instances == null || instances.isEmpty) return null;
+    return _selectionFor(instances);
+  }
+
+  void _synchronizeSelection(String? instanceId) {
+    if (_selectedInstanceId == instanceId) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedInstanceId == instanceId) return;
+      setState(() => _selectedInstanceId = instanceId);
+    });
   }
 }
 

@@ -3,11 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/router/app_router.dart';
-import '../application/assistant_notifier.dart';
-import '../application/assistant_policy.dart';
-import '../application/assistant_settings_notifier.dart';
-import '../domain/assistant_models.dart';
+import 'package:mofox_android/app/router/app_router.dart';
+import 'package:mofox_android/features/assistant/application/assistant_notifier.dart';
+import 'package:mofox_android/features/assistant/application/assistant_policy.dart';
+import 'package:mofox_android/features/assistant/application/assistant_settings_notifier.dart';
+import 'package:mofox_android/features/assistant/domain/assistant_models.dart';
 
 class AssistantPanel extends ConsumerStatefulWidget {
   const AssistantPanel({
@@ -30,6 +30,8 @@ class AssistantPanel extends ConsumerStatefulWidget {
 class _AssistantPanelState extends ConsumerState<AssistantPanel> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
+  int? _lastContentRevision;
+  bool _forceScrollToBottom = false;
 
   @override
   void dispose() {
@@ -42,7 +44,30 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
     final value = preset ?? _inputController.text;
     if (value.trim().isEmpty) return;
     _inputController.clear();
+    _forceScrollToBottom = true;
     ref.read(assistantProvider(widget.spec).notifier).send(value);
+  }
+
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final position = _scrollController.position;
+    return position.maxScrollExtent - position.pixels <= 72;
+  }
+
+  void _followLatestContent({required bool reduceMotion}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (reduceMotion) {
+        _scrollController.jumpTo(target);
+      } else {
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
   void _explainSelection() {
@@ -76,7 +101,8 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
         ],
       ),
     );
-    if (allowed == true) {
+    if (allowed ?? false) {
+      _forceScrollToBottom = true;
       await ref
           .read(assistantProvider(widget.spec).notifier)
           .sendWithRecentLogs('请结合最近日志诊断 Bot 为什么没有回复。');
@@ -88,43 +114,52 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
     final state = ref.watch(assistantProvider(widget.spec));
     final notifier = ref.read(assistantProvider(widget.spec).notifier);
     final settings = ref.watch(assistantSettingsProvider).valueOrNull;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
+    final yoloEnabled = settings?.yoloEnabled ?? false;
+    final configured = settings?.configured ?? false;
+    final contentRevision = Object.hash(
+      state.messages.length,
+      state.streamedText.length,
+      state.executionOutput?.length,
+      state.pendingAction,
+      state.errorMessage,
+      state.phase,
+    );
+    if (_lastContentRevision != contentRevision) {
+      final shouldFollow = _lastContentRevision == null ||
+          _forceScrollToBottom ||
+          _isNearBottom();
+      _lastContentRevision = contentRevision;
+      _forceScrollToBottom = false;
+      if (shouldFollow) {
+        _followLatestContent(
+          reduceMotion: MediaQuery.maybeOf(context)?.disableAnimations ?? false,
         );
       }
-    });
+    }
     final scheme = Theme.of(context).colorScheme;
     return Material(
       color: scheme.surface,
       child: Column(
         children: <Widget>[
           Container(
-            color: settings?.yoloEnabled == true
+            color: yoloEnabled
                 ? scheme.errorContainer
                 : scheme.surfaceContainerHighest,
             padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
             child: Row(
               children: <Widget>[
                 Icon(
-                  settings?.yoloEnabled == true
-                      ? Icons.bolt
-                      : Icons.auto_awesome,
+                  yoloEnabled ? Icons.bolt : Icons.auto_awesome,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    settings?.yoloEnabled == true
-                        ? 'AI 运维助手 · YOLO 已开启'
-                        : 'AI 运维助手 · 副驾驶',
+                    yoloEnabled ? 'AI 运维助手 · YOLO 已开启' : 'AI 运维助手 · 副驾驶',
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
-                if (settings?.yoloEnabled == true)
+                if (yoloEnabled)
                   TextButton.icon(
                     onPressed: notifier.stop,
                     icon: const Icon(Icons.stop_circle_outlined),
@@ -146,7 +181,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
               ],
             ),
           ),
-          if (settings?.configured != true)
+          if (!configured)
             MaterialBanner(
               content: Text(
                 settings != null &&
@@ -170,8 +205,10 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
               padding: const EdgeInsets.all(12),
               children: <Widget>[
                 if (state.messages.isEmpty) ...<Widget>[
-                  Text('你想维护什么？',
-                      style: Theme.of(context).textTheme.titleMedium),
+                  Text(
+                    '你想维护什么？',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -203,7 +240,10 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
                       message: state.messages[index],
                       onRetry: state.isBusy
                           ? null
-                          : () => notifier.retryMessage(index),
+                          : () {
+                              _forceScrollToBottom = true;
+                              notifier.retryMessage(index);
+                            },
                     ),
                 if (state.streamedText.isNotEmpty)
                   AssistantMessageBubble(
@@ -227,7 +267,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
                       widget.onFillTerminal(state.pendingAction!.command!);
                       notifier.rejectPending();
                     },
-                    onExecute: () => notifier.executePending(),
+                    onExecute: notifier.executePending,
                     onReject: notifier.rejectPending,
                   ),
                 if (state.errorMessage != null)
@@ -243,7 +283,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
           ),
           if (state.isBusy)
             LinearProgressIndicator(
-              color: settings?.yoloEnabled == true ? scheme.error : null,
+              color: yoloEnabled ? scheme.error : null,
             ),
           SafeArea(
             top: false,
@@ -255,7 +295,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
                   Expanded(
                     child: TextField(
                       controller: _inputController,
-                      enabled: !state.isBusy && settings?.configured == true,
+                      enabled: !state.isBusy && configured,
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.newline,
@@ -367,10 +407,9 @@ class _AssistantMessageBubbleState extends State<AssistantMessageBubble> {
 }
 
 final ButtonStyle _messageActionStyle = TextButton.styleFrom(
-  visualDensity: VisualDensity.compact,
-  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-  minimumSize: const Size(0, 32),
-  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+  minimumSize: const Size(64, 48),
+  tapTargetSize: MaterialTapTargetSize.padded,
 );
 
 class _ActionCard extends StatelessWidget {
@@ -411,8 +450,10 @@ class _ActionCard extends StatelessWidget {
             ],
             if (policy != null) ...<Widget>[
               const SizedBox(height: 6),
-              Text(policy!.reason,
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                policy!.reason,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
             const SizedBox(height: 10),
             Wrap(

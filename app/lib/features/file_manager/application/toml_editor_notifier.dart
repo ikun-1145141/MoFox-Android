@@ -55,6 +55,16 @@ class TomlEditorNotifier
     _computeDiagnostics(state.text);
   }
 
+  /// 放弃当前草稿，恢复为最近一次从磁盘读取的内容。
+  ///
+  /// 冲突后 [loadedText] 是外部程序的最新版本，[text] 仍保留
+  /// 用户草稿；只有用户明确选择重新加载时才调用此方法。
+  void discardLocalChanges() {
+    _diagnosticDebounce?.cancel();
+    state = state.copyWith(text: state.loadedText, saveError: null);
+    _computeDiagnostics(state.loadedText);
+  }
+
   Future<void> save() async {
     if (!state.canSave) return;
     final generation = _generation;
@@ -80,8 +90,10 @@ class TomlEditorNotifier
       final friendly = _friendlySaveError(error);
       state = state.copyWith(isSaving: false, saveError: friendly);
       if (error.code == RootfsFileErrorCode.conflict) {
-        // 冲突：刷新以获取最新内容，让用户决定是否覆盖。
-        await _load();
+        await _refreshRevisionAfterConflict(
+          localText: state.text,
+          generation: generation,
+        );
       }
       rethrow;
     } on Object catch (error) {
@@ -92,6 +104,45 @@ class TomlEditorNotifier
         saveError: '保存失败：$error',
       );
       rethrow;
+    }
+  }
+
+  /// 冲突时更新磁盘基线和 revision，但绝不覆盖用户的本地草稿。
+  ///
+  /// 这样页面与 Provider 始终看到同一份待保存文本，用户可以
+  /// 选择放弃草稿，或再次保存并对新 revision 做第二次 CAS。
+  Future<void> _refreshRevisionAfterConflict({
+    required String localText,
+    required int generation,
+  }) async {
+    try {
+      final doc = await _repository.readTextDocument(
+        scope: state.scope,
+        path: state.path,
+      );
+      if (generation != _generation) return;
+      state = state.copyWith(
+        loadedText: doc.text,
+        text: localText,
+        hasUtf8Bom: doc.hasUtf8Bom,
+        newlineStyle: doc.newlineStyle,
+        hasFinalNewline: doc.hasFinalNewline,
+        revision: doc.revision,
+        loadStatus: TomlEditorLoadStatus.ready,
+        isSaving: false,
+        saveError: '文件已被外部修改，你的本地草稿已保留',
+      );
+    } on Object catch (refreshError) {
+      if (generation != _generation) return;
+      appLogger.e(
+        'toml_editor: failed to refresh conflict revision',
+        error: refreshError,
+      );
+      state = state.copyWith(
+        text: localText,
+        isSaving: false,
+        saveError: '文件已被外部修改；本地草稿已保留，但读取新版本失败',
+      );
     }
   }
 
@@ -153,7 +204,7 @@ class TomlEditorNotifier
   }
 
   String _friendlySaveError(RootfsFileException error) => switch (error.code) {
-        RootfsFileErrorCode.conflict => '文件已被外部修改，已重新加载最新内容',
+        RootfsFileErrorCode.conflict => '文件已被外部修改，本地草稿已保留',
         RootfsFileErrorCode.notFound => '文件已不存在',
         RootfsFileErrorCode.permissionDenied => '没有写权限',
         RootfsFileErrorCode.fileTooLarge => '文件超过大小上限',

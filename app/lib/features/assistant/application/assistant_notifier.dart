@@ -78,7 +78,7 @@ class AssistantState {
     int? yoloSteps,
   }) {
     return AssistantState(
-      messages: messages ?? this.messages,
+      messages: messages == null ? this.messages : _boundedMessages(messages),
       phase: phase ?? this.phase,
       streamedText: streamedText ?? this.streamedText,
       pendingAction: identical(pendingAction, _unset)
@@ -99,6 +99,16 @@ class AssistantState {
 }
 
 const Object _unset = Object();
+const int _maxConversationMessages = 100;
+
+List<AssistantMessage> _boundedMessages(List<AssistantMessage> messages) {
+  if (messages.length <= _maxConversationMessages) {
+    return List<AssistantMessage>.unmodifiable(messages);
+  }
+  return List<AssistantMessage>.unmodifiable(
+    messages.sublist(messages.length - _maxConversationMessages),
+  );
+}
 
 class AssistantNotifier
     extends FamilyNotifier<AssistantState, AssistantSessionSpec> {
@@ -406,6 +416,8 @@ class AssistantNotifier
       case AssistantActionType.restartBot:
         final instance = await _currentInstance();
         if (instance == null) throw StateError('当前终端没有关联 Bot 实例');
+        await ref.read(processConsoleProvider.notifier).refreshStatus();
+        _ensureInstanceCanUseProcessSlot(instance);
         await runtime.restartProcess(
           'bot',
           args: <String, String>{
@@ -413,14 +425,21 @@ class AssistantNotifier
             'repoPath': instance.repoPath,
           },
         );
+        await ref.read(processConsoleProvider.notifier).refreshStatus();
         return 'Bot「${instance.name}」已重启。';
       case AssistantActionType.restartNapcat:
         final instance = await _currentInstance();
         if (instance == null) throw StateError('当前终端没有关联 Bot 实例');
+        await ref.read(processConsoleProvider.notifier).refreshStatus();
+        _ensureInstanceCanUseProcessSlot(instance);
         await runtime.restartProcess(
           'napcat',
-          args: <String, String>{'botQq': instance.botQq},
+          args: <String, String>{
+            'instanceId': instance.id,
+            'botQq': instance.botQq,
+          },
         );
+        await ref.read(processConsoleProvider.notifier).refreshStatus();
         return 'NapCat 已重启。';
       case AssistantActionType.mcpTool:
         return ref.read(mofoxDocsMcpProvider).callTool(
@@ -440,6 +459,13 @@ class AssistantNotifier
       }
     }
     return null;
+  }
+
+  void _ensureInstanceCanUseProcessSlot(Instance instance) {
+    final process = ref.read(processConsoleProvider);
+    if (process.hasRunningProcess && !process.isActiveInstance(instance.id)) {
+      throw StateError('另一个实例正在运行，请先停止后再切换实例');
+    }
   }
 
   Future<String> _collectContext() async {

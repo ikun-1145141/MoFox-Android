@@ -3,12 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:mofox_android/features/assistant/application/assistant_notifier.dart';
+import 'package:mofox_android/features/assistant/presentation/assistant_panel.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
+import 'package:mofox_android/features/terminal/application/terminal_session_provider.dart';
 import 'package:xterm/xterm.dart';
-
-import '../../settings/application/app_settings_provider.dart';
-import '../../assistant/application/assistant_notifier.dart';
-import '../../assistant/presentation/assistant_panel.dart';
-import '../application/terminal_session_provider.dart';
 
 /// 终端彩色主题：深色背景 + 标准 16 色 ANSI 调色板。
 ///
@@ -527,6 +526,10 @@ class _TerminalPageState extends ConsumerState<TerminalPage>
                 content: Text('终端异常：$error'),
                 actions: <Widget>[
                   TextButton(
+                    onPressed: session.retry,
+                    child: const Text('重试'),
+                  ),
+                  TextButton(
                     onPressed: session.clearError,
                     child: const Text('关闭'),
                   ),
@@ -725,7 +728,7 @@ class _TerminalShortcutBar extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 52,
+          height: 64,
           child: ListView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -834,8 +837,8 @@ class _TerminalKeyButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: SizedBox(
-        width: 48,
-        height: 36,
+        width: 52,
+        height: 48,
         child: FilledButton.tonal(
           style: FilledButton.styleFrom(
             padding: EdgeInsets.zero,
@@ -876,7 +879,7 @@ class _TerminalIconKeyButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 6),
       child: SizedBox.square(
-        dimension: 36,
+        dimension: 48,
         child: IconButton.filledTonal(
           tooltip: tooltip,
           padding: EdgeInsets.zero,

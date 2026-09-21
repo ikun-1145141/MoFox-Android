@@ -35,6 +35,7 @@ class InstanceFilesPage extends ConsumerWidget {
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
           onPressed: () => context.pop(),
         ),
         title: Text('${args.instanceName} · 文件'),
@@ -120,23 +121,50 @@ class InstanceFilesPage extends ConsumerWidget {
     if (state.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    if (state.errorMessage != null && state.entries.isEmpty) {
-      return _ErrorView(
-        message: state.errorMessage!,
-        onRetry: () => ref.read(fileBrowserProvider(key).notifier).refresh(),
-      );
-    }
     if (state.entries.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: () => ref.read(fileBrowserProvider(key).notifier).refresh(),
-        child: ListView(
-          children: const [
-            SizedBox(height: 120),
-            Center(
-              child: Text('目录为空', style: TextStyle(color: Colors.grey)),
-            ),
-          ],
-        ),
+      return Column(
+        children: <Widget>[
+          FileBreadcrumb(
+            scope: state.scope,
+            path: state.path,
+            onNavigate: (path) =>
+                ref.read(fileBrowserProvider(key).notifier).openDirectory(path),
+          ),
+          Expanded(
+            child: state.errorMessage != null
+                ? _ErrorView(
+                    message: state.errorMessage!,
+                    onRetry: () =>
+                        ref.read(fileBrowserProvider(key).notifier).refresh(),
+                  )
+                : RefreshIndicator(
+                    onRefresh: () =>
+                        ref.read(fileBrowserProvider(key).notifier).refresh(),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: <Widget>[
+                        const SizedBox(height: 120),
+                        Icon(
+                          Icons.folder_open_outlined,
+                          size: 48,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                        const SizedBox(height: 12),
+                        Center(
+                          child: Text(
+                            '目录为空',
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
       );
     }
     return Column(
@@ -176,8 +204,7 @@ class InstanceFilesPage extends ConsumerWidget {
                 ref.read(fileBrowserProvider(key).notifier).refresh(),
             child: ListView.builder(
               itemCount: state.entries.length +
-                  (state.hasMore ? 1 : 0) +
-                  (state.isLoadingMore ? 1 : 0),
+                  (state.hasMore || state.isLoadingMore ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index < state.entries.length) {
                   final entry = state.entries[index];

@@ -2,9 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/router/app_router.dart';
-import '../../assistant/application/assistant_settings_notifier.dart';
-import '../application/app_settings_provider.dart';
+import 'package:mofox_android/app/router/app_router.dart';
+import 'package:mofox_android/core/theme/app_theme.dart';
+import 'package:mofox_android/core/ui/app_components.dart';
+import 'package:mofox_android/features/assistant/application/assistant_settings_notifier.dart';
+import 'package:mofox_android/features/dashboard/application/process_console_provider.dart';
+import 'package:mofox_android/features/instance/application/instance_repository.dart';
+import 'package:mofox_android/features/instance/domain/instance.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -12,238 +17,248 @@ class SettingsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(appSettingsProvider);
-    final appSettings = settings.valueOrNull;
-    final appearanceSubtitle = appSettings == null
-        ? '加载中'
-        : '${appSettings.themeMode.label} · ${appSettings.dynamicColorEnabled ? '动态取色' : '品牌色'} · ${appSettings.mainImageMode.label}';
-    final terminalHapticsEnabled = appSettings?.terminalHapticsEnabled ?? true;
-    final assistant = ref.watch(assistantSettingsProvider).valueOrNull;
+    final assistant = ref.watch(assistantSettingsProvider);
+    final process = ref.watch(processConsoleProvider);
+    final instances = ref.watch(instancesProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: <Widget>[
-          _Section(
-            title: '外观',
-            children: <Widget>[
-              _SettingTile(
-                leading: const Icon(Icons.palette_outlined),
-                title: '外观与主题',
-                subtitle: appearanceSubtitle,
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.appearance),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: '终端',
-            children: <Widget>[
-              _SettingTile(
-                leading: const Icon(Icons.vibration_outlined),
-                title: '触感反馈',
-                subtitle: '长按选择、复制和快捷键按钮震动',
-                trailing: Switch(
-                  value: terminalHapticsEnabled,
-                  onChanged: settings.isLoading
-                      ? null
-                      : (value) => ref
-                          .read(appSettingsProvider.notifier)
-                          .setTerminalHapticsEnabled(value),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: 'AI 运维助手',
-            children: <Widget>[
-              _SettingTile(
-                leading: Icon(
-                  assistant?.yoloEnabled == true
-                      ? Icons.bolt
-                      : Icons.auto_awesome_outlined,
-                ),
-                title: '模型与操作模式',
-                subtitle: assistant == null
-                    ? '加载中'
-                    : assistant.configured
-                        ? '${assistant.model} · ${assistant.yoloEnabled ? 'YOLO' : '副驾驶'}'
-                        : !assistant.enabled &&
-                                assistant.baseUrl.isNotEmpty &&
-                                assistant.model.isNotEmpty &&
-                                assistant.hasApiKey
-                            ? '已配置 · 未启用'
-                            : '配置不完整',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.assistantSettings),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          const _Section(
-            title: '运行时',
-            children: <Widget>[
-              _SettingTile(
-                leading: Icon(Icons.smart_toy_outlined),
-                title: 'Bot 进程',
-                subtitle: '已停止',
-                trailing: _StatusDot(active: false),
-              ),
-              _Divider(),
-              _SettingTile(
-                leading: Icon(Icons.qr_code_2_outlined),
-                title: 'Napcat',
-                subtitle: '已停止',
-                trailing: _StatusDot(active: false),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: '保活体检',
-            children: <Widget>[
-              _SettingTile(
-                leading: const Icon(Icons.shield_outlined),
-                title: '查看保活状态',
-                subtitle: '前台服务 / 电池白名单 / 自启动',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.keepaliveStatus),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: '备份与导出',
-            children: <Widget>[
-              _SettingTile(
-                leading: const Icon(Icons.archive_outlined),
-                title: '一键打包导出',
-                subtitle: 'toml + Napcat 登录态 + 最近 N 天日志',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.backup),
-              ),
-              const _Divider(),
-              _SettingTile(
-                leading: const Icon(Icons.tune_outlined),
-                title: '选择性导出',
-                subtitle: '单独导出 core.toml / model.toml / napcat / 日志',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.backup),
-              ),
-              const _Divider(),
-              _SettingTile(
-                leading: const Icon(Icons.unarchive_outlined),
-                title: '从备份导入',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.backup),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _Section(
-            title: '关于',
-            children: <Widget>[
-              _SettingTile(
-                leading: const Icon(Icons.info_outline),
-                title: '关于 MoFox',
-                subtitle: '版本、开源许可与源代码',
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => context.push(AppRoute.about),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          child: Text(
-            title,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: scheme.primary,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.4,
-                ),
-          ),
+      body: settings.when(
+        loading: () => const AppLoadingState(label: '正在加载设置'),
+        error: (_, __) => AppErrorState(
+          title: '设置加载失败',
+          message: '暂时无法读取本机设置，请重试。',
+          onRetry: () => ref.invalidate(appSettingsProvider),
         ),
-        Card(child: Column(children: children)),
-      ],
-    );
-  }
-}
+        data: (appSettings) {
+          final activeInstanceLabel = _activeInstanceLabel(
+            instances.valueOrNull,
+            process.activeInstanceId,
+          );
+          final botStatus =
+              process.activeInstanceId == null ? 'stopped' : process.botStatus;
+          final napcatStatus = process.activeInstanceId == null
+              ? 'stopped'
+              : process.napcatStatus;
+          final appearanceSubtitle = '${appSettings.themeMode.label} · '
+              '${appSettings.dynamicColorEnabled ? '动态取色' : '品牌色'} · '
+              '${appSettings.mainImageMode.label}';
+          final assistantPresentation = assistant.when(
+            loading: () => const _AssistantPresentation(
+              icon: Icons.hourglass_top_outlined,
+              subtitle: '正在读取配置…',
+            ),
+            error: (_, __) => const _AssistantPresentation(
+              icon: Icons.error_outline,
+              subtitle: '配置读取失败，点按查看',
+            ),
+            data: (value) => _AssistantPresentation(
+              icon:
+                  value.yoloEnabled ? Icons.bolt : Icons.auto_awesome_outlined,
+              subtitle: value.configured
+                  ? '${value.model} · ${value.yoloEnabled ? 'YOLO' : '副驾驶'}'
+                  : !value.enabled &&
+                          value.baseUrl.isNotEmpty &&
+                          value.model.isNotEmpty &&
+                          value.hasApiKey
+                      ? '已配置 · 未启用'
+                      : '配置不完整',
+            ),
+          );
 
-class _SettingTile extends StatelessWidget {
-  const _SettingTile({
-    required this.leading,
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
-  });
-  final Widget leading;
-  final String title;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: leading,
-      title: Text(title),
-      subtitle: subtitle == null ? null : Text(subtitle!),
-      trailing: trailing,
-      onTap: onTap,
-      shape: const RoundedRectangleBorder(),
-    );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 72),
-      child: Divider(
-        height: 1,
-        thickness: 1,
-        color: Theme.of(context).colorScheme.outlineVariant,
+          return AppPageList(
+            children: <Widget>[
+              AppSectionCard(
+                title: '外观',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.palette_outlined),
+                    title: '外观与主题',
+                    subtitle: appearanceSubtitle,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.appearance),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '终端',
+                children: <Widget>[
+                  AppSwitchSettingTile(
+                    secondary: const Icon(Icons.vibration_outlined),
+                    title: '触感反馈',
+                    subtitle: '长按选择、复制和快捷键按钮震动',
+                    value: appSettings.terminalHapticsEnabled,
+                    onChanged: (value) async {
+                      try {
+                        await ref
+                            .read(appSettingsProvider.notifier)
+                            .setTerminalHapticsEnabled(value);
+                      } on Object {
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('保存触感反馈设置失败')),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: 'AI 运维助手',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: Icon(assistantPresentation.icon),
+                    title: '模型与操作模式',
+                    subtitle: assistantPresentation.subtitle,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.assistantSettings),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '运行时',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.smart_toy_outlined),
+                    title: 'Bot 进程',
+                    subtitle: process.errorMessage == null
+                        ? _processStatusLabel(
+                            botStatus,
+                            activeInstanceLabel: activeInstanceLabel,
+                          )
+                        : '状态刷新失败，显示的状态可能已过期',
+                    trailing: _processStatusBadge(
+                      botStatus,
+                      stale: process.errorMessage != null,
+                    ),
+                  ),
+                  AppSettingTile(
+                    leading: const Icon(Icons.qr_code_2_outlined),
+                    title: 'NapCat',
+                    subtitle: process.errorMessage == null
+                        ? _processStatusLabel(
+                            napcatStatus,
+                            activeInstanceLabel: activeInstanceLabel,
+                          )
+                        : '状态刷新失败，显示的状态可能已过期',
+                    trailing: _processStatusBadge(
+                      napcatStatus,
+                      stale: process.errorMessage != null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '保活体检',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.shield_outlined),
+                    title: '查看保活状态',
+                    subtitle: '前台服务 / 电池白名单 / 自启动',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.keepaliveStatus),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '备份与导出',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.archive_outlined),
+                    title: '一键打包导出',
+                    subtitle: 'TOML 配置 + NapCat 登录态 + 最近 7 天日志',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.backup),
+                  ),
+                  AppSettingTile(
+                    leading: const Icon(Icons.tune_outlined),
+                    title: '选择性导出',
+                    subtitle: '单独导出 core.toml、model.toml、NapCat 或日志',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.backup),
+                  ),
+                  AppSettingTile(
+                    leading: const Icon(Icons.unarchive_outlined),
+                    title: '从备份导入',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.backup),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '关于',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: '关于 MoFox',
+                    subtitle: '版本、开源许可与源代码',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.about),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-class _StatusDot extends StatelessWidget {
-  const _StatusDot({required this.active});
-  final bool active;
+class _AssistantPresentation {
+  const _AssistantPresentation({required this.icon, required this.subtitle});
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: 10,
-      height: 10,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: active ? scheme.primary : scheme.outline,
-      ),
+  final IconData icon;
+  final String subtitle;
+}
+
+String _processStatusLabel(
+  String status, {
+  String? activeInstanceLabel,
+}) =>
+    switch (status) {
+      'running' =>
+        activeInstanceLabel == null ? '正在运行' : '正在运行 · $activeInstanceLabel',
+      'stopped' => '已停止',
+      _ => '状态未知',
+    };
+
+String? _activeInstanceLabel(
+  List<Instance>? instances,
+  String? activeInstanceId,
+) {
+  if (activeInstanceId == null) return null;
+  for (final instance in instances ?? const <Instance>[]) {
+    if (instance.id == activeInstanceId) return instance.name;
+  }
+  return '实例 $activeInstanceId';
+}
+
+Widget _processStatusBadge(String status, {required bool stale}) {
+  if (stale) {
+    return const AppStatusBadge(
+      label: '待刷新',
+      tone: AppStatusTone.warning,
     );
   }
+  return switch (status) {
+    'running' => const AppStatusBadge(
+        label: '运行中',
+        tone: AppStatusTone.success,
+      ),
+    'stopped' => const AppStatusBadge(
+        label: '已停止',
+        tone: AppStatusTone.neutral,
+      ),
+    _ => const AppStatusBadge(
+        label: '未知',
+        tone: AppStatusTone.warning,
+      ),
+  };
 }

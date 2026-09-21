@@ -1,69 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// 体检结果。`null` = 检查中。
-class SystemCheckResult {
-  const SystemCheckResult({
-    required this.label,
-    required this.value,
-    required this.passed,
-  });
-  final String label;
-  final String value;
-  final bool passed;
-}
-
-class SystemCheckState {
-  const SystemCheckState({required this.items, required this.running});
-  final List<SystemCheckResult> items;
-  final bool running;
-
-  bool get allPassed => items.every((r) => r.passed);
-}
-
-/// 占位实现：模拟一秒后给出结果。后端接通后改为读 `RuntimeBridge.probe()`。
-final systemCheckProvider =
-    NotifierProvider<SystemCheckNotifier, SystemCheckState>(
-  SystemCheckNotifier.new,
-);
-
-class SystemCheckNotifier extends Notifier<SystemCheckState> {
-  @override
-  SystemCheckState build() {
-    Future.microtask(run);
-    return const SystemCheckState(items: [], running: true);
-  }
-
-  Future<void> run() async {
-    state = const SystemCheckState(items: [], running: true);
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-    state = const SystemCheckState(
-      running: false,
-      items: <SystemCheckResult>[
-        SystemCheckResult(
-          label: 'CPU 架构',
-          value: 'arm64-v8a',
-          passed: true,
-        ),
-        SystemCheckResult(
-          label: '剩余空间',
-          value: '> 2 GB',
-          passed: true,
-        ),
-        SystemCheckResult(
-          label: '可用内存',
-          value: '>= 1 GB',
-          passed: true,
-        ),
-        SystemCheckResult(
-          label: 'Android 版本',
-          value: 'API 33+',
-          passed: true,
-        ),
-      ],
-    );
-  }
-}
+import '../../application/system_check_provider.dart';
 
 /// OOBE 第 2 步：系统体检。
 class SystemCheckStep extends ConsumerWidget {
@@ -109,26 +47,20 @@ class SystemCheckStep extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 24),
-          if (state.running)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 32),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: <Widget>[
-                  for (var i = 0; i < state.items.length; i++) ...<Widget>[
-                    if (i > 0) Divider(height: 1, color: scheme.outlineVariant),
-                    _CheckTile(item: state.items[i]),
-                  ],
-                ],
-              ),
+          Container(
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(16),
             ),
+            child: Column(
+              children: <Widget>[
+                for (var i = 0; i < state.items.length; i++) ...<Widget>[
+                  if (i > 0) Divider(height: 1, color: scheme.outlineVariant),
+                  _CheckTile(item: state.items[i]),
+                ],
+              ],
+            ),
+          ),
           const SizedBox(height: 16),
           if (!state.running && state.allPassed)
             Row(
@@ -145,6 +77,32 @@ class SystemCheckStep extends ConsumerWidget {
                 ),
               ],
             ),
+          if (!state.running && !state.allPassed) ...<Widget>[
+            Text(
+              state.hasUnknown
+                  ? '部分项目未检测，必须重试并全部通过后才能继续。'
+                  : '设备未满足运行要求，暂时无法继续。',
+              style: text.bodyMedium?.copyWith(color: scheme.error),
+            ),
+            if (state.errorMessage != null) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                state.errorMessage!,
+                style: text.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () => ref.read(systemCheckProvider.notifier).run(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('重新检测'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -159,14 +117,20 @@ class _CheckTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final (icon, color) = switch (item.status) {
+      SystemCheckStatus.checking => (Icons.pending_outlined, scheme.outline),
+      SystemCheckStatus.passed => (Icons.check_circle, scheme.primary),
+      SystemCheckStatus.failed => (Icons.cancel, scheme.error),
+      SystemCheckStatus.unknown => (Icons.help_outline, scheme.error),
+    };
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: <Widget>[
           Icon(
-            item.passed ? Icons.check_circle : Icons.cancel,
+            icon,
             size: 20,
-            color: item.passed ? scheme.primary : scheme.error,
+            color: color,
           ),
           const SizedBox(width: 12),
           Expanded(

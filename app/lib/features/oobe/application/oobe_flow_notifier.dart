@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/platform/platform_gateway.dart';
+import '../../../core/platform/screen_wake_lock.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../../../core/utils/app_logger.dart';
 import '../domain/oobe_step.dart';
@@ -121,7 +121,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       'oobe: runRuntimeInstall start installNapcat=$installNapcat',
     );
 
-    final platform = ref.read(platformGatewayProvider);
+    final wakeLock = ref.read(screenWakeLockProvider);
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
       result: const OobeStepRunning('解压运行环境…'),
@@ -131,13 +131,13 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       ],
     );
     _pendingLogs.clear();
-
-    final logSub = runtime.installEvents().listen((event) {
-      _appendLog(event.line);
-    });
+    StreamSubscription<InstallEvent>? logSub;
 
     try {
-      await _setKeepScreenOn(platform, enabled: true);
+      await wakeLock.acquire();
+      logSub = runtime.installEvents().listen((event) {
+        _appendLog(event.line);
+      });
       final tasks = oobeRuntimeTasks(installNapcat: installNapcat);
       for (final task in tasks) {
         state = state.copyWith(result: OobeStepRunning(task.label));
@@ -182,20 +182,15 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       _runtimeInstallStarted = false;
       state = state.copyWith(result: OobeStepFailure(e.toString()));
     } finally {
-      await logSub.cancel();
-      await _setKeepScreenOn(platform, enabled: false);
-      _flushLogs();
-    }
-  }
-
-  Future<void> _setKeepScreenOn(
-    PlatformGateway platform, {
-    required bool enabled,
-  }) async {
-    try {
-      await platform.setKeepScreenOn(enabled: enabled);
-    } catch (_) {
-      // Screen wakefulness is best-effort; runtime install should keep going.
+      try {
+        await logSub?.cancel();
+      } finally {
+        try {
+          await wakeLock.release();
+        } finally {
+          _flushLogs();
+        }
+      }
     }
   }
 

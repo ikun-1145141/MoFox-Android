@@ -1,91 +1,18 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/wizard_network_checks.dart';
 import '../../application/wizard_notifier.dart';
 import '../../domain/wizard_mirror_source.dart';
 
-/// 镜像源检测步骤。
-///
-/// 参照 Neo-MoFox 桌面启动器的 MirrorService，
-/// 对多个镜像源进行延迟探测，自动选择最优源。
-class MirrorCheckStep extends ConsumerStatefulWidget {
+/// 对真实仓库端点并发探测，完成前或没有可达源时不得继续。
+class MirrorCheckStep extends ConsumerWidget {
   const MirrorCheckStep({super.key});
 
   @override
-  ConsumerState<MirrorCheckStep> createState() => _MirrorCheckStepState();
-}
-
-class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
-  bool _checking = false;
-  bool _done = false;
-  final List<_MirrorResult> _results = [];
-
-  @override
-  void initState() {
-    super.initState();
-    // 自动开始检测
-    _startCheck();
-  }
-
-  Future<void> _startCheck() async {
-    setState(() {
-      _checking = true;
-      _done = false;
-      _results.clear();
-    });
-
-    for (final mirror in wizardMirrorSources) {
-      final result = await _probeMirror(mirror);
-      if (!mounted) return;
-      setState(() => _results.add(result));
-    }
-
-    // 自动选择最快的可用源
-    final available = _results.where((r) => r.reachable).toList();
-    if (available.isNotEmpty) {
-      available.sort((a, b) => a.latencyMs.compareTo(b.latencyMs));
-      final best = available.first;
-      ref.read(wizardProvider.notifier).update(
-            (d) => d.copyWith(mirrorId: best.mirror.id),
-          );
-    }
-
-    setState(() {
-      _checking = false;
-      _done = true;
-    });
-  }
-
-  Future<_MirrorResult> _probeMirror(WizardMirrorSource mirror) async {
-    final stopwatch = Stopwatch()..start();
-    try {
-      // 简单 HTTP HEAD 探测（实际实现需根据平台做网络请求）
-      // 这里模拟延迟，真实逻辑会用 dio 或 http 包
-      await Future<void>.delayed(
-        Duration(milliseconds: 300 + (mirror.id.hashCode % 700).abs()),
-      );
-      stopwatch.stop();
-      return _MirrorResult(
-        mirror: mirror,
-        reachable: true,
-        latencyMs: stopwatch.elapsedMilliseconds,
-      );
-    } catch (_) {
-      stopwatch.stop();
-      return _MirrorResult(
-        mirror: mirror,
-        reachable: false,
-        latencyMs: stopwatch.elapsedMilliseconds,
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final draft = ref.watch(wizardProvider).draft;
-    final notifier = ref.read(wizardProvider.notifier);
+    final check = ref.watch(mirrorCheckProvider);
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
@@ -94,7 +21,6 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // 状态指示
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -103,34 +29,38 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
             ),
             child: Row(
               children: <Widget>[
-                if (_checking)
+                if (check.running)
                   const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                else if (_done)
-                  Icon(Icons.check_circle, color: scheme.primary, size: 20)
                 else
-                  Icon(Icons.wifi_find,
-                      color: scheme.onSurfaceVariant, size: 20),
+                  Icon(
+                    check.hasReachable
+                        ? Icons.check_circle
+                        : Icons.error_outline,
+                    color: check.hasReachable ? scheme.primary : scheme.error,
+                    size: 20,
+                  ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    _checking
-                        ? '正在检测镜像源延迟…'
-                        : _done
-                            ? '检测完成，已自动选择最优源'
-                            : '准备检测镜像源',
+                    check.running
+                        ? '正在并发检测真实仓库连接…'
+                        : check.hasReachable
+                            ? '检测完成，请选择可用镜像源'
+                            : '没有检测到可用镜像源，请重试',
                     style: text.titleSmall?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: scheme.onSurface,
                     ),
                   ),
                 ),
-                if (_done)
+                if (check.completed)
                   TextButton.icon(
-                    onPressed: _startCheck,
+                    onPressed: () =>
+                        ref.read(mirrorCheckProvider.notifier).run(),
                     icon: const Icon(Icons.refresh, size: 18),
                     label: const Text('重试'),
                   ),
@@ -138,33 +68,31 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
             ),
           ),
           const SizedBox(height: 16),
-          // 镜像源列表
           Expanded(
             child: ListView.separated(
               itemCount: wizardMirrorSources.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
                 final mirror = wizardMirrorSources[index];
-                final result = index < _results.length ? _results[index] : null;
-                final isSelected = draft.mirrorId == mirror.id;
-
+                final result = check.results[mirror.id];
                 return _MirrorTile(
                   mirror: mirror,
                   result: result,
-                  isSelected: isSelected,
-                  onTap: result != null && result.reachable
-                      ? () => notifier.update(
-                            (d) => d.copyWith(mirrorId: mirror.id),
-                          )
+                  checking: check.running,
+                  isSelected:
+                      result?.reachable == true && draft.mirrorId == mirror.id,
+                  onTap: result?.reachable == true
+                      ? () => ref
+                          .read(mirrorCheckProvider.notifier)
+                          .selectMirror(mirror.id)
                       : null,
                 );
               },
             ),
           ),
           const SizedBox(height: 12),
-          // 提示
           Text(
-            '镜像源用于获取 EULA、下载 Neo-MoFox 仓库和依赖，选择延迟最低的源可加快安装速度。',
+            '仅实际连接成功的镜像源可被选择；超时或异常会明确标记为不可达。',
             style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             textAlign: TextAlign.center,
           ),
@@ -174,28 +102,18 @@ class _MirrorCheckStepState extends ConsumerState<MirrorCheckStep> {
   }
 }
 
-class _MirrorResult {
-  const _MirrorResult({
-    required this.mirror,
-    required this.reachable,
-    required this.latencyMs,
-  });
-
-  final WizardMirrorSource mirror;
-  final bool reachable;
-  final int latencyMs;
-}
-
 class _MirrorTile extends StatelessWidget {
   const _MirrorTile({
     required this.mirror,
     required this.result,
+    required this.checking,
     required this.isSelected,
     this.onTap,
   });
 
   final WizardMirrorSource mirror;
-  final _MirrorResult? result;
+  final MirrorProbeResult? result;
+  final bool checking;
   final bool isSelected;
   final VoidCallback? onTap;
 
@@ -203,13 +121,10 @@ class _MirrorTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-
-    final Color cardColor = isSelected
-        ? scheme.primaryContainer.withValues(alpha: 0.3)
-        : scheme.surfaceContainerLow;
-
     return Material(
-      color: cardColor,
+      color: isSelected
+          ? scheme.primaryContainer.withValues(alpha: 0.3)
+          : scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         borderRadius: BorderRadius.circular(14),
@@ -218,14 +133,12 @@ class _MirrorTile extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: <Widget>[
-              // 选择指示
               Radio<String>(
                 value: mirror.id,
                 groupValue: isSelected ? mirror.id : '',
-                onChanged: onTap != null ? (_) => onTap!() : null,
+                onChanged: onTap == null ? null : (_) => onTap!(),
               ),
               const SizedBox(width: 8),
-              // 镜像信息
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,12 +159,20 @@ class _MirrorTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (result?.errorMessage != null) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        result!.errorMessage!,
+                        style: text.labelSmall?.copyWith(color: scheme.error),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              // 延迟状态
-              if (result == null)
+              if (checking || result == null)
                 SizedBox(
                   width: 16,
                   height: 16,
@@ -263,19 +184,10 @@ class _MirrorTile extends StatelessWidget {
               else if (result!.reachable)
                 _LatencyBadge(latencyMs: result!.latencyMs)
               else
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: scheme.errorContainer,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '不可达',
-                    style: text.labelSmall?.copyWith(
-                      color: scheme.onErrorContainer,
-                    ),
-                  ),
+                _StatusBadge(
+                  label: '不可达',
+                  background: scheme.errorContainer,
+                  foreground: scheme.onErrorContainer,
                 ),
             ],
           ),
@@ -287,38 +199,44 @@ class _MirrorTile extends StatelessWidget {
 
 class _LatencyBadge extends StatelessWidget {
   const _LatencyBadge({required this.latencyMs});
+
   final int latencyMs;
 
   @override
   Widget build(BuildContext context) {
-    final text = Theme.of(context).textTheme;
-
-    final Color bgColor;
-    final Color fgColor;
-    if (latencyMs < 300) {
-      bgColor = Colors.green.shade50;
-      fgColor = Colors.green.shade700;
-    } else if (latencyMs < 800) {
-      bgColor = Colors.orange.shade50;
-      fgColor = Colors.orange.shade700;
-    } else {
-      bgColor = Colors.red.shade50;
-      fgColor = Colors.red.shade700;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        '${latencyMs}ms',
-        style: text.labelSmall?.copyWith(
-          color: fgColor,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
+    final scheme = Theme.of(context).colorScheme;
+    return _StatusBadge(
+      label: '${latencyMs}ms',
+      background: scheme.secondaryContainer,
+      foreground: scheme.onSecondaryContainer,
     );
   }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      );
 }

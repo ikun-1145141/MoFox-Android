@@ -1,70 +1,33 @@
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../application/wizard_network_checks.dart';
 import '../../application/wizard_notifier.dart';
-import '../../domain/wizard_mirror_source.dart';
 
-/// EULA 许可协议查看步骤。
-///
-/// 参照 Neo-MoFox 桌面启动器的 welcome 步骤，
-/// 从远程仓库获取协议文本，用户必须勾选同意后才能继续下一步。
-class EulaStep extends ConsumerStatefulWidget {
+/// EULA 只有成功加载后才能勾选；加载中或失败时向导下一步也会保持禁用。
+class EulaStep extends ConsumerWidget {
   const EulaStep({super.key});
 
   @override
-  ConsumerState<EulaStep> createState() => _EulaStepState();
-}
-
-class _EulaStepState extends ConsumerState<EulaStep> {
-  late Future<_EulaDocument> _documentFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _documentFuture = _fetchEula();
-  }
-
-  Future<_EulaDocument> _fetchEula() async {
-    final source = wizardMirrorSourceFor(
-      ref.read(wizardProvider).draft.mirrorId,
-    );
-    final dio = Dio(
-      BaseOptions(
-        connectTimeout: const Duration(seconds: 8),
-        receiveTimeout: const Duration(seconds: 8),
-        responseType: ResponseType.plain,
-      ),
-    );
-    try {
-      final response = await dio.get<String>(source.eulaUrl);
-      final body = response.data?.trim();
-      if (response.statusCode == 200 && body != null && body.isNotEmpty) {
-        return _EulaDocument(source: source, content: body);
-      }
-    } catch (_) {
-      throw StateError('无法从 ${source.name} 获取 EULA，请检查网络后重试。');
-    }
-    throw StateError('无法从 ${source.name} 获取 EULA，请检查网络后重试。');
-  }
-
-  void _retry() {
-    setState(() => _documentFuture = _fetchEula());
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final draft = ref.watch(wizardProvider).draft;
     final notifier = ref.read(wizardProvider.notifier);
+    final document = ref.watch(eulaDocumentProvider(draft.mirrorId));
+    final loaded =
+        document.hasValue && !document.isLoading && !document.hasError;
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+
+    void setAccepted(bool value) {
+      if (!loaded) return;
+      notifier.update((current) => current.copyWith(eulaAccepted: value));
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          // 协议内容区域
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -76,33 +39,29 @@ class _EulaStepState extends ConsumerState<EulaStep> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: FutureBuilder<_EulaDocument>(
-                  future: _documentFuture,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError || snapshot.data == null) {
-                      return _EulaErrorView(onRetry: _retry);
-                    }
-                    return _EulaContent(document: snapshot.data!);
-                  },
+                child: document.when(
+                  loading: () => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                  error: (error, _) => _EulaErrorView(
+                    message: error.toString(),
+                    onRetry: () =>
+                        ref.invalidate(eulaDocumentProvider(draft.mirrorId)),
+                  ),
+                  data: (value) => _EulaContent(document: value),
                 ),
               ),
             ),
           ),
           const SizedBox(height: 16),
-          // 同意勾选
           Material(
-            color: draft.eulaAccepted
+            color: loaded && draft.eulaAccepted
                 ? scheme.primaryContainer.withValues(alpha: 0.3)
                 : scheme.surfaceContainerLow,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => notifier.update(
-                (d) => d.copyWith(eulaAccepted: !d.eulaAccepted),
-              ),
+              onTap: loaded ? () => setAccepted(!draft.eulaAccepted) : null,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -111,17 +70,19 @@ class _EulaStepState extends ConsumerState<EulaStep> {
                 child: Row(
                   children: <Widget>[
                     Checkbox(
-                      value: draft.eulaAccepted,
-                      onChanged: (v) => notifier.update(
-                        (d) => d.copyWith(eulaAccepted: v ?? false),
-                      ),
+                      value: loaded && draft.eulaAccepted,
+                      onChanged: loaded
+                          ? (value) => setAccepted(value ?? false)
+                          : null,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '我已阅读并同意上述用户许可协议',
+                        loaded ? '我已阅读并同意上述用户许可协议' : '协议成功加载后才能勾选同意',
                         style: text.bodyMedium?.copyWith(
-                          color: scheme.onSurface,
+                          color: loaded
+                              ? scheme.onSurface
+                              : scheme.onSurfaceVariant,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -140,7 +101,7 @@ class _EulaStepState extends ConsumerState<EulaStep> {
 class _EulaContent extends StatelessWidget {
   const _EulaContent({required this.document});
 
-  final _EulaDocument document;
+  final EulaDocument document;
 
   @override
   Widget build(BuildContext context) {
@@ -178,8 +139,9 @@ class _EulaContent extends StatelessWidget {
 }
 
 class _EulaErrorView extends StatelessWidget {
-  const _EulaErrorView({required this.onRetry});
+  const _EulaErrorView({required this.message, required this.onRetry});
 
+  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -203,9 +165,11 @@ class _EulaErrorView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '请检查网络连接后重试。协议未加载成功前不建议继续。',
+              '协议未加载成功，不能勾选同意或继续。\n$message',
               style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
               textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -218,11 +182,4 @@ class _EulaErrorView extends StatelessWidget {
       ),
     );
   }
-}
-
-class _EulaDocument {
-  const _EulaDocument({required this.source, required this.content});
-
-  final WizardMirrorSource source;
-  final String content;
 }

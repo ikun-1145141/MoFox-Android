@@ -41,10 +41,16 @@ class TerminalSession extends ChangeNotifier {
   String? _sessionId;
   Object? _error;
   bool _disposed = false;
+  bool _opening = false;
 
   Object? get error => _error;
+  bool get isOpening => _opening;
 
   Future<void> _openShell() async {
+    if (_disposed || _opening) return;
+    _opening = true;
+    _error = null;
+    notifyListeners();
     try {
       terminal.write('正在打开 ${spec.cwd}\r\n');
       final sessionId = await _runtime.openShell(cwd: spec.cwd);
@@ -56,8 +62,16 @@ class TerminalSession extends ChangeNotifier {
       _outputSubscription = _runtime.shellOutput(sessionId).listen(
         terminal.write,
         onError: (Object error, StackTrace stackTrace) {
+          if (_disposed) return;
           _error = error;
           terminal.write('\r\n[终端输出错误] $error\r\n');
+          notifyListeners();
+        },
+        onDone: () {
+          if (_disposed || _sessionId != sessionId) return;
+          _sessionId = null;
+          _error = const _TerminalClosedException();
+          terminal.write('\r\n[终端会话已结束]\r\n');
           notifyListeners();
         },
       );
@@ -71,7 +85,27 @@ class TerminalSession extends ChangeNotifier {
       _error = error;
       terminal.write('\r\n[终端启动失败] $error\r\n');
       notifyListeners();
+    } finally {
+      _opening = false;
+      if (!_disposed) notifyListeners();
     }
+  }
+
+  /// 关闭失效会话并重新打开 shell。
+  Future<void> retry() async {
+    if (_disposed || _opening) return;
+    await _outputSubscription?.cancel();
+    _outputSubscription = null;
+    final sessionId = _sessionId;
+    _sessionId = null;
+    if (sessionId != null) {
+      try {
+        await _runtime.closeShell(sessionId);
+      } on Object {
+        // 原会话本就可能已失效，不让清理失败阻断重连。
+      }
+    }
+    await _openShell();
   }
 
   void clearError() {
@@ -107,10 +141,17 @@ class TerminalSession extends ChangeNotifier {
   }
 }
 
-final terminalSessionProvider =
-    ChangeNotifierProvider.family<TerminalSession, TerminalSessionSpec>(
+final terminalSessionProvider = ChangeNotifierProvider.autoDispose
+    .family<TerminalSession, TerminalSessionSpec>(
   (ref, spec) => TerminalSession(
     runtime: ref.read(runtimeBridgeProvider),
     spec: spec,
   ),
 );
+
+class _TerminalClosedException implements Exception {
+  const _TerminalClosedException();
+
+  @override
+  String toString() => '终端会话已结束';
+}

@@ -2,18 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mofox_android/app/router/app_router.dart';
+import 'package:mofox_android/core/ui/ansi_color_text.dart';
+import 'package:mofox_android/core/ui/app_components.dart';
+import 'package:mofox_android/core/ui/explosion_overlay.dart';
+import 'package:mofox_android/features/dashboard/application/process_console_provider.dart';
+import 'package:mofox_android/features/file_manager/domain/rootfs_file_models.dart';
+import 'package:mofox_android/features/file_manager/domain/rootfs_file_scope.dart';
+import 'package:mofox_android/features/instance/application/instance_deletion_service.dart';
+import 'package:mofox_android/features/instance/application/instance_repository.dart';
+import 'package:mofox_android/features/instance/domain/instance.dart';
+import 'package:mofox_android/features/wizard/presentation/widgets/napcat_qr_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-import '../../../app/router/app_router.dart';
-import '../../../core/runtime/runtime_bridge.dart';
-import '../../../core/ui/ansi_color_text.dart';
-import '../../../core/ui/explosion_overlay.dart';
-import '../../dashboard/application/process_console_provider.dart';
-import '../../file_manager/domain/rootfs_file_models.dart';
-import '../../file_manager/domain/rootfs_file_scope.dart';
-import '../application/instance_repository.dart';
-import '../domain/instance.dart';
-import '../../wizard/presentation/widgets/napcat_qr_sheet.dart';
 
 class InstanceDetailPage extends ConsumerStatefulWidget {
   const InstanceDetailPage({required this.instance, super.key});
@@ -37,11 +37,15 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     final text = Theme.of(context).textTheme;
     final console = ref.watch(processConsoleProvider);
     final installed = instance.installStatus == InstanceInstallStatus.installed;
+    final botStatus = console.botStatusFor(instance.id);
+    final napcatStatus = console.napcatStatusFor(instance.id);
+    final anotherInstanceActive =
+        console.hasRunningProcess && !console.isActiveInstance(instance.id);
 
     ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
       final payload = next.napcatQrPayload;
       // NapCat 进程在运行时才处理 QR；取消后忽略
-      final napcatRunning = next.napcatStatus == 'running';
+      final napcatRunning = next.napcatStatusFor(instance.id) == 'running';
       // 用户主动取消：onCancel 已负责关闭 sheet，listener 不再 pop，避免双 pop
       if (_loginCancelled) return;
       if (!napcatRunning) {
@@ -167,12 +171,12 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                 const SizedBox(height: 2),
                                 Row(
                                   children: <Widget>[
-                                    _LiveDot(status: console.botStatus),
+                                    _LiveDot(status: botStatus),
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
                                         installed
-                                            ? 'Bot ${_processStatusLabel(console.botStatus)} · NapCat ${_processStatusLabel(console.napcatStatus)}'
+                                            ? 'Bot ${_processStatusLabel(botStatus)} · NapCat ${_processStatusLabel(napcatStatus)}'
                                             : _statusLabel(instance),
                                         style: text.bodySmall?.copyWith(
                                           color: scheme.onSurfaceVariant,
@@ -188,7 +192,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           ),
                           IconButton(
                             tooltip: 'Bot 目录终端',
-                            onPressed: () => context.go(
+                            onPressed: () => context.push(
                               AppRoute.terminal,
                               extra: <String, String>{
                                 'cwd': instance.repoPath,
@@ -228,7 +232,8 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.botStatus == 'running'
+                                      anotherInstanceActive ||
+                                      botStatus == 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -242,7 +247,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.tonalIcon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.botStatus != 'running'
+                                      botStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -256,7 +261,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.tonalIcon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.botStatus != 'running'
+                                      botStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -274,7 +279,8 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.napcatStatus == 'running'
+                                      anotherInstanceActive ||
+                                      napcatStatus == 'running'
                                   ? null
                                   : () {
                                       _loginCancelled = false;
@@ -291,7 +297,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.napcatStatus != 'running'
+                                      napcatStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -305,7 +311,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.napcatStatus != 'running'
+                                      napcatStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
@@ -323,7 +329,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.tonalIcon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.botStatus != 'running' ||
+                                      botStatus != 'running' ||
                                       !instance.installWebui
                                   ? null
                                   : () async => _openWebUi(
@@ -339,7 +345,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.tonalIcon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      console.napcatStatus != 'running' ||
+                                      napcatStatus != 'running' ||
                                       !instance.installNapcat
                                   ? null
                                   : () async => _openWebUi(
@@ -352,6 +358,18 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           ),
                         ],
                       ),
+                      if (anotherInstanceActive) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '另一实例正在运行，请先在对应实例中停止后再切换。',
+                            style: text.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
                       if (console.errorMessage != null) ...<Widget>[
                         const SizedBox(height: 8),
                         Align(
@@ -425,109 +443,117 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
   }
 
   void _showInstanceInfoSheet(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.72,
-          minChildSize: 0.35,
-          maxChildSize: 0.92,
-          builder: (context, scrollController) => ListView(
-            controller: scrollController,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            children: <Widget>[
-              Row(
+      builder: (sheetContext) => Consumer(
+        builder: (context, ref, _) {
+          final scheme = Theme.of(context).colorScheme;
+          final text = Theme.of(context).textTheme;
+          final botStatus =
+              ref.watch(processConsoleProvider).botStatusFor(instance.id);
+          return SafeArea(
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.72,
+              minChildSize: 0.35,
+              maxChildSize: 0.92,
+              builder: (context, scrollController) => ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 children: <Widget>[
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: scheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.smart_toy_outlined,
-                      color: scheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          instance.name,
-                          style: text.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                  Row(
+                    children: <Widget>[
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        Text(
-                          'QQ ${instance.botQq}',
-                          style: text.bodyMedium?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
+                        child: Icon(
+                          Icons.smart_toy_outlined,
+                          color: scheme.onPrimaryContainer,
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              instance.name,
+                              style: text.titleLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            Text(
+                              'QQ ${instance.botQq}',
+                              style: text.bodyMedium?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      _StatusPill(instance: instance, botStatus: botStatus),
+                    ],
                   ),
-                  _StatusPill(instance: instance),
+                  if (instance.installError != null) ...<Widget>[
+                    const SizedBox(height: 16),
+                    Text(
+                      instance.installError!,
+                      style: text.bodyMedium?.copyWith(color: scheme.error),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  _SectionCard(
+                    title: '账号',
+                    rows: <_DetailRow>[
+                      _DetailRow('Bot QQ', instance.botQq),
+                      if (instance.botNickname.isNotEmpty)
+                        _DetailRow('Bot 昵称', instance.botNickname),
+                      _DetailRow('主人 QQ', instance.ownerQq),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    title: '网络与组件',
+                    rows: <_DetailRow>[
+                      _DetailRow('WebSocket 端口', '${instance.wsPort}'),
+                      _DetailRow('更新通道', instance.channel),
+                      _DetailRow(
+                        'WebUI 管理面板',
+                        instance.installWebui ? '已安装' : '未安装',
+                      ),
+                      const _DetailRow('NapCat', '全局共享'),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    title: '路径',
+                    rows: <_DetailRow>[
+                      _DetailRow('实例目录', instance.installDir, copyable: true),
+                      _DetailRow('Bot 目录', instance.repoPath, copyable: true),
+                      _DetailRow('创建时间', _formatDateTime(instance.createdAt)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  if (instance.installStatus != InstanceInstallStatus.installed)
+                    FilledButton.icon(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        context.push(AppRoute.wizard, extra: instance);
+                      },
+                      icon: const Icon(Icons.download_done_outlined),
+                      label: const Text('继续安装'),
+                    ),
                 ],
               ),
-              if (instance.installError != null) ...<Widget>[
-                const SizedBox(height: 16),
-                Text(
-                  instance.installError!,
-                  style: text.bodyMedium?.copyWith(color: scheme.error),
-                ),
-              ],
-              const SizedBox(height: 16),
-              _SectionCard(
-                title: '账号',
-                rows: <_DetailRow>[
-                  _DetailRow('Bot QQ', instance.botQq),
-                  if (instance.botNickname.isNotEmpty)
-                    _DetailRow('Bot 昵称', instance.botNickname),
-                  _DetailRow('主人 QQ', instance.ownerQq),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: '网络与组件',
-                rows: <_DetailRow>[
-                  _DetailRow('WebSocket 端口', '${instance.wsPort}'),
-                  _DetailRow('更新通道', instance.channel),
-                  _DetailRow(
-                      'WebUI 管理面板', instance.installWebui ? '已安装' : '未安装'),
-                  _DetailRow('NapCat', '全局共享'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _SectionCard(
-                title: '路径',
-                rows: <_DetailRow>[
-                  _DetailRow('实例目录', instance.installDir, copyable: true),
-                  _DetailRow('Bot 目录', instance.repoPath, copyable: true),
-                  _DetailRow('创建时间', _formatDateTime(instance.createdAt)),
-                ],
-              ),
-              const SizedBox(height: 20),
-              if (instance.installStatus != InstanceInstallStatus.installed)
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.of(sheetContext).pop();
-                    context.push(AppRoute.wizard, extra: instance);
-                  },
-                  icon: const Icon(Icons.download_done_outlined),
-                  label: const Text('继续安装'),
-                ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -552,8 +578,13 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     );
     if (confirmed != true || !context.mounted) return;
 
-    // 震动反馈
-    HapticFeedback.heavyImpact();
+    // 触感反馈不应阻断删除事务。
+    try {
+      await HapticFeedback.heavyImpact();
+    } on Object {
+      // Best effort only.
+    }
+    if (!context.mounted) return;
 
     // 爆炸粒子动画
     final scheme = Theme.of(context).colorScheme;
@@ -572,40 +603,22 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
 
     final messenger = ScaffoldMessenger.of(context);
     try {
-      // 先删除本地记录并刷新 UI，确保实例立即从列表消失。
-      final repo = await ref.read(instanceRepositoryProvider.future);
-      await repo.remove(instance.id);
+      final service = await ref.read(instanceDeletionServiceProvider.future);
+      final process = ref.read(processConsoleProvider);
+      await service.delete(
+        instance,
+        isActive: process.isActiveInstance(instance.id),
+        stopActiveProcesses: () => ref
+            .read(processConsoleProvider.notifier)
+            .stopActiveInstance(instance.id),
+      );
       ref.invalidate(instancesProvider);
-
-      // 再尝试删除 rootfs 中的实例目录；失败只警告，不阻止本地记录删除。
-      try {
-        final runtime = ref.read(runtimeBridgeProvider);
-        final result = await runtime.runInstallTask(
-          'deleteInstance',
-          args: <String, String>{'installDir': instance.installDir},
-        );
-        if (!result.success && context.mounted) {
-          messenger.showSnackBar(
-            SnackBar(
-                content: Text('本地记录已删除，远程目录清理失败：${result.error ?? "未知错误"}')),
-          );
-          context.go(AppRoute.dashboard);
-          return;
-        }
-      } catch (error) {
-        if (!context.mounted) return;
-        messenger.showSnackBar(
-          SnackBar(content: Text('本地记录已删除，远程目录清理异常：$error')),
-        );
-        context.go(AppRoute.dashboard);
-        return;
-      }
       if (!context.mounted) return;
       messenger.showSnackBar(const SnackBar(content: Text('实例已删除')));
       context.go(AppRoute.dashboard);
     } catch (error) {
       if (!context.mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('删除失败：$error')));
+      messenger.showSnackBar(SnackBar(content: Text('删除未完成：$error')));
     }
   }
 }
@@ -662,29 +675,25 @@ class _ProcessLogPane extends StatelessWidget {
 }
 
 String _processStatusLabel(String status) {
-  return status == 'running' ? 'Bot 运行中' : 'Bot 已停止';
+  return switch (status) {
+    'running' => '运行中',
+    'starting' => '启动中',
+    'restarting' => '重启中',
+    _ => '已停止',
+  };
 }
 
 class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.instance});
+  const _StatusPill({required this.instance, required this.botStatus});
 
   final Instance instance;
+  final String botStatus;
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _statusColor(instance, scheme),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        _statusLabel(instance),
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: _statusTextColor(instance, scheme),
-            ),
-      ),
+    return AppStatusBadge(
+      label: _statusLabel(instance, botStatus),
+      tone: _statusTone(instance, botStatus),
     );
   }
 }
@@ -780,7 +789,11 @@ String _formatDateTime(DateTime value) {
       '${two(local.hour)}:${two(local.minute)}';
 }
 
-String _statusLabel(Instance instance) {
+String _statusLabel(Instance instance, [String botStatus = 'stopped']) {
+  if (instance.installStatus == InstanceInstallStatus.installed &&
+      botStatus == 'running') {
+    return '运行中';
+  }
   return switch (instance.installStatus) {
     InstanceInstallStatus.installing => '未完成',
     InstanceInstallStatus.failed => '安装失败',
@@ -788,18 +801,17 @@ String _statusLabel(Instance instance) {
   };
 }
 
-Color _statusColor(Instance instance, ColorScheme scheme) {
+AppStatusTone _statusTone(
+  Instance instance, [
+  String botStatus = 'stopped',
+]) {
+  if (instance.installStatus == InstanceInstallStatus.installed &&
+      botStatus == 'running') {
+    return AppStatusTone.success;
+  }
   return switch (instance.installStatus) {
-    InstanceInstallStatus.installing => scheme.tertiaryContainer,
-    InstanceInstallStatus.failed => scheme.errorContainer,
-    InstanceInstallStatus.installed => scheme.surfaceContainerHigh,
-  };
-}
-
-Color _statusTextColor(Instance instance, ColorScheme scheme) {
-  return switch (instance.installStatus) {
-    InstanceInstallStatus.installing => scheme.onTertiaryContainer,
-    InstanceInstallStatus.failed => scheme.onErrorContainer,
-    InstanceInstallStatus.installed => scheme.onSurfaceVariant,
+    InstanceInstallStatus.installing => AppStatusTone.warning,
+    InstanceInstallStatus.failed => AppStatusTone.error,
+    InstanceInstallStatus.installed => AppStatusTone.neutral,
   };
 }

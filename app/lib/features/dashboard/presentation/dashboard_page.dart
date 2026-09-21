@@ -3,14 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/router/app_router.dart';
-import '../../../core/runtime/runtime_bridge.dart';
-import '../../../core/security/webui_key_store.dart';
-import '../../../core/ui/explosion_overlay.dart';
-import '../../instance/application/instance_repository.dart';
-import '../../instance/domain/instance.dart';
-import '../../wizard/application/wizard_notifier.dart';
-import '../application/process_console_provider.dart';
+import 'package:mofox_android/app/router/app_router.dart';
+import 'package:mofox_android/core/ui/app_components.dart';
+import 'package:mofox_android/core/ui/explosion_overlay.dart';
+import 'package:mofox_android/features/dashboard/application/process_console_provider.dart';
+import 'package:mofox_android/features/instance/application/instance_deletion_service.dart';
+import 'package:mofox_android/features/instance/application/instance_repository.dart';
+import 'package:mofox_android/features/instance/domain/instance.dart';
+import 'package:mofox_android/features/wizard/application/wizard_notifier.dart';
 
 /// 管理页：实例卡片网格 + 新建 CTA。
 class DashboardPage extends ConsumerWidget {
@@ -40,8 +40,8 @@ class DashboardPage extends ConsumerWidget {
       ),
       body: SafeArea(
         child: asyncInstances.when(
-          loading: () => _DashboardBody(
-            items: const <Instance>[],
+          loading: () => const _DashboardBody(
+            items: <Instance>[],
             instancesLoading: true,
           ),
           error: (e, _) => Center(child: Text('加载失败：$e')),
@@ -65,7 +65,10 @@ class _DashboardBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontalPadding = constraints.maxWidth >= 720 ? 24.0 : 16.0;
+        final basePadding = constraints.maxWidth >= 720 ? 24.0 : 16.0;
+        final centeredPadding = (constraints.maxWidth - 1200) / 2;
+        final horizontalPadding =
+            centeredPadding > basePadding ? centeredPadding : basePadding;
         return CustomScrollView(
           slivers: <Widget>[
             SliverPadding(
@@ -217,6 +220,7 @@ class _InstanceCard extends ConsumerStatefulWidget {
 class _InstanceCardState extends ConsumerState<_InstanceCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _removeController;
+  bool _deleting = false;
 
   final GlobalKey cardKey = GlobalKey();
 
@@ -237,18 +241,26 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
 
   /// 触发爆炸动画 + 震动，动画结束后执行真正的删除逻辑。
   Future<void> _animateAndDelete() async {
+    if (_deleting) return;
+    setState(() => _deleting = true);
     final renderBox = cardKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null || !mounted) {
       // 无法获取位置，直接删除
-      _confirmDeleteInstance(context, ref, widget.instance);
+      final deleted = await _deleteInstance(context, ref, widget.instance);
+      if (mounted && !deleted) setState(() => _deleting = false);
       return;
     }
 
     final cardRect = renderBox.localToGlobal(Offset.zero) & renderBox.size;
     final scheme = Theme.of(context).colorScheme;
 
-    // 震动反馈
-    HapticFeedback.heavyImpact();
+    // 触感反馈不应阻断删除事务（部分设备/测试环境没有对应通道）。
+    try {
+      await HapticFeedback.heavyImpact();
+    } on Object {
+      // Best effort only.
+    }
+    if (!mounted) return;
 
     // 粒子爆炸 overlay
     ExplosionOverlay.show(
@@ -261,7 +273,11 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
     await _removeController.forward();
 
     if (!mounted) return;
-    _confirmDeleteInstance(context, ref, widget.instance);
+    final deleted = await _deleteInstance(context, ref, widget.instance);
+    if (!deleted && mounted) {
+      await _removeController.reverse();
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   @override
@@ -270,7 +286,8 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
     final text = Theme.of(context).textTheme;
     final instance = widget.instance;
     // 监听运行时进程状态，已安装实例若 bot 在跑则显示"运行中"
-    final botStatus = ref.watch(processConsoleProvider).botStatus;
+    final botStatus =
+        ref.watch(processConsoleProvider).botStatusFor(instance.id);
 
     return AnimatedBuilder(
       animation: _removeController,
@@ -334,50 +351,41 @@ class _InstanceCardState extends ConsumerState<_InstanceCard>
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _statusColor(instance, scheme, botStatus),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        _statusLabel(instance, botStatus),
-                        style: text.labelSmall?.copyWith(
-                          color: _statusTextColor(instance, scheme, botStatus),
-                        ),
-                      ),
+                    AppStatusBadge(
+                      label: _statusLabel(instance, botStatus),
+                      tone: _statusTone(instance, botStatus),
                     ),
                     IconButton(
                       tooltip: '删除实例',
-                      onPressed: () async {
-                        final confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (dialogContext) => AlertDialog(
-                            title: const Text('删除实例？'),
-                            content: Text(
-                              '将删除 ${instance.name} 的本地记录和实例目录。此操作无法撤销。',
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(false),
-                                child: const Text('取消'),
-                              ),
-                              FilledButton(
-                                onPressed: () =>
-                                    Navigator.of(dialogContext).pop(true),
-                                child: const Text('删除'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirmed == true && mounted) {
-                          _animateAndDelete();
-                        }
-                      },
+                      onPressed: _deleting
+                          ? null
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (dialogContext) => AlertDialog(
+                                  title: const Text('删除实例？'),
+                                  content: Text(
+                                    '将删除 ${instance.name} 的本地记录和实例目录。此操作无法撤销。',
+                                  ),
+                                  actions: <Widget>[
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.of(dialogContext)
+                                              .pop(false),
+                                      child: const Text('取消'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.of(dialogContext).pop(true),
+                                      child: const Text('删除'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if ((confirmed ?? false) && mounted) {
+                                await _animateAndDelete();
+                              }
+                            },
                       icon: const Icon(Icons.delete_outline),
                     ),
                   ],
@@ -467,45 +475,32 @@ void _openNewWizard(BuildContext context, WidgetRef ref) {
   context.push(AppRoute.wizard);
 }
 
-Future<void> _confirmDeleteInstance(
+Future<bool> _deleteInstance(
   BuildContext context,
   WidgetRef ref,
   Instance instance,
 ) async {
   final messenger = ScaffoldMessenger.of(context);
   try {
-    // 先删除本地记录并刷新 UI，确保实例立即从列表消失。
-    final repo = await ref.read(instanceRepositoryProvider.future);
-    await repo.remove(instance.id);
+    final service = await ref.read(instanceDeletionServiceProvider.future);
+    final process = ref.read(processConsoleProvider);
+    await service.delete(
+      instance,
+      isActive: process.isActiveInstance(instance.id),
+      stopActiveProcesses: () => ref
+          .read(processConsoleProvider.notifier)
+          .stopActiveInstance(instance.id),
+    );
     ref.invalidate(instancesProvider);
-    // 清理安全存储中的 WebUI api_key
-    await WebuiKeyStore.delete(instance.id);
-
-    // 再尝试删除 rootfs 中的实例目录；失败只警告，不阻止本地记录删除。
-    try {
-      final runtime = ref.read(runtimeBridgeProvider);
-      final result = await runtime.runInstallTask(
-        'deleteInstance',
-        args: <String, String>{'installDir': instance.installDir},
-      );
-      if (!result.success && context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(content: Text('本地记录已删除，远程目录清理失败：${result.error ?? "未知错误"}')),
-        );
-        return;
-      }
-    } catch (error) {
-      if (!context.mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('本地记录已删除，远程目录清理异常：$error')),
-      );
-      return;
+    if (messenger.mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('实例已删除')));
     }
-    if (!context.mounted) return;
-    messenger.showSnackBar(const SnackBar(content: Text('实例已删除')));
+    return true;
   } catch (error) {
-    if (!context.mounted) return;
-    messenger.showSnackBar(SnackBar(content: Text('删除失败：$error')));
+    if (messenger.mounted) {
+      messenger.showSnackBar(SnackBar(content: Text('删除未完成：$error')));
+    }
+    return false;
   }
 }
 
@@ -545,27 +540,14 @@ String _statusLabel(Instance instance, String botStatus) {
   };
 }
 
-Color _statusColor(Instance instance, ColorScheme scheme, String botStatus) {
+AppStatusTone _statusTone(Instance instance, String botStatus) {
   if (instance.installStatus == InstanceInstallStatus.installed &&
       botStatus == 'running') {
-    return scheme.primaryContainer;
+    return AppStatusTone.success;
   }
   return switch (instance.installStatus) {
-    InstanceInstallStatus.installing => scheme.tertiaryContainer,
-    InstanceInstallStatus.failed => scheme.errorContainer,
-    InstanceInstallStatus.installed => scheme.surfaceContainerHigh,
-  };
-}
-
-Color _statusTextColor(
-    Instance instance, ColorScheme scheme, String botStatus) {
-  if (instance.installStatus == InstanceInstallStatus.installed &&
-      botStatus == 'running') {
-    return scheme.onPrimaryContainer;
-  }
-  return switch (instance.installStatus) {
-    InstanceInstallStatus.installing => scheme.onTertiaryContainer,
-    InstanceInstallStatus.failed => scheme.onErrorContainer,
-    InstanceInstallStatus.installed => scheme.onSurfaceVariant,
+    InstanceInstallStatus.installing => AppStatusTone.warning,
+    InstanceInstallStatus.failed => AppStatusTone.error,
+    InstanceInstallStatus.installed => AppStatusTone.neutral,
   };
 }

@@ -25,9 +25,13 @@ class _InstallStepState extends ConsumerState<InstallStep> {
     super.dispose();
   }
 
-  void _scheduleScrollToBottom() {
+  void _scheduleScrollToBottom({required bool reduceMotion}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_logsScroll.hasClients) return;
+      if (reduceMotion) {
+        _logsScroll.jumpTo(_logsScroll.position.maxScrollExtent);
+        return;
+      }
       _logsScroll.animateTo(
         _logsScroll.position.maxScrollExtent,
         duration: const Duration(milliseconds: 120),
@@ -41,10 +45,11 @@ class _InstallStepState extends ConsumerState<InstallStep> {
     final state = ref.watch(wizardProvider);
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     ref.listen<WizardState>(wizardProvider, (prev, next) {
       if ((prev?.logs.length ?? 0) != next.logs.length && _logsExpanded) {
-        _scheduleScrollToBottom();
+        _scheduleScrollToBottom(reduceMotion: reduceMotion);
       }
     });
 
@@ -115,7 +120,7 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                   if (state.resumeAvailable) ...<Widget>[
                     const SizedBox(height: 8),
                     Text(
-                      '可保留已完成任务，从失败处继续安装。',
+                      '已完成任务和本次冻结配置已写入加密断点，可从失败处继续。',
                       style: text.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),
@@ -156,7 +161,11 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                         expandedHeaderPadding: EdgeInsets.zero,
                         expansionCallback: (_, __) {
                           setState(() => _logsExpanded = !_logsExpanded);
-                          if (_logsExpanded) _scheduleScrollToBottom();
+                          if (_logsExpanded) {
+                            _scheduleScrollToBottom(
+                              reduceMotion: reduceMotion,
+                            );
+                          }
                         },
                         children: <ExpansionPanel>[
                           ExpansionPanel(
@@ -246,11 +255,23 @@ class _InstallStepState extends ConsumerState<InstallStep> {
                 ),
                 const SizedBox(width: 12),
                 OutlinedButton(
-                  onPressed: () =>
-                      ref.read(wizardProvider.notifier).startInstall(),
+                  onPressed: () => ref
+                      .read(wizardProvider.notifier)
+                      .startInstall(resume: true, restart: true),
                   child: const Text('重新安装'),
                 ),
               ],
+            )
+          else if (state.errorMessage != null)
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => ref
+                    .read(wizardProvider.notifier)
+                    .startInstall(resume: true, restart: true),
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('无法保存断点，重新执行全部任务'),
+              ),
             )
           else
             SizedBox(

@@ -111,7 +111,13 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
 
   void _update(AppSettings Function(AppSettings settings) update) {
     final current = state.valueOrNull;
-    if (current == null) return;
+    if (current == null) {
+      // 设置已经成功写入 SharedPreferences，但首次加载可能仍在
+      // 进行，或上一次加载失败。重建 Provider 以便 UI 不会永久
+      // 停在“加载中”或忽略用户刚刚的操作。
+      ref.invalidateSelf();
+      return;
+    }
     state = AsyncData(update(current));
   }
 }

@@ -74,6 +74,14 @@ void main() {
     );
 
     expect(tester.takeException(), isNull);
+    expect(
+      tester.getSize(find.widgetWithText(TextButton, '选择')).height,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getSize(find.widgetWithText(TextButton, '复制')).height,
+      greaterThanOrEqualTo(48),
+    );
     await tester.tap(find.text('复制'));
     await tester.pumpAndSettle();
     expect(copiedText, '这是一条可以选择和复制的回复。');

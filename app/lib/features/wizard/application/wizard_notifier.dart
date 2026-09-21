@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/platform/screen_wake_lock.dart';
 import '../../../core/runtime/runtime_bridge.dart';
 import '../../../core/security/webui_key_store.dart';
 import '../../../core/utils/app_logger.dart';
@@ -10,6 +11,7 @@ import '../../instance/application/instance_repository.dart';
 import '../../instance/domain/instance.dart';
 import '../domain/wizard_mirror_source.dart';
 import '../domain/wizard_step.dart';
+import 'wizard_install_checkpoint_store.dart';
 
 class WizardState {
   const WizardState({
@@ -22,42 +24,36 @@ class WizardState {
     this.napcatQrPayload,
     this.installFinished = false,
     this.installStarted = false,
+    this.installRunning = false,
     this.resumeAvailable = false,
+    this.resumeLoading = false,
+    this.requiresReconfiguration = false,
     this.instanceId,
     this.installDir,
   });
 
   final WizardStep step;
   final InstanceDraft draft;
-
-  /// 每个 install task 的状态。
   final Map<InstallTask, InstallTaskStatus> taskStatus;
-
-  /// 当前正在跑的 task 的 0..1 进度。
   final double taskProgress;
-
-  /// 安装日志（最新在末尾）。
   final List<String> logs;
-
-  /// 整体错误（致命）。
   final String? errorMessage;
-
-  /// NapCat 扫码二维码 payload。null = 还没拿到。
   final String? napcatQrPayload;
-
-  /// 安装是否全部完成。
   final bool installFinished;
-
-  /// 安装流程是否已经启动过。
   final bool installStarted;
 
-  /// 是否允许从失败任务继续安装。
+  /// 真实安装 Future 尚未结束。此状态同时用于禁用退出和所有表单修改。
+  final bool installRunning;
+
+  /// 已有加密断点，允许继续失败任务。
   final bool resumeAvailable;
 
-  /// 当前安装实例 ID。
-  final String? instanceId;
+  /// 正在从加密存储读取断点。
+  final bool resumeLoading;
 
-  /// 当前安装目录。
+  /// 旧实例没有完整断点，必须重新确认配置，不能声称可从断点续装。
+  final bool requiresReconfiguration;
+  final String? instanceId;
   final String? installDir;
 
   WizardState copyWith({
@@ -70,7 +66,10 @@ class WizardState {
     Object? napcatQrPayload = _sentinel,
     bool? installFinished,
     bool? installStarted,
+    bool? installRunning,
     bool? resumeAvailable,
+    bool? resumeLoading,
+    bool? requiresReconfiguration,
     Object? instanceId = _sentinel,
     Object? installDir = _sentinel,
   }) =>
@@ -88,7 +87,11 @@ class WizardState {
             : napcatQrPayload as String?,
         installFinished: installFinished ?? this.installFinished,
         installStarted: installStarted ?? this.installStarted,
+        installRunning: installRunning ?? this.installRunning,
         resumeAvailable: resumeAvailable ?? this.resumeAvailable,
+        resumeLoading: resumeLoading ?? this.resumeLoading,
+        requiresReconfiguration:
+            requiresReconfiguration ?? this.requiresReconfiguration,
         instanceId: identical(instanceId, _sentinel)
             ? this.instanceId
             : instanceId as String?,
@@ -97,74 +100,70 @@ class WizardState {
             : installDir as String?,
       );
 
-  /// 当前任务（第一个 running 或 pending 的 task）。
   InstallTask? get currentTask {
-    for (final t in InstallTask.values) {
-      final s = taskStatus[t] ?? InstallTaskStatus.pending;
-      if (s == InstallTaskStatus.running) return t;
+    for (final task in InstallTask.values) {
+      if (taskStatus[task] == InstallTaskStatus.running) return task;
     }
-    for (final t in InstallTask.values) {
-      final s = taskStatus[t] ?? InstallTaskStatus.pending;
-      if (s == InstallTaskStatus.pending) return t;
+    for (final task in InstallTask.values) {
+      if ((taskStatus[task] ?? InstallTaskStatus.pending) ==
+          InstallTaskStatus.pending) {
+        return task;
+      }
     }
     return null;
   }
 
-  /// 整体进度 0..1。
   double get overallProgress {
-    final total = InstallTask.values.length;
     final done = taskStatus.values
         .where(
-          (s) =>
-              s == InstallTaskStatus.success || s == InstallTaskStatus.skipped,
+          (status) =>
+              status == InstallTaskStatus.success ||
+              status == InstallTaskStatus.skipped,
         )
         .length;
-    return (done + taskProgress) / total;
+    return (done + taskProgress) / InstallTask.values.length;
   }
 }
 
 const Object _sentinel = Object();
 
 class WizardNotifier extends Notifier<WizardState> {
-  Timer? _runner;
   bool _installRunning = false;
+  int _resumeLoadGeneration = 0;
 
   @override
-  WizardState build() {
-    ref.onDispose(() => _runner?.cancel());
-    return _initialState();
-  }
+  WizardState build() => _initialState();
 
-  WizardState _initialState() {
-    return WizardState(
-      step: WizardStep.mirrorCheck,
-      draft: const InstanceDraft(),
-      taskStatus: <InstallTask, InstallTaskStatus>{
-        for (final t in InstallTask.values) t: InstallTaskStatus.pending,
-      },
-      taskProgress: 0,
-      logs: const <String>[],
-    );
-  }
+  WizardState _initialState() => WizardState(
+        step: WizardStep.mirrorCheck,
+        draft: const InstanceDraft(),
+        taskStatus: _pendingStatuses(),
+        taskProgress: 0,
+        logs: const <String>[],
+      );
 
   void resetForNewInstance() {
+    if (_installRunning || state.installRunning) {
+      appLogger.w('wizard: ignored reset while installation is running');
+      return;
+    }
+    _resumeLoadGeneration++;
     appLogger.i('wizard: resetForNewInstance');
-    _runner?.cancel();
-    _installRunning = false;
     state = _initialState();
   }
 
-  // ---- 表单操作 ----
-
-  void update(InstanceDraft Function(InstanceDraft) f) {
-    state = state.copyWith(draft: f(state.draft));
+  void update(InstanceDraft Function(InstanceDraft) updateDraft) {
+    if (state.installRunning) return;
+    state = state.copyWith(draft: updateDraft(state.draft));
   }
 
   void goTo(WizardStep step) {
+    if (state.installRunning) return;
     state = state.copyWith(step: step);
   }
 
   bool nextStep() {
+    if (state.installRunning) return false;
     final next = state.step.next();
     if (next == null) return false;
     state = state.copyWith(step: next);
@@ -172,34 +171,85 @@ class WizardNotifier extends Notifier<WizardState> {
   }
 
   bool prevStep() {
-    final prev = state.step.prev();
-    if (prev == null) return false;
-    state = state.copyWith(step: prev);
+    if (state.installRunning) return false;
+    final previous = state.step.prev();
+    if (previous == null) return false;
+    state = state.copyWith(step: previous);
     return true;
   }
 
-  // ---- 安装执行 ----
-
-  void prepareResume(Instance instance) {
+  /// 只从与该实例绑定的加密断点恢复。没有断点时清空所有密钥并回到配置流程。
+  Future<void> prepareResume(Instance instance) async {
+    if (_installRunning || state.installRunning) return;
+    final generation = ++_resumeLoadGeneration;
     appLogger.i(
-        'wizard: prepareResume instance=${instance.id} name=${instance.name} dir=${instance.installDir}');
+      'wizard: prepareResume instance=${instance.id} '
+      'name=${instance.name} dir=${instance.installDir}',
+    );
+
+    final safeDraft = InstanceDraft(
+      name: instance.name,
+      botQq: instance.botQq,
+      botNickname: instance.botNickname,
+      ownerQq: instance.ownerQq,
+      wsPort: instance.wsPort,
+      channel: instance.channel,
+      installWebui: instance.installWebui,
+    );
+    state = _initialState().copyWith(
+      draft: safeDraft,
+      resumeLoading: true,
+      instanceId: instance.id,
+      installDir: instance.installDir,
+      logs: <String>[
+        '[info] 正在读取实例 ${instance.name} 的加密安装断点…',
+      ],
+    );
+
+    WizardInstallCheckpoint? checkpoint;
+    Object? checkpointError;
+    try {
+      checkpoint = await ref
+          .read(wizardInstallCheckpointStoreProvider)
+          .read(instance.id);
+    } on Object catch (error, stack) {
+      checkpointError = error;
+      appLogger.e(
+        'wizard: failed to read install checkpoint',
+        error: error,
+        stackTrace: stack,
+      );
+    }
+    if (generation != _resumeLoadGeneration) return;
+
+    final validCheckpoint = checkpoint != null &&
+        checkpoint.instanceId == instance.id &&
+        checkpoint.installDir == instance.installDir &&
+        checkpoint.draft.apiKey.trim().isNotEmpty;
+    if (!validCheckpoint) {
+      state = state.copyWith(
+        resumeLoading: false,
+        requiresReconfiguration: true,
+        resumeAvailable: false,
+        logs: <String>[
+          ...state.logs,
+          if (checkpointError != null)
+            '[warn] 安装断点读取失败：$checkpointError'
+          else
+            '[warn] 未找到完整安装断点，不能安全地从失败处继续。',
+          '[info] 已清空敏感字段，请重新确认镜像、协议和模型密钥。',
+        ],
+      );
+      return;
+    }
+
     state = state.copyWith(
       step: WizardStep.install,
-      draft: state.draft.copyWith(
-        name: instance.name,
-        botQq: instance.botQq,
-        botNickname: instance.botNickname,
-        ownerQq: instance.ownerQq,
-        wsPort: instance.wsPort,
-        channel: instance.channel,
-        installWebui: instance.installWebui,
-      ),
-      taskStatus: <InstallTask, InstallTaskStatus>{
-        for (final task in InstallTask.values) task: InstallTaskStatus.pending,
-      },
+      draft: checkpoint.draft,
+      taskStatus: _resumeStatuses(checkpoint.taskStatus),
       taskProgress: 0,
       logs: <String>[
-        '[info] 已载入未完成实例：${instance.name}',
+        '[info] 已载入实例 ${instance.name} 的加密安装断点。',
         '[info] 实例目录：${instance.installDir}',
         if (instance.installError != null)
           '[last-error] ${instance.installError}',
@@ -208,103 +258,135 @@ class WizardNotifier extends Notifier<WizardState> {
       napcatQrPayload: null,
       installFinished: false,
       installStarted: true,
+      installRunning: false,
       resumeAvailable: true,
+      resumeLoading: false,
+      requiresReconfiguration: false,
       instanceId: instance.id,
       installDir: instance.installDir,
     );
   }
 
-  /// 启动安装流程。原生层负责 rootfs/proot/脚本执行，Flutter 负责状态编排。
-  Future<void> startInstall({bool resume = false}) async {
-    if (_installRunning) return;
-    appLogger.i('wizard: startInstall resume=$resume');
-    _runner?.cancel();
+  /// 启动安装。配置在第一个 await 前冻结，后续任务只使用该快照。
+  Future<void> startInstall({bool resume = false, bool restart = false}) async {
+    if (_installRunning || state.installRunning || state.resumeLoading) return;
     _installRunning = true;
-    final runtime = ref.read(runtimeBridgeProvider);
-    // 实例 id 在 startInstall 起手处生成一次，贯穿整个安装流程：
-    //   - 所有 native task 都用它拼出 /root/instances/<id>/Neo-MoFox 这种路径
-    //   - registerInstance 那步写到 SharedPreferences 用同一个 id
-    // 这样 dashboard 里点"终端"按钮才能用 instance.repoPath / instance.installDir
-    // 直接命中实际目录。
+    _resumeLoadGeneration++;
+
+    final installDraft = state.draft;
     final instanceId = resume && state.instanceId != null
         ? state.instanceId!
         : 'inst-${DateTime.now().millisecondsSinceEpoch}';
     final installDir = resume && state.installDir != null
         ? state.installDir!
         : '/root/instances/$instanceId';
-    final repo = await ref.read(instanceRepositoryProvider.future);
-    await repo.upsert(
-      _buildInstance(
-        instanceId: instanceId,
-        installDir: installDir,
-        installStatus: InstanceInstallStatus.installing,
-      ),
-    );
-    ref.invalidate(instancesProvider);
+    final initialStatuses = resume && !restart
+        ? _resumeStatuses(state.taskStatus)
+        : _pendingStatuses();
+    final previousLogs = state.logs;
+    final runtime = ref.read(runtimeBridgeProvider);
+    final wakeLock = ref.read(screenWakeLockProvider);
+    final checkpointStore = ref.read(wizardInstallCheckpointStoreProvider);
+    StreamSubscription<InstallEvent>? logSubscription;
+    InstanceRepository? repo;
+    InstallTask? activeTask;
+    var checkpointAvailable = false;
+
     state = state.copyWith(
-      taskStatus: resume
-          ? _resumeStatuses(state.taskStatus)
-          : <InstallTask, InstallTaskStatus>{
-              for (final t in InstallTask.values) t: InstallTaskStatus.pending,
-            },
+      step: WizardStep.install,
+      taskStatus: initialStatuses,
       taskProgress: 0,
       logs: resume
           ? <String>[
-              ...state.logs,
-              '[info] 从上次失败处继续安装…',
+              ...previousLogs,
+              restart ? '[info] 使用已确认配置重新执行全部安装任务…' : '[info] 从加密断点继续安装…',
               '[info] 实例目录：$installDir',
             ]
-          : <String>['[info] 准备安装环境…', '[info] 实例目录：$installDir'],
+          : <String>[
+              '[info] 准备安装环境…',
+              '[info] 实例目录：$installDir',
+            ],
       errorMessage: null,
       installFinished: false,
       installStarted: true,
+      installRunning: true,
       resumeAvailable: false,
+      requiresReconfiguration: false,
       instanceId: instanceId,
       installDir: installDir,
     );
-
-    // 整个安装流程订阅一次原生事件流，按 task 字段累积日志。
-    // 这样可以避免 task 切换瞬间 sink 被 detach 导致 emit 丢日志。
-    final perTaskLogs = <String, List<String>>{};
-    final logSubscription = runtime.installEvents().listen((event) {
-      perTaskLogs.putIfAbsent(event.task, () => <String>[]).add(event.line);
-      _appendLog(event.line);
-    });
+    appLogger.i(
+      'wizard: startInstall resume=$resume restart=$restart '
+      'instanceId=$instanceId',
+    );
 
     try {
+      await wakeLock.acquire();
+      await checkpointStore.write(
+        _checkpoint(instanceId, installDir, installDraft),
+      );
+      checkpointAvailable = true;
+
+      final resolvedRepo = await ref.read(instanceRepositoryProvider.future);
+      repo = resolvedRepo;
+      await resolvedRepo.upsert(
+        _buildInstance(
+          draft: installDraft,
+          instanceId: instanceId,
+          installDir: installDir,
+          installStatus: InstanceInstallStatus.installing,
+        ),
+      );
+      ref.invalidate(instancesProvider);
+
+      final perTaskLogs = <String, List<String>>{};
+      logSubscription = runtime.installEvents().listen((event) {
+        perTaskLogs.putIfAbsent(event.task, () => <String>[]).add(event.line);
+        _appendLog(event.line);
+      });
+
       for (final task in InstallTask.values) {
-        if (state.taskStatus[task] == InstallTaskStatus.success) {
+        if (state.taskStatus[task] == InstallTaskStatus.success ||
+            state.taskStatus[task] == InstallTaskStatus.skipped) {
           _appendLog('[resume] ${task.label} 已完成，继续下一项');
           continue;
         }
-        if (_shouldSkipTask(task)) {
+        activeTask = task;
+        if (_shouldSkipTask(task, installDraft)) {
           _markStatus(task, InstallTaskStatus.skipped);
           _appendLog('[skip] ${task.label} 已关闭，跳过');
+          await checkpointStore.write(
+            _checkpoint(instanceId, installDir, installDraft),
+          );
+          checkpointAvailable = true;
+          activeTask = null;
           continue;
         }
 
         _markStatus(task, InstallTaskStatus.running);
         _appendLog('[run] ${task.label}…');
-        appLogger
-            .i('wizard: run task=${task.name} native=${_nativeTaskName(task)}');
-
         final nativeTask = _nativeTaskName(task);
+        appLogger.i(
+          'wizard: run task=${task.name} native=$nativeTask',
+        );
         if (nativeTask != null) {
           state = state.copyWith(taskProgress: 0.35);
           final result = await runtime.runInstallTask(
             nativeTask,
-            args: _runtimeArgs(instanceId, installDir),
+            args: _runtimeArgs(installDraft, instanceId, installDir),
           );
-          // 流为空时（极端 race 或事件被 framework 丢弃）回退到 result.logs。
           final streamed = perTaskLogs[nativeTask] ?? const <String>[];
-          if (streamed.isEmpty) {
-            _appendLogs(result.logs);
-          }
+          if (streamed.isEmpty) _appendLogs(result.logs);
           if (!result.success) {
             _markStatus(task, InstallTaskStatus.failed);
             final message = result.error ?? '${task.label} 执行失败';
-            appLogger.e('wizard: task=${task.name} failed: $message');
+            await checkpointStore.write(
+              _checkpoint(instanceId, installDir, installDraft),
+            );
+            checkpointAvailable = true;
             await _persistInstallFailure(
+              repo: repo,
+              draft: installDraft,
               instanceId: instanceId,
               installDir: installDir,
               task: task,
@@ -321,19 +403,19 @@ class WizardNotifier extends Notifier<WizardState> {
           state = state.copyWith(taskProgress: 1);
         }
 
-        // 注册实例：真正写入仓库
         if (task == InstallTask.registerInstance) {
           await repo.upsert(
             _buildInstance(
+              draft: installDraft,
               instanceId: instanceId,
               installDir: installDir,
               installStatus: InstanceInstallStatus.installed,
             ),
           );
           ref.invalidate(instancesProvider);
-          // 把 WebUI api_key 存入安全存储，供 WebView 免登录使用
-          if (state.draft.installWebui && state.draft.webuiApiKey.isNotEmpty) {
-            await WebuiKeyStore.set(instanceId, state.draft.webuiApiKey);
+          if (installDraft.installWebui &&
+              installDraft.webuiApiKey.isNotEmpty) {
+            await WebuiKeyStore.set(instanceId, installDraft.webuiApiKey);
           }
           _appendLog('[ok] 实例已注册到本地');
         }
@@ -341,90 +423,161 @@ class WizardNotifier extends Notifier<WizardState> {
         _markStatus(task, InstallTaskStatus.success);
         state = state.copyWith(taskProgress: 0);
         _appendLog('[ok] ${task.label} 完成');
+        await checkpointStore.write(
+          _checkpoint(instanceId, installDir, installDraft),
+        );
+        checkpointAvailable = true;
+        activeTask = null;
       }
 
-      state = state.copyWith(installFinished: true);
+      try {
+        await checkpointStore.delete(instanceId);
+      } on Object catch (error, stack) {
+        appLogger.e(
+          'wizard: failed to delete completed checkpoint',
+          error: error,
+          stackTrace: stack,
+        );
+        _appendLog('[warn] 安装已完成，但旧断点清理失败。');
+      }
+      state = state.copyWith(
+        installFinished: true,
+        resumeAvailable: false,
+      );
       _appendLog('[done] 安装全部完成');
       appLogger.i('wizard: install finished instanceId=$instanceId');
-    } catch (error, stack) {
+    } on Object catch (error, stack) {
       appLogger.e('wizard: install exception', error: error, stackTrace: stack);
-      // 任意一步抛出未处理异常（典型例子：原生侧 PlatformException——比如 bootstrap zip
-      // 没打进 APK，context.assets.open 抛 FileNotFoundException）。如果不在这里 catch，
-      // state 会永远停在 running + taskProgress: 0.35，UI 看上去就是"卡在 3% 不动"。
-      final running = state.currentTask;
-      if (running != null) {
-        _markStatus(running, InstallTaskStatus.failed);
+      final runningTask = activeTask ?? state.currentTask;
+      if (runningTask != null) {
+        _markStatus(runningTask, InstallTaskStatus.failed);
       }
       final message = _formatError(error);
-      final instanceId = state.instanceId;
-      final installDir = state.installDir;
-      if (instanceId != null && installDir != null && running != null) {
-        await _persistInstallFailure(
-          instanceId: instanceId,
-          installDir: installDir,
-          task: running,
-          message: message,
-        );
+      if (runningTask != null) {
+        try {
+          await checkpointStore.write(
+            _checkpoint(instanceId, installDir, installDraft),
+          );
+          checkpointAvailable = true;
+        } on Object catch (checkpointError, checkpointStack) {
+          appLogger.e(
+            'wizard: failed to persist checkpoint after exception',
+            error: checkpointError,
+            stackTrace: checkpointStack,
+          );
+        }
+        try {
+          await _persistInstallFailure(
+            repo: repo,
+            draft: installDraft,
+            instanceId: instanceId,
+            installDir: installDir,
+            task: runningTask,
+            message: message,
+          );
+        } on Object catch (persistError, persistStack) {
+          appLogger.e(
+            'wizard: failed to persist installation failure',
+            error: persistError,
+            stackTrace: persistStack,
+          );
+        }
       }
       state = state.copyWith(
         errorMessage: message,
         taskProgress: 0,
-        resumeAvailable: true,
+        resumeAvailable: checkpointAvailable,
       );
       _appendLog('[error] $message');
       _appendLog('[trace] $stack');
     } finally {
-      await logSubscription.cancel();
-      _installRunning = false;
+      try {
+        await logSubscription?.cancel();
+      } on Object catch (error, stack) {
+        appLogger.e(
+          'wizard: failed to cancel install log subscription',
+          error: error,
+          stackTrace: stack,
+        );
+      } finally {
+        try {
+          await wakeLock.release();
+        } finally {
+          _installRunning = false;
+          state = state.copyWith(installRunning: false);
+        }
+      }
     }
   }
 
-  Map<InstallTask, InstallTaskStatus> _resumeStatuses(
+  WizardInstallCheckpoint _checkpoint(
+    String instanceId,
+    String installDir,
+    InstanceDraft draft,
+  ) =>
+      WizardInstallCheckpoint(
+        instanceId: instanceId,
+        installDir: installDir,
+        draft: draft,
+        taskStatus: Map<InstallTask, InstallTaskStatus>.unmodifiable(
+          state.taskStatus,
+        ),
+      );
+
+  static Map<InstallTask, InstallTaskStatus> _pendingStatuses() =>
+      <InstallTask, InstallTaskStatus>{
+        for (final task in InstallTask.values) task: InstallTaskStatus.pending,
+      };
+
+  static Map<InstallTask, InstallTaskStatus> _resumeStatuses(
     Map<InstallTask, InstallTaskStatus> current,
-  ) {
-    return <InstallTask, InstallTaskStatus>{
-      for (final task in InstallTask.values)
-        task: current[task] == InstallTaskStatus.success
-            ? InstallTaskStatus.success
-            : InstallTaskStatus.pending,
-    };
-  }
+  ) =>
+      <InstallTask, InstallTaskStatus>{
+        for (final task in InstallTask.values)
+          task: current[task] == InstallTaskStatus.success ||
+                  current[task] == InstallTaskStatus.skipped
+              ? current[task]!
+              : InstallTaskStatus.pending,
+      };
 
   Instance _buildInstance({
+    required InstanceDraft draft,
     required String instanceId,
     required String installDir,
     required InstanceInstallStatus installStatus,
     String? lastInstallTask,
     String? installError,
-  }) {
-    final draft = state.draft;
-    return Instance(
-      id: instanceId,
-      name: draft.name.isEmpty ? '未命名实例' : draft.name,
-      botQq: draft.botQq,
-      botNickname: draft.botNickname,
-      ownerQq: draft.ownerQq,
-      wsPort: draft.wsPort,
-      channel: draft.channel,
-      installNapcat: true,
-      installWebui: draft.installWebui,
-      installDir: installDir,
-      createdAt: DateTime.now(),
-      installStatus: installStatus,
-      lastInstallTask: lastInstallTask,
-      installError: installError,
-    );
-  }
+  }) =>
+      Instance(
+        id: instanceId,
+        name: draft.name.isEmpty ? '未命名实例' : draft.name,
+        botQq: draft.botQq,
+        botNickname: draft.botNickname,
+        ownerQq: draft.ownerQq,
+        wsPort: draft.wsPort,
+        channel: draft.channel,
+        installNapcat: true,
+        installWebui: draft.installWebui,
+        installDir: installDir,
+        createdAt: DateTime.now(),
+        installStatus: installStatus,
+        lastInstallTask: lastInstallTask,
+        installError: installError,
+      );
 
   Future<void> _persistInstallFailure({
+    required InstanceRepository? repo,
+    required InstanceDraft draft,
     required String instanceId,
     required String installDir,
     required InstallTask task,
     required String message,
   }) async {
-    final repo = await ref.read(instanceRepositoryProvider.future);
-    await repo.upsert(
+    final targetRepo =
+        repo ?? await ref.read(instanceRepositoryProvider.future);
+    await targetRepo!.upsert(
       _buildInstance(
+        draft: draft,
         instanceId: instanceId,
         installDir: installDir,
         installStatus: InstanceInstallStatus.failed,
@@ -437,9 +590,10 @@ class WizardNotifier extends Notifier<WizardState> {
 
   String _formatError(Object error) {
     if (error is PlatformException) {
-      final code = error.code;
-      final msg = error.message ?? '';
-      return msg.isEmpty ? '原生错误 ($code)' : '$msg ($code)';
+      final message = error.message ?? '';
+      return message.isEmpty
+          ? '原生错误 (${error.code})'
+          : '$message (${error.code})';
     }
     return error.toString();
   }
@@ -456,35 +610,35 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.registerInstance => null,
       };
 
-  bool _shouldSkipTask(InstallTask task) => switch (task) {
-        InstallTask.installWebui => !state.draft.installWebui,
+  bool _shouldSkipTask(InstallTask task, InstanceDraft draft) => switch (task) {
+        InstallTask.installWebui => !draft.installWebui,
         _ => false,
       };
 
-  Map<String, String> _runtimeArgs(String instanceId, String installDir) {
-    final draft = state.draft;
-    return <String, String>{
-      // 多 bot 路径：所有 per-instance 任务都用这两个键拼路径，
-      // 原生侧 RuntimeScripts 默认值是 /root/Neo-MoFox（兼容 OOBE 之前的旧逻辑）。
-      'instanceId': instanceId,
-      'installDir': installDir,
-      'repoPath': '$installDir/Neo-MoFox',
-      'repoUrl': wizardMirrorSourceFor(draft.mirrorId).repoUrl,
-      'name': draft.name,
-      'botQq': draft.botQq,
-      'botNickname': draft.botNickname,
-      'ownerQq': draft.ownerQq,
-      'apiKey': draft.apiKey,
-      'wsPort': draft.wsPort.toString(),
-      'channel': draft.channel,
-      'webuiApiKey': draft.webuiApiKey,
-      'webuiHost': '127.0.0.1',
-      'webuiPort': '8000',
-      'mirrorId': draft.mirrorId,
-      'installNapcat': true.toString(),
-      'installWebui': draft.installWebui.toString(),
-    };
-  }
+  Map<String, String> _runtimeArgs(
+    InstanceDraft draft,
+    String instanceId,
+    String installDir,
+  ) =>
+      <String, String>{
+        'instanceId': instanceId,
+        'installDir': installDir,
+        'repoPath': '$installDir/Neo-MoFox',
+        'repoUrl': wizardMirrorSourceFor(draft.mirrorId).repoUrl,
+        'name': draft.name,
+        'botQq': draft.botQq,
+        'botNickname': draft.botNickname,
+        'ownerQq': draft.ownerQq,
+        'apiKey': draft.apiKey,
+        'wsPort': draft.wsPort.toString(),
+        'channel': draft.channel,
+        'webuiApiKey': draft.webuiApiKey,
+        'webuiHost': '127.0.0.1',
+        'webuiPort': '8000',
+        'mirrorId': draft.mirrorId,
+        'installNapcat': true.toString(),
+        'installWebui': draft.installWebui.toString(),
+      };
 
   void _markStatus(InstallTask task, InstallTaskStatus status) {
     final next = <InstallTask, InstallTaskStatus>{...state.taskStatus};
@@ -523,3 +677,20 @@ const int _maxWizardLogLineChars = 600;
 
 final wizardProvider =
     NotifierProvider<WizardNotifier, WizardState>(WizardNotifier.new);
+
+/// 用于向导名称校验的已有实例名称。
+///
+/// 续装时当前实例本身必须排除，否则用户保留原名称也会被误判为重复。
+final wizardExistingInstanceNamesProvider =
+    Provider<AsyncValue<List<String>>>((ref) {
+  final currentInstanceId = ref.watch(
+    wizardProvider.select((state) => state.instanceId),
+  );
+  return ref.watch(instancesProvider).whenData(
+        (instances) => List<String>.unmodifiable(
+          instances
+              .where((instance) => instance.id != currentInstanceId)
+              .map((instance) => instance.name),
+        ),
+      );
+});

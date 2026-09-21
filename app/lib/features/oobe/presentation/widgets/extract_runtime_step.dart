@@ -26,9 +26,13 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
     super.dispose();
   }
 
-  void _scheduleScrollToBottom() {
+  void _scheduleScrollToBottom({required bool reduceMotion}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_logsScroll.hasClients) return;
+      if (reduceMotion) {
+        _logsScroll.jumpTo(_logsScroll.position.maxScrollExtent);
+        return;
+      }
       _logsScroll.animateTo(
         _logsScroll.position.maxScrollExtent,
         duration: const Duration(milliseconds: 120),
@@ -43,10 +47,11 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
     final text = Theme.of(context).textTheme;
     final flow = ref.watch(oobeFlowProvider);
     final notifier = ref.read(oobeFlowProvider.notifier);
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
 
     if (flow.logs.length != _lastLogCount) {
       _lastLogCount = flow.logs.length;
-      _scheduleScrollToBottom();
+      _scheduleScrollToBottom(reduceMotion: reduceMotion);
     }
 
     final result = flow.result;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../application/wizard_notifier.dart';
+import '../../domain/wizard_validation.dart';
 
 /// 硅基流动 API 密钥获取地址（含邀请码）。
 const _siliconFlowKeyUrl = 'https://cloud.siliconflow.cn/i/0ww8zcOn';
@@ -19,8 +20,23 @@ class _ModelStepState extends ConsumerState<ModelStep> {
 
   Future<void> _openGetKey() async {
     final uri = Uri.parse(_siliconFlowKeyUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    var launched = false;
+    try {
+      if (await canLaunchUrl(uri)) {
+        launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      }
+    } on Object {
+      launched = false;
+    }
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('无法打开密钥获取页面，请稍后重试。')),
+        );
     }
   }
 
@@ -70,6 +86,7 @@ class _ModelStepState extends ConsumerState<ModelStep> {
           const SizedBox(height: 20),
           // API Key 输入
           TextFormField(
+            key: const ValueKey<String>('wizard-api-key'),
             initialValue: draft.apiKey,
             obscureText: _obscure,
             decoration: InputDecoration(
@@ -77,10 +94,12 @@ class _ModelStepState extends ConsumerState<ModelStep> {
               hintText: '输入你的 API Key',
               prefixIcon: const Icon(Icons.key_outlined),
               suffixIcon: IconButton(
+                tooltip: _obscure ? '显示 API Key' : '隐藏 API Key',
                 onPressed: () => setState(() => _obscure = !_obscure),
                 icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
               ),
               border: const OutlineInputBorder(),
+              errorText: WizardValidation.apiKey(draft.apiKey),
             ),
             onChanged: (v) => notifier.update((d) => d.copyWith(apiKey: v)),
           ),

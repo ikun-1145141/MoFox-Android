@@ -25,9 +25,17 @@ class RuntimeProcessManager(
     private val assistantProcess = AtomicReference<Process?>(null)
 
     fun status(): Map<String, String> {
+        val botStatus = statusFor("bot")
+        val napcatStatus = statusFor("napcat")
+        val botInstanceId = processes["bot"]?.args?.get("instanceId")
+            ?.takeIf { botStatus == "running" && it.isNotBlank() }
+        val napcatInstanceId = processes["napcat"]?.args?.get("instanceId")
+            ?.takeIf { napcatStatus == "running" && it.isNotBlank() }
+        val activeInstanceId = (botInstanceId ?: napcatInstanceId).orEmpty()
         return mapOf(
-            "bot" to statusFor("bot"),
-            "napcat" to statusFor("napcat"),
+            "bot" to botStatus,
+            "napcat" to napcatStatus,
+            "activeInstanceId" to activeInstanceId,
         )
     }
 
@@ -306,8 +314,15 @@ class RuntimeProcessManager(
             // 流已关闭（destroy/destroyForcibly），属正常退出路径，忽略。
         }
         val code = try { process.waitFor() } catch (_: InterruptedException) { -1 }
-        val managed = processes[name]
-        processes[name] = ManagedProcess(process, "stopped", managed?.args ?: emptyMap())
+        // restart() 会先停旧进程再立即登记新进程。旧进程的读取线程可能稍后才
+        // 走到这里，不能让它把已经登记的新进程覆盖成 stopped。
+        processes.computeIfPresent(name) { _, managed ->
+            if (managed.process === process) {
+                ManagedProcess(process, "stopped", managed.args)
+            } else {
+                managed
+            }
+        }
         events.emit("process", mapOf("name" to name, "line" to "[$name] exited with $code"))
     }
 

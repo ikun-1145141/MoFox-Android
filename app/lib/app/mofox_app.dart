@@ -3,9 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/theme/app_theme.dart';
-import '../features/settings/application/app_settings_provider.dart';
-import 'router/app_router.dart';
+import 'package:mofox_android/app/router/app_router.dart';
+import 'package:mofox_android/core/theme/app_theme.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
 
 class MoFoxApp extends ConsumerWidget {
   const MoFoxApp({super.key});
@@ -22,6 +22,8 @@ class MoFoxApp extends ConsumerWidget {
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(lightScheme),
           darkTheme: AppTheme.dark(darkScheme),
+          highContrastTheme: AppTheme.highContrastLight(lightScheme),
+          highContrastDarkTheme: AppTheme.highContrastDark(darkScheme),
           themeMode: _toFlutterThemeMode(settings?.themeMode),
           locale: const Locale('zh', 'CN'),
           supportedLocales: const <Locale>[Locale('zh', 'CN')],

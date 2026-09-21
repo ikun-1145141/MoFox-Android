@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../application/wizard_notifier.dart';
+import '../../domain/wizard_validation.dart';
 
 class NetworkStep extends ConsumerStatefulWidget {
   const NetworkStep({super.key});
@@ -42,16 +43,20 @@ class _NetworkStepState extends ConsumerState<NetworkStep> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           TextFormField(
+            key: const ValueKey<String>('wizard-ws-port'),
             initialValue: '${draft.wsPort}',
             keyboardType: TextInputType.number,
+            maxLength: 5,
             inputFormatters: <TextInputFormatter>[
               FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(5),
             ],
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'WebSocket 端口',
               hintText: '8095',
-              prefixIcon: Icon(Icons.lan_outlined),
-              border: OutlineInputBorder(),
+              prefixIcon: const Icon(Icons.lan_outlined),
+              border: const OutlineInputBorder(),
+              errorText: WizardValidation.port(draft.wsPort),
             ),
             onChanged: (v) {
               final n = int.tryParse(v) ?? 0;
@@ -100,13 +105,18 @@ class _NetworkStepState extends ConsumerState<NetworkStep> {
             children: <Widget>[
               Expanded(
                 child: TextFormField(
+                  key: const ValueKey<String>('wizard-webui-key'),
                   controller: _webuiKeyController,
                   enabled: draft.installWebui,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'WebUI 访问密钥',
                     hintText: '启用 WebUI 后点击右侧骰子生成',
-                    prefixIcon: Icon(Icons.vpn_key_outlined),
-                    border: OutlineInputBorder(),
+                    prefixIcon: const Icon(Icons.vpn_key_outlined),
+                    border: const OutlineInputBorder(),
+                    errorText: WizardValidation.webuiKey(
+                      draft.webuiApiKey,
+                      enabled: draft.installWebui,
+                    ),
                   ),
                   onChanged: (v) =>
                       notifier.update((d) => d.copyWith(webuiApiKey: v)),

@@ -132,6 +132,11 @@ class TextEditorNotifier
     state = state.copyWith(text: text, saveError: null);
   }
 
+  /// 放弃草稿，恢复到最近一次从磁盘读取的版本。
+  void discardLocalChanges() {
+    state = state.copyWith(text: state.loadedText, saveError: null);
+  }
+
   Future<void> save() async {
     if (!state.canSave) return;
     final generation = _generation;
@@ -156,7 +161,10 @@ class TextEditorNotifier
       if (generation != _generation) return;
       state = state.copyWith(isSaving: false, saveError: error.message);
       if (error.code == RootfsFileErrorCode.conflict) {
-        await _load();
+        await _refreshRevisionAfterConflict(
+          localText: state.text,
+          generation: generation,
+        );
       }
       rethrow;
     } on Object catch (error) {
@@ -167,6 +175,41 @@ class TextEditorNotifier
         saveError: '保存失败：$error',
       );
       rethrow;
+    }
+  }
+
+  Future<void> _refreshRevisionAfterConflict({
+    required String localText,
+    required int generation,
+  }) async {
+    try {
+      final doc = await _repository.readTextDocument(
+        scope: state.scope,
+        path: state.path,
+      );
+      if (generation != _generation) return;
+      state = state.copyWith(
+        loadedText: doc.text,
+        text: localText,
+        hasUtf8Bom: doc.hasUtf8Bom,
+        newlineStyle: doc.newlineStyle,
+        hasFinalNewline: doc.hasFinalNewline,
+        revision: doc.revision,
+        loadStatus: TextEditorLoadStatus.ready,
+        isSaving: false,
+        saveError: '文件已被外部修改，你的本地草稿已保留',
+      );
+    } on Object catch (refreshError) {
+      if (generation != _generation) return;
+      appLogger.e(
+        'text_editor: failed to refresh conflict revision',
+        error: refreshError,
+      );
+      state = state.copyWith(
+        text: localText,
+        isSaving: false,
+        saveError: '文件已被外部修改；本地草稿已保留，但读取新版本失败',
+      );
     }
   }
 

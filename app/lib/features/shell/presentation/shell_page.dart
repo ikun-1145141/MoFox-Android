@@ -7,13 +7,13 @@ import '../../../app/router/app_router.dart';
 ///
 /// Tab 顺序：首页 → 管理 → 终端 → 设置。
 class ShellPage extends StatelessWidget {
-  const ShellPage({required this.child, super.key});
-  final Widget child;
+  const ShellPage({required this.navigationShell, super.key});
+
+  final StatefulNavigationShell navigationShell;
 
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-    final tab = _tabFromLocation(location);
+    final tab = navigationShell.currentIndex;
 
     return PopScope(
       canPop: context.canPop() || tab == 0,
@@ -25,24 +25,52 @@ class ShellPage extends StatelessWidget {
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= 600;
           if (wide) {
+            final expanded = constraints.maxWidth >= 1200;
             return Scaffold(
               body: SafeArea(
                 child: Row(
                   children: <Widget>[
                     NavigationRail(
+                      extended: expanded,
+                      minExtendedWidth: 220,
                       selectedIndex: tab,
                       onDestinationSelected: (i) => _go(context, i),
-                      labelType: NavigationRailLabelType.all,
+                      labelType: expanded
+                          ? NavigationRailLabelType.none
+                          : NavigationRailLabelType.all,
+                      groupAlignment: -0.82,
+                      leading: Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          expanded ? 20 : 8,
+                          12,
+                          expanded ? 20 : 8,
+                          20,
+                        ),
+                        child: expanded
+                            ? Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  const _BrandMark(),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'MoFox',
+                                    style:
+                                        Theme.of(context).textTheme.titleLarge,
+                                  ),
+                                ],
+                              )
+                            : const _BrandMark(),
+                      ),
                       destinations: const <NavigationRailDestination>[
                         NavigationRailDestination(
                           icon: Icon(Icons.home_outlined),
                           selectedIcon: Icon(Icons.home),
-                          label: Text('首页'),
+                          label: Text('概览'),
                         ),
                         NavigationRailDestination(
                           icon: Icon(Icons.dashboard_outlined),
                           selectedIcon: Icon(Icons.dashboard),
-                          label: Text('管理'),
+                          label: Text('实例'),
                         ),
                         NavigationRailDestination(
                           icon: Icon(Icons.terminal_outlined),
@@ -57,14 +85,14 @@ class ShellPage extends StatelessWidget {
                       ],
                     ),
                     const VerticalDivider(width: 1),
-                    Expanded(child: child),
+                    Expanded(child: navigationShell),
                   ],
                 ),
               ),
             );
           }
           return Scaffold(
-            body: child,
+            body: navigationShell,
             bottomNavigationBar: NavigationBar(
               selectedIndex: tab,
               onDestinationSelected: (i) => _go(context, i),
@@ -72,12 +100,12 @@ class ShellPage extends StatelessWidget {
                 NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home),
-                  label: '首页',
+                  label: '概览',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.dashboard_outlined),
                   selectedIcon: Icon(Icons.dashboard),
-                  label: '管理',
+                  label: '实例',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.terminal_outlined),
@@ -97,22 +125,38 @@ class ShellPage extends StatelessWidget {
     );
   }
 
-  int _tabFromLocation(String loc) {
-    if (loc.startsWith(AppRoute.dashboard)) {
-      return 1;
-    }
-    if (loc.startsWith(AppRoute.terminal)) return 2;
-    if (loc.startsWith(AppRoute.settings)) return 3;
-    return 0;
-  }
-
   void _go(BuildContext context, int i) {
-    final route = switch (i) {
-      1 => AppRoute.dashboard,
-      2 => AppRoute.terminal,
-      3 => AppRoute.settings,
-      _ => AppRoute.home,
-    };
-    context.go(route);
+    navigationShell.goBranch(
+      i,
+      initialLocation: i == navigationShell.currentIndex,
+    );
+  }
+}
+
+class _BrandMark extends StatelessWidget {
+  const _BrandMark();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'MoFox',
+      image: true,
+      excludeSemantics: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.primaryContainer,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Icon(
+            Icons.auto_awesome_rounded,
+            size: 24,
+            color: scheme.onPrimaryContainer,
+          ),
+        ),
+      ),
+    );
   }
 }

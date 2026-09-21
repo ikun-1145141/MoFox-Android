@@ -10,19 +10,29 @@ void main() {
   late TestDefaultBinaryMessenger messenger;
   late List<String> runtimeTasks;
   late List<bool> keepScreenOnValues;
+  String? failingTask;
 
   setUp(() {
     messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     runtimeTasks = <String>[];
     keepScreenOnValues = <bool>[];
+    failingTask = null;
 
     messenger.setMockMethodCallHandler(
       const MethodChannel('mofox/runtime'),
       (call) async {
         if (call.method != 'runInstallTask') return null;
         final arguments = call.arguments! as Map<Object?, Object?>;
-        runtimeTasks.add(arguments['task']! as String);
+        final task = arguments['task']! as String;
+        runtimeTasks.add(task);
+        if (task == failingTask) {
+          return <String, Object?>{
+            'success': false,
+            'logs': <String>[],
+            'error': '模拟安装失败',
+          };
+        }
         return <String, Object?>{
           'success': true,
           'logs': <String>[],
@@ -88,5 +98,16 @@ void main() {
       ],
     );
     expect(container.read(oobeFlowProvider).result, isA<OobeStepSuccess>());
+  });
+
+  test('failed runtime install always releases the wake lock', () async {
+    failingTask = 'installRuntimeDeps';
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    await container.read(oobeFlowProvider.notifier).runRuntimeInstall();
+
+    expect(container.read(oobeFlowProvider).result, isA<OobeStepFailure>());
+    expect(keepScreenOnValues, <bool>[true, false]);
   });
 }

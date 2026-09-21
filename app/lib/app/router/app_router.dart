@@ -24,6 +24,7 @@ import '../../features/backup/presentation/backup_page.dart';
 import '../../features/wizard/presentation/wizard_page.dart';
 
 abstract final class AppRoute {
+  static const String startup = '/startup';
   static const String oobe = '/oobe';
   static const String shell = '/';
   static const String home = '/home';
@@ -44,19 +45,30 @@ abstract final class AppRoute {
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final oobeStatus = ref.watch(oobeStatusProvider);
   return GoRouter(
-    initialLocation: AppRoute.home,
+    initialLocation: AppRoute.startup,
     redirect: (context, state) {
-      final status = ref.watch(oobeStatusProvider);
-      final oobeDone = status.valueOrNull;
-      if (oobeDone == null) return null;
+      final location = state.matchedLocation;
+      if (oobeStatus.isLoading || oobeStatus.hasError) {
+        return location == AppRoute.startup ? null : AppRoute.startup;
+      }
 
-      final goingToOobe = state.matchedLocation == AppRoute.oobe;
+      final oobeDone = oobeStatus.requireValue;
+      if (location == AppRoute.startup) {
+        return oobeDone ? AppRoute.home : AppRoute.oobe;
+      }
+
+      final goingToOobe = location == AppRoute.oobe;
       if (!oobeDone && !goingToOobe) return AppRoute.oobe;
       if (oobeDone && goingToOobe) return AppRoute.home;
       return null;
     },
     routes: <RouteBase>[
+      GoRoute(
+        path: AppRoute.startup,
+        builder: (_, __) => const _StartupGatePage(),
+      ),
       GoRoute(
         path: AppRoute.oobe,
         builder: (_, __) => const OobePage(),
@@ -64,9 +76,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Wizard 是全屏 flow，不挂在 ShellRoute 下面（避免被底栏挤）。
       GoRoute(
         path: AppRoute.wizard,
-        builder: (_, state) => WizardPage(
-          resumeInstance: state.extra as Instance?,
-        ),
+        builder: (_, state) {
+          final extra = state.extra;
+          return WizardPage(
+            resumeInstance: extra is Instance ? extra : null,
+          );
+        },
       ),
       GoRoute(
         path: AppRoute.about,
@@ -95,7 +110,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.instanceDetail,
         pageBuilder: (_, state) {
-          final instance = state.extra as Instance;
+          final extra = state.extra;
+          if (extra is! Instance) {
+            return const MaterialPage(
+              key: ValueKey('instanceDetail-error'),
+              child: _RouteArgsErrorPage(
+                message: '实例参数缺失，请从实例列表进入。',
+              ),
+            );
+          }
+          final instance = extra;
           return MaterialPage(
             key: ValueKey('instanceDetail-${instance.id}'),
             child: InstanceDetailPage(instance: instance),
@@ -160,41 +184,112 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      ShellRoute(
-        builder: (context, state, child) => ShellPage(child: child),
-        routes: <RouteBase>[
-          GoRoute(
-            path: AppRoute.shell,
-            redirect: (_, __) => AppRoute.home,
+      GoRoute(
+        path: AppRoute.shell,
+        redirect: (_, __) => AppRoute.home,
+      ),
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) => ShellPage(
+          navigationShell: navigationShell,
+        ),
+        branches: <StatefulShellBranch>[
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: AppRoute.home,
+                builder: (_, __) => const HomePage(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: AppRoute.home,
-            builder: (_, __) => const HomePage(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: AppRoute.dashboard,
+                builder: (_, __) => const DashboardPage(),
+              ),
+            ],
           ),
-          GoRoute(
-            path: AppRoute.dashboard,
-            builder: (_, __) => const DashboardPage(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: AppRoute.terminal,
+                builder: (_, state) {
+                  final extra = state.extra;
+                  final values = extra is Map<String, String> ? extra : null;
+                  return TerminalPage(
+                    cwd: values?['cwd'] ?? '/root',
+                    title: values?['title'] ?? '终端',
+                    instanceId: values?['instanceId'],
+                  );
+                },
+              ),
+            ],
           ),
-          GoRoute(
-            path: AppRoute.terminal,
-            builder: (_, state) {
-              final extra = state.extra as Map<String, String>?;
-              return TerminalPage(
-                cwd: extra?['cwd'] ?? '/root',
-                title: extra?['title'] ?? '终端',
-                instanceId: extra?['instanceId'],
-              );
-            },
-          ),
-          GoRoute(
-            path: AppRoute.settings,
-            builder: (_, __) => const SettingsPage(),
+          StatefulShellBranch(
+            routes: <RouteBase>[
+              GoRoute(
+                path: AppRoute.settings,
+                builder: (_, __) => const SettingsPage(),
+              ),
+            ],
           ),
         ],
       ),
     ],
   );
 });
+
+class _StartupGatePage extends ConsumerWidget {
+  const _StartupGatePage();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = ref.watch(oobeStatusProvider);
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: status.when(
+              loading: () => Semantics(
+                label: '正在加载应用设置',
+                liveRegion: true,
+                child: const CircularProgressIndicator(),
+              ),
+              data: (_) => const CircularProgressIndicator(),
+              error: (_, __) => Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    Icons.settings_backup_restore_outlined,
+                    size: 48,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    '无法读取启动设置',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '请重试；你的实例和文件不会被修改。',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: () => ref.invalidate(oobeStatusProvider),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// 路由参数类型不匹配时显示的兜底页。
 class _RouteArgsErrorPage extends StatelessWidget {

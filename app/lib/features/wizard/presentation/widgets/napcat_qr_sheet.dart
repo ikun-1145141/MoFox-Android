@@ -1,7 +1,10 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:mofox_android/core/platform/screen_wake_lock.dart';
+import 'package:mofox_android/core/theme/app_theme.dart';
+import 'package:mofox_android/core/ui/app_components.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 class NapcatQrSheet extends StatelessWidget {
@@ -14,76 +17,153 @@ class NapcatQrSheet extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final imagePath = napcatQrImagePath(payload);
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(
-              '使用 QQ 扫码登录',
-              style: text.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
+    final copyableLoginInfo = napcatQrCopyableLoginInfo(payload);
+    return ScreenWakeLockScope(
+      child: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final qrSize = (constraints.maxWidth - 80).clamp(140.0, 220.0);
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.xl,
+                0,
+                AppSpacing.xl,
+                AppSpacing.xl,
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '在 QQ → 头像 → 扫一扫 中扫描下方二维码',
-              style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: imagePath == null
-                  ? QrImageView(
-                      data: payload,
-                      size: 220,
-                      backgroundColor: Colors.white,
-                    )
-                  : _QrFileImage(
-                      path: imagePath,
-                      cacheKey: payload,
-                      errorColor: scheme.error,
-                    ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  '等待扫描…',
-                  style: text.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Semantics(
+                        header: true,
+                        child: Text(
+                          '使用 QQ 扫码登录',
+                          style: text.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        '在 QQ → 头像 → 扫一扫 中扫描下方二维码',
+                        style: text.bodyMedium?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: AppSpacing.xl),
+                      Container(
+                        padding: const EdgeInsets.all(AppSpacing.lg),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(AppRadii.card),
+                        ),
+                        child: imagePath == null
+                            ? QrImageView(
+                                data: payload,
+                                size: qrSize,
+                                backgroundColor: Colors.white,
+                                semanticsLabel: 'QQ 登录二维码',
+                              )
+                            : _QrFileImage(
+                                path: imagePath,
+                                cacheKey: payload,
+                                errorColor: scheme.error,
+                                size: qrSize,
+                              ),
+                      ),
+                      const SizedBox(height: AppSpacing.lg),
+                      const AppStatusBadge(
+                        label: '等待扫描',
+                        tone: AppStatusTone.info,
+                        icon: Icons.hourglass_top,
+                      ),
+                      const SizedBox(height: AppSpacing.md),
+                      Text(
+                        copyableLoginInfo == null
+                            ? '当前二维码由 NapCat 以图片生成，无法提取可复制的登录信息。可使用另一台设备扫码，或请可信任的人协助。'
+                            : '无法使用视觉扫码时，可复制一次性登录信息到受信任的 QQ 登录流程。复制内容可能包含敏感凭据，请勿分享。',
+                        textAlign: TextAlign.center,
+                        style: text.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      if (copyableLoginInfo != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.lg),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonalIcon(
+                            onPressed: () => _confirmAndCopy(
+                              context,
+                              copyableLoginInfo,
+                            ),
+                            icon: const Icon(Icons.content_copy),
+                            label: const Text('复制登录信息'),
+                          ),
+                        ),
+                      ],
+                      if (onCancel != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.sm),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: onCancel,
+                            icon: const Icon(Icons.close),
+                            label: const Text('取消登录'),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            if (onCancel != null)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: onCancel,
-                  icon: const Icon(Icons.close),
-                  label: const Text('取消登录'),
-                ),
               ),
-          ],
+            );
+          },
         ),
       ),
     );
+  }
+
+  Future<void> _confirmAndCopy(
+    BuildContext context,
+    String loginInfo,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.content_copy),
+        title: const Text('复制登录信息？'),
+        content: const Text(
+          '登录信息可能包含一次性敏感凭据。只粘贴到受信任的 QQ 登录流程，并在使用后清空剪贴板。',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('复制'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: loginInfo));
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('登录信息已复制；使用后请清空剪贴板')),
+      );
+    } on Object {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('复制登录信息失败')),
+      );
+    }
   }
 }
 
@@ -95,10 +175,17 @@ String? napcatQrImagePath(String payload) {
   return versionSeparator > 0 ? value.substring(0, versionSeparator) : value;
 }
 
+/// 仅返回二维码本身携带的登录信息；本地图片路径不是可用的登录凭据。
+String? napcatQrCopyableLoginInfo(String payload) {
+  final value = payload.trim();
+  if (value.isEmpty || napcatQrImagePath(value) != null) return null;
+  return value;
+}
+
 /// 绕过 FileImage 的路径缓存，直接读取当前二维码文件内容。
 Uint8List napcatQrImageBytes(String payload) {
   final path = napcatQrImagePath(payload);
-  if (path == null) throw ArgumentError.value(payload, 'payload');
+  if (path == null) throw ArgumentError('payload 必须引用本地二维码文件');
   return File(path).readAsBytesSync();
 }
 
@@ -111,11 +198,13 @@ class _QrFileImage extends StatefulWidget {
     required this.path,
     required this.cacheKey,
     required this.errorColor,
+    required this.size,
   });
 
   final String path;
   final String cacheKey;
   final Color errorColor;
+  final double size;
 
   @override
   State<_QrFileImage> createState() => _QrFileImageState();
@@ -156,22 +245,29 @@ class _QrFileImageState extends State<_QrFileImage> {
     return Image.memory(
       _bytes!,
       key: ValueKey<String>(widget.cacheKey),
-      width: 220,
-      height: 220,
+      width: widget.size,
+      height: widget.size,
       fit: BoxFit.contain,
-      gaplessPlayback: false,
+      semanticLabel: 'QQ 登录二维码',
       errorBuilder: (_, __, ___) => _errorView(),
     );
   }
 
-  Widget _errorView() => SizedBox(
-        width: 220,
-        height: 220,
-        child: Center(
-          child: Icon(
-            Icons.broken_image_outlined,
-            color: widget.errorColor,
-            size: 40,
+  Widget _errorView() => Semantics(
+        container: true,
+        liveRegion: true,
+        label: '二维码加载失败，请取消后重试',
+        child: ExcludeSemantics(
+          child: SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: Center(
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: widget.errorColor,
+                size: 40,
+              ),
+            ),
           ),
         ),
       );
