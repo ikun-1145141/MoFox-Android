@@ -8,8 +8,8 @@ import 'package:mofox_android/features/instance/domain/instance.dart';
 /// 备份与导出页面。
 ///
 /// 三个功能入口：
-/// 1. 一键打包导出 — config + napcat 登录态 + 日志 → ZIP → SAF
-/// 2. 选择性导出 — 单独导出 core.toml / model.toml / napcat / 日志
+/// 1. 一键打包导出 — config + snowluma 登录态 + 日志 → ZIP → SAF
+/// 2. 选择性导出 — 单独导出 core.toml / model.toml / snowluma / 日志
 /// 3. 从备份导入 — SAF 读取 ZIP → 恢复到实例目录
 class BackupPage extends ConsumerStatefulWidget {
   const BackupPage({super.key});
@@ -80,7 +80,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               _SettingTile(
                 leading: const Icon(Icons.archive_outlined),
                 title: '打包导出',
-                subtitle: 'config + Napcat 登录态 + 最近日志',
+                subtitle: 'config + SnowLuma 登录态 + 最近日志',
                 trailing: backupState.isExporting
                     ? const SizedBox(
                         width: 20,
@@ -128,7 +128,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               _SettingTile(
                 leading: const Icon(Icons.hub_outlined),
                 title: 'adapter.toml',
-                subtitle: 'NapCat 适配器配置',
+                subtitle: 'SnowLuma 适配器配置',
                 trailing: const Icon(Icons.download_outlined),
                 onTap: backupState.isExporting
                     ? null
@@ -138,14 +138,14 @@ class _BackupPageState extends ConsumerState<BackupPage> {
               const _Divider(),
               _SettingTile(
                 leading: const Icon(Icons.qr_code_2_outlined),
-                title: 'NapCat 配置',
-                subtitle: 'NapCat WebSocket 等配置',
+                title: 'SnowLuma 配置',
+                subtitle: 'SnowLuma WebSocket 等配置',
                 trailing: const Icon(Icons.download_outlined),
                 onTap: backupState.isExporting
                     ? null
                     : () => _exportSingle(
-                          'napcat-config',
-                          '/root/napcat/config',
+                          'snowluma-config',
+                          '/root/snowluma/app/config',
                         ),
               ),
               const _Divider(),
@@ -266,7 +266,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       builder: (context) => AlertDialog(
         title: const Text('确认导入备份？'),
         content: Text(
-          '备份中的配置、NapCat 登录态和日志会覆盖实例“${instance.name}”中的同名文件。 '
+          '备份中的配置、SnowLuma 登录态和日志会覆盖实例“${instance.name}”中的同名文件。 '
           '此操作无法撤销，建议先导出当前备份。',
         ),
         actions: <Widget>[

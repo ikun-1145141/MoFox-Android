@@ -87,7 +87,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
       builder: (context) => AlertDialog(
         title: const Text('发送最近日志？'),
         content: const Text(
-          '将截取 Bot 和 NapCat 最近各 20 行日志，经本地脱敏后发送到你配置的模型服务。',
+          '将截取 Bot 和 SnowLuma 最近各 20 行日志，经本地脱敏后发送到你配置的模型服务。',
         ),
         actions: <Widget>[
           TextButton(
@@ -220,7 +220,7 @@ class _AssistantPanelState extends ConsumerState<AssistantPanel> {
                       ),
                       ActionChip(
                         label: const Text('检查运行状态'),
-                        onPressed: () => _send('检查 Bot 和 NapCat 是否正常运行。'),
+                        onPressed: () => _send('检查 Bot 和 SnowLuma 是否正常运行。'),
                       ),
                       ActionChip(
                         label: const Text('检查存储'),

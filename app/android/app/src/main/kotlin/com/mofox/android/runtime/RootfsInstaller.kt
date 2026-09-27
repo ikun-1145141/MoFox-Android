@@ -32,23 +32,23 @@ class RootfsInstaller(private val context: Context) {
     }
 
     /**
-     * 把 `flutter_assets/assets/scripts/napcat-install.sh` 拷到 rootfs 内的
-     * `/usr/local/bin/napcat-install.sh`，供 installNapcat 任务体直接执行。
-     * 幂等：文件已存在且大小一致则跳过。
+     * 把 `flutter_assets/assets/scripts/snowluma-install.sh` 拷到 rootfs 内的
+     * `/usr/local/bin/snowluma-install.sh`，供 installSnowluma 任务体直接执行。
+     * 每次调用都无条件覆盖：rootfs 会跨 APK 覆盖安装存活，若按"存在即跳过"，
+     * 旧版 APK 留下的脚本会一直被执行，必须与 APK 内置脚本保持一致。
      */
-    fun stageNapcatInstaller(): File {
+    fun stageSnowlumaInstaller(): File {
         ensureBaseDirectories()
-        val target = File(ubuntuPath, "usr/local/bin/napcat-install.sh")
-        if (target.exists() && target.length() > 0) return target
+        val target = File(ubuntuPath, "usr/local/bin/snowluma-install.sh")
         ubuntuPath.mkdirs()
         File(ubuntuPath, "usr/local/bin").mkdirs()
         try {
-            context.assets.open("flutter_assets/assets/scripts/napcat-install.sh").use { input ->
+            context.assets.open("flutter_assets/assets/scripts/snowluma-install.sh").use { input ->
                 target.outputStream().buffered().use { output -> input.copyTo(output) }
             }
             target.setExecutable(true, false)
         } catch (e: java.io.FileNotFoundException) {
-            throw RuntimeException("缺少 assets/scripts/napcat-install.sh", e)
+            throw RuntimeException("缺少 assets/scripts/snowluma-install.sh", e)
         }
         return target
     }

@@ -7,11 +7,24 @@ import 'package:mofox_android/features/instance/domain/instance.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  const codec = StandardMethodCodec();
+
   late TestDefaultBinaryMessenger messenger;
   late List<String> actions;
   late List<bool> keepScreenOnValues;
   late Map<String, String> processStatus;
-  var failNapcatInstall = false;
+  var failSnowlumaInstall = false;
+
+  void emitProcessEvent(String name, String line) {
+    messenger.handlePlatformMessage(
+      'mofox/runtime/events',
+      codec.encodeSuccessEnvelope(<String, Object?>{
+        'topic': 'process',
+        'payload': <String, Object?>{'name': name, 'line': line},
+      }),
+      (_) {},
+    );
+  }
 
   setUp(() {
     messenger =
@@ -20,10 +33,10 @@ void main() {
     keepScreenOnValues = <bool>[];
     processStatus = <String, String>{
       'bot': 'stopped',
-      'napcat': 'stopped',
+      'snowluma': 'stopped',
       'activeInstanceId': '',
     };
-    failNapcatInstall = false;
+    failSnowlumaInstall = false;
 
     messenger.setMockMethodCallHandler(
       const MethodChannel('mofox/runtime'),
@@ -35,7 +48,7 @@ void main() {
             final arguments = call.arguments! as Map<Object?, Object?>;
             final task = arguments['task']! as String;
             actions.add(task);
-            if (failNapcatInstall && task == 'installNapcat') {
+            if (failSnowlumaInstall && task == 'installSnowluma') {
               return <String, Object?>{
                 'success': false,
                 'logs': <String>[],
@@ -61,7 +74,7 @@ void main() {
             actions.add('stop:$name');
             processStatus[name] = 'stopped';
             if (processStatus['bot'] == 'stopped' &&
-                processStatus['napcat'] == 'stopped') {
+                processStatus['snowluma'] == 'stopped') {
               processStatus['activeInstanceId'] = '';
             }
             return null;
@@ -89,7 +102,6 @@ void main() {
       },
     );
 
-    const codec = StandardMethodCodec();
     messenger.setMockMessageHandler('mofox/runtime/events', (message) async {
       codec.decodeMethodCall(message);
       return codec.encodeSuccessEnvelope(null);
@@ -103,35 +115,117 @@ void main() {
       ..setMockMessageHandler('mofox/runtime/events', null);
   });
 
-  test('first NapCat start lazily installs, verifies, then starts', () async {
+  test('first SnowLuma start lazily installs, verifies, then starts', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(processConsoleProvider.notifier);
 
-    await notifier.startNapcat(_instance);
+    await notifier.startSnowluma(_instance);
 
     expect(
       actions,
-      <String>['installNapcat', 'verifyNapcat', 'start:napcat'],
+      <String>['installSnowluma', 'verifySnowluma', 'start:snowluma'],
     );
     expect(container.read(processConsoleProvider).errorMessage, isNull);
     expect(keepScreenOnValues, <bool>[true, false]);
   });
 
-  test('NapCat install failure prevents process start', () async {
-    failNapcatInstall = true;
+  test('SnowLuma install failure prevents process start', () async {
+    failSnowlumaInstall = true;
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(processConsoleProvider.notifier);
 
-    await notifier.startNapcat(_instance);
+    await notifier.startSnowluma(_instance);
 
-    expect(actions, <String>['installNapcat']);
+    expect(actions, <String>['installSnowluma']);
     expect(
       container.read(processConsoleProvider).errorMessage,
       contains('下载失败'),
     );
     expect(keepScreenOnValues, <bool>[true, false]);
+  });
+
+  test('cancelSnowlumaLogin stops the snowluma process', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(processConsoleProvider.notifier);
+    await notifier.startSnowluma(_instance);
+    actions.clear();
+
+    await notifier.cancelSnowlumaLogin();
+
+    expect(actions, <String>['stop:snowluma']);
+    expect(container.read(processConsoleProvider).snowlumaStatus, 'stopped');
+    expect(container.read(processConsoleProvider).activeInstanceId, isNull);
+  });
+
+  test('QR payload from process stream is cleared by MOFOX_LOGIN_OK', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(processConsoleProvider.notifier);
+    await notifier.startSnowluma(_instance);
+
+    emitProcessEvent(
+      'snowluma',
+      'MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png',
+    );
+    await pumpEventQueue();
+    final payload =
+        container.read(processConsoleProvider).snowlumaQrPayload;
+    expect(payload, isNotNull);
+    expect(payload, startsWith('file:/root/snowluma/cache/screen.png#'));
+
+    emitProcessEvent('snowluma', 'MOFOX_LOGIN_OK=1');
+    await pumpEventQueue();
+    expect(
+      container.read(processConsoleProvider).snowlumaQrPayload,
+      isNull,
+    );
+  });
+
+  test('legacy 配置加载 log line also clears the QR payload', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(processConsoleProvider.notifier);
+    await notifier.startSnowluma(_instance);
+
+    emitProcessEvent(
+      'snowluma',
+      'MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png',
+    );
+    await pumpEventQueue();
+    expect(
+      container.read(processConsoleProvider).snowlumaQrPayload,
+      isNotNull,
+    );
+
+    emitProcessEvent('snowluma', '[info] 配置加载完成');
+    await pumpEventQueue();
+    expect(
+      container.read(processConsoleProvider).snowlumaQrPayload,
+      isNull,
+    );
+  });
+
+  test('MOFOX_WEBUI_URL from process stream updates snowlumaWebuiUrl',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final notifier = container.read(processConsoleProvider.notifier);
+    await notifier.startSnowluma(_instance);
+    expect(container.read(processConsoleProvider).snowlumaWebuiUrl, isNull);
+
+    emitProcessEvent(
+      'snowluma',
+      'MOFOX_WEBUI_URL=http://127.0.0.1:5099/?token=x',
+    );
+    await pumpEventQueue();
+
+    expect(
+      container.read(processConsoleProvider).snowlumaWebuiUrl,
+      'http://127.0.0.1:5099/?token=x',
+    );
   });
 
   test('only the active instance reports the global bot as running', () async {
@@ -197,7 +291,7 @@ void main() {
     expect(actions, contains('stop:bot'));
     expect(state.activeInstanceId, isNull);
     expect(state.botStatus, 'stopped');
-    expect(state.napcatStatus, 'stopped');
+    expect(state.snowlumaStatus, 'stopped');
   });
 }
 
@@ -209,7 +303,7 @@ final Instance _instance = Instance(
   ownerQq: '654321',
   wsPort: 8095,
   channel: 'main',
-  installNapcat: true,
+  installSnowluma: true,
   installWebui: false,
   installDir: '/root/instances/test-instance',
   createdAt: DateTime.utc(2026),
@@ -223,7 +317,7 @@ final Instance _otherInstance = Instance(
   ownerQq: '654321',
   wsPort: 8096,
   channel: 'main',
-  installNapcat: true,
+  installSnowluma: true,
   installWebui: false,
   installDir: '/root/instances/other-instance',
   createdAt: DateTime.utc(2026),

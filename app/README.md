@@ -15,16 +15,16 @@ Neo-MoFox 的安卓原生外壳 App。应用负责 OOBE、内嵌 proot Linux 运
 5. 模型配置：填写 API Key 与 Base URL。
 6. 网络配置：填写 WebSocket 端口、通道和 WebUI Key。
 7. 摘要确认：展示用户协议状态、镜像源、实例配置和默认组件。
-8. 安装执行：从所选镜像源克隆 Neo-MoFox、同步依赖、生成配置、安装 WebUI、写入 NapCat 配置。
+8. 安装执行：从所选镜像源克隆 Neo-MoFox、同步依赖、生成配置、安装 WebUI、写入 SnowLuma 配置。
 
 ## 可选组件
 
-OOBE 默认只安装 Debian 与基础依赖，不强制下载 NapCat：
+OOBE 默认只安装 Debian 与基础依赖，不强制下载 SnowLuma：
 
-- NapCat：OOBE 中可主动勾选；若暂时跳过，首次启动 NapCat 时会自动完成幂等安装与校验。
+- SnowLuma：OOBE 中可主动勾选；若暂时跳过，首次启动 SnowLuma 时会自动完成幂等安装与校验。
 - WebUI：实例向导中可选择是否安装，用于浏览器中可视化管理 Bot。
 
-实例安装向导会提前写入 NapCat 配置；二维码会在用户启动 NapCat 时展示。
+实例安装向导会提前写入 SnowLuma 配置；启动 SnowLuma 后，实例详情页的二维码面板会展示 Xvfb 虚拟桌面的实时截图，用手机 QQ 扫描截图中的二维码即可完成登录。
 
 ## 断点续装与未完成实例
 

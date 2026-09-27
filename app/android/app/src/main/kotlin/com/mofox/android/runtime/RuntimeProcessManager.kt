@@ -26,15 +26,15 @@ class RuntimeProcessManager(
 
     fun status(): Map<String, String> {
         val botStatus = statusFor("bot")
-        val napcatStatus = statusFor("napcat")
+        val snowlumaStatus = statusFor("snowluma")
         val botInstanceId = processes["bot"]?.args?.get("instanceId")
             ?.takeIf { botStatus == "running" && it.isNotBlank() }
-        val napcatInstanceId = processes["napcat"]?.args?.get("instanceId")
-            ?.takeIf { napcatStatus == "running" && it.isNotBlank() }
-        val activeInstanceId = (botInstanceId ?: napcatInstanceId).orEmpty()
+        val snowlumaInstanceId = processes["snowluma"]?.args?.get("instanceId")
+            ?.takeIf { snowlumaStatus == "running" && it.isNotBlank() }
+        val activeInstanceId = (botInstanceId ?: snowlumaInstanceId).orEmpty()
         return mapOf(
             "bot" to botStatus,
-            "napcat" to napcatStatus,
+            "snowluma" to snowlumaStatus,
             "activeInstanceId" to activeInstanceId,
         )
     }
@@ -60,12 +60,12 @@ class RuntimeProcessManager(
         try {
             val managed = processes[name]
             if (managed != null) {
-                // napcat 进程树复杂（proot → bash → xvfb-run → Xvfb + QQ），
+                // snowluma 进程树复杂（proot → bash → Xvfb + fluxbox + QQ + node），
                 // stop 脚本在另一个 proot 里用 pgrep -f 扫描 /proc（即 host 的 /proc），
-                // 可能误杀 napcat 自己的 proot（managed.process）导致 consumeProcess
+                // 可能误杀 snowluma 自己的 proot（managed.process）导致 consumeProcess
                 // 读到 broken pipe、甚至级联崩溃整个 app。
                 // 直接 destroy 根 proot 进程即可让整棵树级联退出。
-                if (name != "napcat") {
+                if (name != "snowluma") {
                     runStopScript(name, managed.args)
                 }
                 managed.process?.destroy()
@@ -204,12 +204,12 @@ class RuntimeProcessManager(
         if (!installer.isBootstrapped()) {
             return InstallTaskResult(false, emptyList(), null, "Runtime bootstrap is not installed")
         }
-        // installNapcat 需要先把本地 napcat-install.sh 拷进 rootfs
-        if (task == "installNapcat") {
+        // installSnowluma 需要先把本地 snowluma-install.sh 拷进 rootfs
+        if (task == "installSnowluma") {
             try {
-                installer.stageNapcatInstaller()
+                installer.stageSnowlumaInstaller()
             } catch (e: Throwable) {
-                return InstallTaskResult(false, emptyList(), null, e.message ?: "stageNapcatInstaller failed")
+                return InstallTaskResult(false, emptyList(), null, e.message ?: "stageSnowlumaInstaller failed")
             }
         }
         return runShellTask(task, args)
@@ -263,17 +263,6 @@ class RuntimeProcessManager(
         return File(installer.ubuntuPath, cleanPath.removePrefix("/")).absolutePath
     }
 
-    /** 取消正在进行的 napcatLogin 任务：在 rootfs 内写 cancel 标记文件。 */
-    fun cancelNapcatLogin() {
-        try {
-            val cancelFile = File(installer.ubuntuPath, "tmp/napcat-login.cancel")
-            cancelFile.parentFile?.mkdirs()
-            cancelFile.writeText("cancel")
-        } catch (e: Throwable) {
-            events.emit("install", mapOf("task" to "napcatLogin", "line" to "[napcat] cancel failed: ${e.message}"))
-        }
-    }
-
     private fun runStopScript(name: String, args: Map<String, String>) {
         if (!installer.isBootstrapped()) return
         val script = scripts.stopProcessScript(name, args)
@@ -297,9 +286,9 @@ class RuntimeProcessManager(
         try {
             BufferedReader(InputStreamReader(process.inputStream)).useLines { lines ->
                 lines.forEach { line ->
-                    // napcat 进程脚本输出 MOFOX_QR_IMAGE=<rootfs_path>，
-                    // 映射为 host 层 file: 路径供 Dart 端显示 QR 图片。
-                    val eventLine = if (name == "napcat" && line.startsWith("MOFOX_QR_IMAGE=")) {
+                    // snowluma 进程脚本输出 MOFOX_QR_IMAGE=<rootfs_path>，
+                    // 映射为 host 层路径供 Dart 端显示 QR 图片。
+                    val eventLine = if (name == "snowluma" && line.startsWith("MOFOX_QR_IMAGE=")) {
                         val hostPath = mapUbuntuPathToHost(line.substringAfter("="))
                         "MOFOX_QR_IMAGE=$hostPath"
                     } else {

@@ -6,15 +6,15 @@
 
 ## 1. 部署方式说明
 
-MoFox Android App 会在应用内部安装一套独立的 Debian 13 运行环境，并通过 proot 运行 Neo-MoFox、NapCat 和 WebUI。整个过程不依赖 Termux，也不要求设备获取 Root 权限。
+MoFox Android App 会在应用内部安装一套独立的 Debian 13 运行环境，并通过 proot 运行 Neo-MoFox、SnowLuma 和 WebUI。整个过程不依赖 Termux，也不要求设备获取 Root 权限。
 
 使用本应用部署后，可以直接在 Android App 中完成：
 
 - 首次运行环境初始化；
 - Neo-MoFox 实例创建与配置；
-- Bot 和 NapCat 的启动、停止与重启；
-- NapCat QQ 扫码登录；
-- Neo-MoFox WebUI 和 NapCat WebUI 访问；
+- Bot 和 SnowLuma 的启动、停止与重启；
+- SnowLuma QQ 扫码登录；
+- Neo-MoFox WebUI 和 SnowLuma WebUI 访问；
 - 运行日志查看；
 - Debian 终端访问；
 - 实例配置备份与恢复；
@@ -86,7 +86,7 @@ Beta 测试期间，安装包可能以预发布版或 Nightly 版本提供。Nig
 1. 解压 Debian 13 rootfs；
 2. 安装 Python、Git、curl、uv 等基础依赖。
 
-NapCat 是可选组件，默认不安装。需要 QQ 登录和 OneBot v11 接入时，可以在此页主动开启“安装 NapCat”；若暂时跳过，之后首次启动 NapCat 时 App 会自动完成安装和完整性校验。
+SnowLuma 是可选组件，默认不安装。需要 QQ 登录和 OneBot v11 接入时，可以在此页主动开启“安装 SnowLuma”；若暂时跳过，之后首次启动 SnowLuma 时 App 会自动完成安装和完整性校验。安装内容包含：系统依赖（Xvfb/fluxbox/CJK 字体等）、Node.js 24 LTS（npmmirror 源）、LinuxQQ（解包到 `/root/snowluma/opt/QQ`）与 SnowLuma-lite（解包到 `/root/snowluma/app`）。
 
 此步骤耗时受设备性能和网络质量影响，可能持续数分钟。安装期间请保持 App 在前台，不要清理后台、锁屏或切换网络。
 
@@ -152,7 +152,7 @@ API Key 属于敏感凭据，不要截图公开，也不要发送给不可信人
 3. 生成默认配置；
 4. 写入核心、模型和适配器配置；
 5. 安装 WebUI；
-6. 写入 NapCat 配置；
+6. 写入 SnowLuma 配置；
 7. 注册本地实例。
 
 安装过程中不要强制关闭 App。若安装失败，实例会以“未完成”或“失败”状态保留，可以从管理页面选择“继续安装”。
@@ -165,15 +165,15 @@ API Key 属于敏感凭据，不要截图公开，也不要发送给不可信人
 
 点击 Bot 区域的“启动”，等待状态变为“运行中”。随后检查日志中是否出现模型、插件和 WebUI 初始化成功的信息。
 
-### 7.2 启动 NapCat 并登录
+### 7.2 启动 SnowLuma 并登录
 
-点击 NapCat 区域的“NapCat”或“启动”。首次登录时，应用会显示二维码；使用对应 QQ 扫码并确认登录。
+点击 SnowLuma 区域的“SnowLuma”或“启动”。首次登录时，实例详情页会弹出二维码面板：App 通过 ffmpeg 定时截取 SnowLuma 的虚拟桌面（Xvfb）整屏截图，二维码就显示在截图里的 QQ 窗口中；使用手机 QQ 扫描截图中的二维码并确认登录即可。检测到登录成功后，面板会自动关闭。
 
-二维码过期时，停止 NapCat 后重新启动即可重新获取。
+二维码过期时，停止 SnowLuma 后重新启动即可重新获取。
 
 ### 7.3 检查 WebUI
 
-Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行后，可以点击“NapCat WebUI”进入 NapCat 控制台。
+Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。SnowLuma 运行后，可以点击“SnowLuma WebUI”进入 SnowLuma 控制台（固定地址 `127.0.0.1:5099`，访问密码在首次安装时生成，见日志面板）。
 
 如果按钮不可用，请先确认对应进程已经启动，并等待日志输出 WebUI 地址。
 
@@ -181,8 +181,8 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 
 建议至少检查：
 
-- Bot 和 NapCat 状态均为运行中；
-- NapCat 已使用正确 QQ 登录；
+- Bot 和 SnowLuma 状态均为运行中；
+- SnowLuma 已使用正确 QQ 登录；
 - Neo-MoFox WebUI 可以打开；
 - 模型 API Key 有效；
 - Bot 能接收消息并产生正常回复；
@@ -191,7 +191,7 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 ## 8. 日常使用
 
 - 在“管理”页面管理实例和查看运行状态；
-- 在实例详情页查看 Bot、NapCat 日志；
+- 在实例详情页查看 Bot、SnowLuma 日志；
 - 在“终端”页面进入内置 Debian 环境；
 - 在“设置 → 保活状态”检查后台权限；
 - 修改关键配置前先创建备份；
@@ -206,13 +206,13 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 完整备份可以包含：
 
 - Neo-MoFox 配置；
-- NapCat 配置；
-- NapCat 登录态；
+- SnowLuma 配置；
+- SnowLuma 登录态；
 - 运行日志。
 
 导入备份会覆盖目标实例中的同名文件。导入前应：
 
-1. 停止目标实例的 Bot 和 NapCat；
+1. 停止目标实例的 Bot 和 SnowLuma；
 2. 先导出目标实例当前备份；
 3. 确认备份文件来自可信来源；
 4. 核对导入目标实例；
@@ -235,12 +235,14 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 - 检查 GitHub、镜像站和 Python 软件源是否可访问；
 - 避免使用会拦截 HTTPS 或修改证书的代理软件。
 
-### 10.3 NapCat 安装或启动失败
+### 10.3 SnowLuma 安装或启动失败
 
 - 确认设备为 `arm64-v8a`；
 - 检查运行环境初始化是否完整；
-- 查看 NapCat 日志中的第一条明确错误；
-- 停止 NapCat 后再重新启动，避免重复进程。
+- 查看 SnowLuma 日志中的第一条明确错误；
+- 停止 SnowLuma 后再重新启动，避免重复进程。
+
+此外请注意：SnowLuma 通过 ptrace 向 QQ 进程注入 hook，在 proot（本身基于 ptrace 模拟）环境下注入是否成功取决于设备内核与 yama 配置，官方文档明示不保证可用。若登录后 Bot 收不到消息，请查看 SnowLuma 日志中的注入告警，该问题与设备相关。
 
 ### 10.4 App 切到后台后 Bot 停止
 
@@ -252,7 +254,7 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 
 ### 10.5 WebUI 无法打开
 
-- 确认 Bot 或 NapCat 对应进程正在运行；
+- 确认 Bot 或 SnowLuma 对应进程正在运行；
 - 等待启动日志输出完成；
 - 返回实例详情页后重新进入 WebUI；
 - 尝试停止并重新启动对应进程。
@@ -264,7 +266,7 @@ Bot 运行后，点击“WebUI”进入 Neo-MoFox 管理面板。NapCat 运行�
 ## 11. Beta 版本已知限制
 
 - 后台保活能力受 Android 厂商系统影响较大；
-- 当前主要支持单个 Bot 和单个 NapCat 同时运行；
+- 当前主要支持单个 Bot 和单个 SnowLuma 同时运行；
 - 不同版本间的配置和运行环境可能发生变化；
 - 自动升级、异常恢复和设备兼容性仍在持续完善；
 - Nightly 构建未经完整发布验证，可能出现回归问题；

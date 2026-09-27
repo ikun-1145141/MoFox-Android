@@ -15,7 +15,7 @@ void main() {
     ownerQq: '10000',
     wsPort: 8095,
     channel: 'main',
-    installNapcat: true,
+    installSnowluma: true,
     installWebui: true,
     installDir: '/root/instances/test',
     createdAt: DateTime(2026),
@@ -25,8 +25,8 @@ void main() {
     final bytes = _zip(<String, List<int>>{
       'config/core.toml': utf8.encode('enabled = true'),
       'logs/latest.log': utf8.encode('ok'),
-      'napcat/config/onebot.json': utf8.encode('{}'),
-      'napcat/login_state/session.bin': <int>[0, 255, 1],
+      'snowluma/config/onebot.json': utf8.encode('{}'),
+      'snowluma/login_state/session.bin': <int>[0, 255, 1],
     });
 
     final writes = BackupService.decodeBackup(bytes: bytes, instance: instance);
@@ -36,8 +36,8 @@ void main() {
       <String>[
         '/root/instances/test/Neo-MoFox/config/core.toml',
         '/root/instances/test/Neo-MoFox/logs/latest.log',
-        '/root/napcat/config/onebot.json',
-        '/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config/session.bin',
+        '/root/snowluma/app/config/onebot.json',
+        '/root/.config/QQ/session.bin',
       ],
     );
     expect(writes.last.bytes, Uint8List.fromList(<int>[0, 255, 1]));
