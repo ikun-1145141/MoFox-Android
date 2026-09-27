@@ -36,6 +36,8 @@ class RootfsInstaller(private val context: Context) {
      * `/usr/local/bin/snowluma-install.sh`，供 installSnowluma 任务体直接执行。
      * 每次调用都无条件覆盖：rootfs 会跨 APK 覆盖安装存活，若按"存在即跳过"，
      * 旧版 APK 留下的脚本会一直被执行，必须与 APK 内置脚本保持一致。
+     * 拷贝时统一 CRLF→LF 并去掉 UTF-8 BOM：Windows 构建机打出的 APK 资产
+     * 可能带 CRLF，bash 会把 `set -e\r` 的 \r 当成选项名（"无效的选项"）。
      */
     fun stageSnowlumaInstaller(): File {
         ensureBaseDirectories()
@@ -44,7 +46,12 @@ class RootfsInstaller(private val context: Context) {
         File(ubuntuPath, "usr/local/bin").mkdirs()
         try {
             context.assets.open("flutter_assets/assets/scripts/snowluma-install.sh").use { input ->
-                target.outputStream().buffered().use { output -> input.copyTo(output) }
+                val raw = input.readBytes()
+                var text = raw.toString(Charsets.UTF_8).replace("\uFEFF", "")
+                text = text.replace("\r\n", "\n").replace('\r', '\n')
+                target.outputStream().buffered().use { output ->
+                    output.write(text.toByteArray(Charsets.UTF_8))
+                }
             }
             target.setExecutable(true, false)
         } catch (e: java.io.FileNotFoundException) {
