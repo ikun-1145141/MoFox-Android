@@ -85,6 +85,7 @@ class RuntimeScripts(
                   QQ_DEAD_REPORTED=0
                   QQ_ALIVE_REPORTED=0
                   ONLINE_WAIT_REPORTED=0
+                  HOOK_DIAG_REPORTED=0
                   for i in ${'$'}(seq 1 225); do
                     sleep 4
                     if [ "${'$'}LOGIN_DONE" = "1" ]; then
@@ -136,6 +137,19 @@ class RuntimeScripts(
                       ONLINE_WAIT_REPORTED=1
                       ONLINE_BODY=${'$'}(curl -fsS -m 3 -H "Authorization: Bearer mofox" http://127.0.0.1:3000/get_status 2>/dev/null || echo "(HTTP 不可达)")
                       echo "[control] OneBot get_status: ${'$'}{ONLINE_BODY:0:200}"
+                    fi
+                    # hook 预加载链路诊断（QQ 起来约 20s 后一次性收集）：
+                    # 1) SNOWLUMA_* 环境变量是否真的进了 QQ 进程
+                    # 2) hook 组件是否被 LD_PRELOAD 映射进 QQ 地址空间
+                    # 3) runtime dir 里有没有组件创建的 mojo.*.sock 管道
+                    if [ "${'$'}QQ_ALIVE_REPORTED" = "1" ] && [ "${'$'}i" -ge 5 ] && [ "${'$'}HOOK_DIAG_REPORTED" != "1" ]; then
+                      HOOK_DIAG_REPORTED=1
+                      DIAG_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
+                      echo "[control] === hook 预加载诊断 (pid=${'$'}DIAG_PID) ==="
+                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep SNOWLUMA | tr '\\n' ';' || echo 未检出)"
+                      echo "[control] hook 已映射页数: ${'$'}(grep -c snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
+                      echo "[control] runtime dir 内容:"
+                      ls -la /tmp/snowluma-hook/ 2>/dev/null | tail -n +2 || echo "(目录不存在)"
                     fi
                     # WebUI 就绪后只上报一次
                     if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -fsS -m 3 http://127.0.0.1:5099/ >/dev/null 2>&1; then
