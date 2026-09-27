@@ -54,9 +54,15 @@ class RuntimeScripts(
             "snowluma" -> {
               val botQq = args["botQq"].orEmpty()
               val qqArgs = if (botQq.isNotBlank()) " -q ${shellQuote(botQq)}" else ""
+              // hook 管道（AF_UNIX socket）的 runtime 目录不能用 rootfs 内的
+              // /tmp：proot 把 guest 路径翻译成宿主真实路径后约 125 字节，超过
+              // AF_UNIX sun_path 的 108 字节上限，bind() 会静默失败（组件无任何
+              // 输出）。改用 proot 已有的恒等挂载 -b $TMPDIR:$TMPDIR：host 的
+              // files/tmp 在 guest 内同路径可见，socket 全长 ~76 字节。
+              val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
               val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                mkdir -p /root/snowluma/cache /tmp/snowluma-hook
+                mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
                 # 兜底清理上次崩溃残留的显示服务
@@ -76,11 +82,11 @@ class RuntimeScripts(
                 #   SNOWLUMA_HOOK_SERVICE_MODE=in-process  stub 线程据此启动真正的
                 #     服务（创建 mojo.<pid>.control.sock），缺了它组件静默不工作。
                 # SnowLuma 的 PipeWatcher 发现 socket 后直接接管，全程无 ptrace。
-                # 组件与 QQ 的 runtime dir 必须一致。
+                # 组件与 QQ 的 runtime dir 必须一致，且必须是恒等挂载下的短路径。
                 HOOK_SO=/root/snowluma/app/native/snowluma-linux-arm64.so
                 QQ_HOOK_ENV=""
                 if [ -f "${'$'}HOOK_SO" ]; then
-                  QQ_HOOK_ENV="SNOWLUMA_HOOK_STUB_START=1 SNOWLUMA_HOOK_SERVICE_MODE=in-process SNOWLUMA_HOOK_RUNTIME_DIR=/tmp/snowluma-hook LD_PRELOAD=${'$'}HOOK_SO"
+                  QQ_HOOK_ENV="SNOWLUMA_HOOK_STUB_START=1 SNOWLUMA_HOOK_SERVICE_MODE=in-process SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir LD_PRELOAD=${'$'}HOOK_SO"
                 fi
                 # 后台监控：截屏推送二维码变化、探测登录状态与 WebUI
                 (
@@ -153,10 +159,11 @@ class RuntimeScripts(
                       HOOK_DIAG_REPORTED=1
                       DIAG_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
                       echo "[control] === hook 预加载诊断 (pid=${'$'}DIAG_PID) ==="
-                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep SNOWLUMA | tr '\\n' ';' || echo 未检出)"
-                      echo "[control] hook 已映射页数: ${'$'}(grep -c snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
+                      echo "[control] runtime dir: $slRuntimeDir"
+                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep -a SNOWLUMA | tr '\\n' ';' || echo 未检出)"
+                      echo "[control] hook 已映射页数: ${'$'}(grep -ac snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
                       echo "[control] runtime dir 内容:"
-                      ls -la /tmp/snowluma-hook/ 2>/dev/null | tail -n +2 || echo "(目录不存在)"
+                      ls -la "$slRuntimeDir" 2>/dev/null | tail -n +2 || echo "(目录不存在)"
                     fi
                     # WebUI 就绪后只上报一次
                     if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -fsS -m 3 http://127.0.0.1:5099/ >/dev/null 2>&1; then
@@ -182,7 +189,7 @@ class RuntimeScripts(
                 sleep 3
                 # 前台运行 SnowLuma，进程退出码即脚本退出码；pipefail 保证管道
                 # 退出码等于 launcher.sh 的退出码。
-                cd /root/snowluma/app && export DISPLAY=:1 SNOWLUMA_HOOK_RUNTIME_DIR=/tmp/snowluma-hook SNOWLUMA_ACCEPT_EULA=1 SNOWLUMA_ACCEPT_PRIVACY=1 SNOWLUMA_HOOK_AUTOLOAD=1 SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD="${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)" && ./launcher.sh 2>&1 | tee /tmp/snowluma-run.log""".trimIndent()
+                cd /root/snowluma/app && export DISPLAY=:1 SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir SNOWLUMA_ACCEPT_EULA=1 SNOWLUMA_ACCEPT_PRIVACY=1 SNOWLUMA_HOOK_AUTOLOAD=1 SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD="${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)" && ./launcher.sh 2>&1 | tee /tmp/snowluma-run.log""".trimIndent()
                 cmd to ""
             }
             else -> error("Unknown process: $name")
