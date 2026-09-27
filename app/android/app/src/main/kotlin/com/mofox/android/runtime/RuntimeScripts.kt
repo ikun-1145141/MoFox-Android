@@ -61,6 +61,13 @@ class RuntimeScripts(
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
                 # 兜底清理上次崩溃残留的显示服务
                 pgrep -f 'Xvfb :1' >/dev/null 2>&1 && pkill -f 'Xvfb :1' || true
+                pgrep -x fluxbox >/dev/null 2>&1 && pkill -x fluxbox || true
+                sleep 1
+                # 停止流程对 Xvfb 用 SIGKILL 会留下显示锁，残留的 /tmp/.X1-lock
+                # 会让下一次 Xvfb 立即退出（"Server is already active"）。
+                rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+                # 重启时旧 node 可能没被进程树销毁带死（占住 5099）。
+                pgrep -f 'index\.mjs' >/dev/null 2>&1 && pkill -f 'index\.mjs' || true
                 sleep 1
                 # ptrace 注入在 proot 下不可用（QQ 进程已被 proot 占为唯一 tracee，
                 # 第二个 tracer 无法 attach）。改用 hook 组件自带的 LD_PRELOAD 模式，
@@ -158,9 +165,15 @@ class RuntimeScripts(
                     fi
                   done
                 ) &
-                Xvfb :1 -screen 0 800x600x24 -ac >/dev/null 2>&1 || log_warn "Xvfb 启动失败" &
+                Xvfb :1 -screen 0 800x600x24 -ac >/dev/null 2>/tmp/snowluma-xvfb.log || {
+                  log_warn "Xvfb 启动失败"
+                  tail -n 5 /tmp/snowluma-xvfb.log 2>/dev/null
+                } &
                 sleep 2
-                DISPLAY=:1 fluxbox >/dev/null 2>&1 || log_warn "fluxbox 启动失败" &
+                DISPLAY=:1 fluxbox >/dev/null 2>/tmp/snowluma-fluxbox.log || {
+                  log_warn "fluxbox 启动失败"
+                  tail -n 5 /tmp/snowluma-fluxbox.log 2>/dev/null
+                } &
                 # 注意：直接展开成 `VAR=v cmd` 形式时，bash 会把第一个 VAR=v
                 # 当成命令名（"未找到命令"），QQ 根本不会启动。必须经 env 命令
                 # 传递环境变量。
