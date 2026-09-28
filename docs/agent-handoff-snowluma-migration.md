@@ -306,3 +306,26 @@ stub 线程，线程内还要检查 **`SNOWLUMA_HOOK_SERVICE_MODE=in-process`** 
 验证要点：重启 snowluma 后，WebUI"进程注入"页应从"错误/等待管道连接"变为
 已连接；MoFox 面板应在登录后自动收起（get_status online）。若仍失败，下一步
 排查 stub 线程内 socket 创建失败的原因（runtime dir 权限 / 环境变量未达 QQ）。
+
+### 10.8 第八轮（2026-09-28）：hook 管道创建失败的最终根因与修复
+
+真机诊断（组件已映射进 QQ 100 页、环境变量在、runtime dir 恒为空、无任何报错）
+结合对 `snowluma-linux-arm64.so` 的完整逆向（服务启动链：ctor 检查 STUB_START →
+信号线程检查 SERVICE_MODE → mkdir → socket → **bind** → listen，mkdir/bind 失败
+均为静默返回，该 .so 未导入任何输出函数）锁定根因：
+
+**AF_UNIX `sun_path` 108 字节上限。** rootfs 内 `/tmp/snowluma-hook/mojo.<pid>.control.sock`
+经 proot 翻译成宿主真实路径后约 125 字节，`bind()` 必然失败且无任何提示。此结论
+同时解释：官方文档称 proot 下"能否运行取决于设备"的底层原因之一即路径翻译长度。
+
+**修复**：proot 启动参数里已有恒等挂载 `-b $TMPDIR:$TMPDIR`（host files/tmp 在
+guest 内同路径可见）。hook runtime dir 迁移到 `<files>/tmp/snowluma-hook`
+（guest/host 同路径，socket 全长 ~76 字节 < 108），QQ 与 SnowLuma 双端一致；
+SnowLuma 通过读取 QQ `/proc/<pid>/environ` 的 `SNOWLUMA_HOOK_RUNTIME_DIR` 解析
+到同一目录。诊断的 environ grep 加 `-a` 修正二进制匹配吞结果的问题。
+
+**参考**：官方文档站 SnowLumaDocs（deploy/mobile.mdx 承认 proot 下 ptrace 受限；
+deploy/linux-manual.mdx 确认官方唯一注入方式是 ptrace + setcap cap_sys_ptrace）；
+PC 端（D:\STELA，v1.14.15 Windows）走 CreateRemoteThread DLL 注入，无本问题。
+LD_PRELOAD/stub 模式为逆向发现的内部接口，无公开文档；如仍有异常，联系作者
+（QQ 群 qm.qq.com/q/g3UMLpWALe / motricseven@foxmail.com）确认 stub 语义。
