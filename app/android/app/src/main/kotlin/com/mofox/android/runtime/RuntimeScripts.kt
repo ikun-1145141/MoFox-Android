@@ -62,6 +62,7 @@ class RuntimeScripts(
               val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
               val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
+                echo "[control] MoFox SnowLuma 脚本构建 20260928-2 (runtime dir=恒等挂载)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
