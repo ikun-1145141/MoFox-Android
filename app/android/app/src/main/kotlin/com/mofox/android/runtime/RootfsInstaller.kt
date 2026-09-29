@@ -60,6 +60,33 @@ class RootfsInstaller(private val context: Context) {
         return target
     }
 
+    /**
+     * 把 APK 内置的 SnowLuma 适配器插件包（`assets/plugins/snowluma_*.mfp`）
+     * 铺到 rootfs 的 `/root/.mofox/plugin-cache/`。bot 进程脚本启动时从这里
+     * 复制进实例的 plugins/ 目录——每次启动都执行，旧实例无需重装即可获得插件，
+     * 升级 APK 即可升级插件。文件不存在时静默跳过（兼容未打包的构建）。
+     */
+    fun stageSnowlumaPlugins() {
+        ensureBaseDirectories()
+        val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
+        cacheDir.mkdirs()
+        val names = listOf(
+            "snowluma_adapter-2.2.10.mfp",
+            "snowluma_extension-1.0.11.mfp",
+        )
+        for (name in names) {
+            try {
+                context.assets.open("flutter_assets/assets/plugins/$name").use { input ->
+                    File(cacheDir, name).outputStream().buffered().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } catch (e: java.io.FileNotFoundException) {
+                // 该构建未打包插件资产时跳过，不影响 bot 启动。
+            }
+        }
+    }
+
     fun ensureBaseDirectories() {
         homeDir.mkdirs()
         scriptsDir.mkdirs()

@@ -110,7 +110,7 @@ enum InstallTask {
   genConfig, // 生成默认 toml
   writeCore, // 写 core.toml
   writeModel, // 写 model.toml
-  writeAdapter, // 写 onebot_adapter/config.toml
+  writeAdapter, // 写 snowluma_adapter/config.toml
   installWebui, // 装 WebUI（每实例的前端构建）
   writeSnowlumaConfig, // 写 SnowLuma onebot11 配置
   registerInstance; // 写实例到本地仓库
@@ -121,7 +121,7 @@ enum InstallTask {
         InstallTask.genConfig => '生成默认配置',
         InstallTask.writeCore => '写入 core.toml',
         InstallTask.writeModel => '写入 model.toml',
-        InstallTask.writeAdapter => '写入 onebot_adapter 配置',
+        InstallTask.writeAdapter => '写入 SnowLuma 适配器配置',
         InstallTask.installWebui => '安装 WebUI',
         InstallTask.writeSnowlumaConfig => '写入 SnowLuma 配置',
         InstallTask.registerInstance => '注册实例',

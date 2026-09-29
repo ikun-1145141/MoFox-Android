@@ -48,7 +48,50 @@ class RuntimeScripts(
             "bot" -> {
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val instanceId = args["instanceId"]
-                val cmd = "cd ${shellQuote(repoPath)} && export PATH=\"/root/.local/bin:${'$'}PATH\" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"
+                val botQq = args["botQq"].orEmpty()
+                val botNickname = args["botNickname"].orEmpty()
+                val wsPort = args["wsPort"] ?: "8095"
+                // SnowLuma 适配器自愈：每次 bot 启动前，把 plugin-cache 里的适配器
+                // 插件铺进本实例、写入 snowluma_adapter 配置（reverse ws，等
+                // SnowLuma 作为 ws 客户端连入 8095）、停用 NapCat 时代的
+                // onebot_adapter（避免两个适配器争抢 8095 端口）。旧实例无需
+                // 重装即可获得整套修复。
+                val cmd = """# --- SnowLuma 适配器自愈 ---
+                PLUGINS_DIR=${shellQuote(repoPath)}/plugins
+                ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}ADAPTER_DIR"
+                if ls /root/.mofox/plugin-cache/snowluma_adapter-*.mfp >/dev/null 2>&1; then
+                  cp -f /root/.mofox/plugin-cache/snowluma_adapter-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
+                  cp -f /root/.mofox/plugin-cache/snowluma_extension-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
+                  echo "[bot] SnowLuma 适配器插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep snowluma | tr '\\n' ' ')"
+                else
+                  echo "[bot] 警告: plugin-cache 中没有 SnowLuma 插件，适配器不可用"
+                fi
+                cat > "${'$'}ADAPTER_DIR/config.toml" <<'MOFOX_EOF'
+                [plugin]
+                enabled = true
+                config_version = "2.0.0"
+
+                [bot]
+                qq_id = "$botQq"
+                qq_nickname = "$botNickname"
+
+                [snowluma_server]
+                mode = "reverse"
+                host = "localhost"
+                port = $wsPort
+                access_token = ""
+                MOFOX_EOF
+                # 停用 NapCat 时代的 onebot_adapter（保留文件作为回滚开关）
+                OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
+                mkdir -p "${'$'}OB_DIR"
+                if [ -f "${'$'}OB_DIR/config.toml" ]; then
+                  sed -i 's/^enabled *= *true/enabled = false/' "${'$'}OB_DIR/config.toml" || true
+                else
+                  printf '[plugin]\nenabled = false\n' > "${'$'}OB_DIR/config.toml"
+                fi
+                # --- 自愈结束，启动 bot ---
+                cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"""
                 cmd to (instanceId?.let { "-$it" } ?: "")
             }
             "snowluma" -> {
@@ -589,10 +632,14 @@ class RuntimeScripts(
         val wsPort = args["wsPort"] ?: "8095"
         val botQq = args["botQq"].orEmpty()
         val botNickname = args["botNickname"].orEmpty()
-        val adapterDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
+        // SnowLuma 适配器（reverse 模式：适配器在 wsPort 起 ws 服务端，
+        // SnowLuma 按其 onebot.json 的 wsClients 连入）。NapCat 时代的
+        // onebot_adapter 停用，避免与 snowluma_adapter 争抢同一端口。
+        val adapterDir = "${shellQuote(repoPath)}/config/plugins/snowluma_adapter"
+        val obDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
         return loginBody(
             """
-            mkdir -p $adapterDir
+            mkdir -p $adapterDir $obDir
             cat > $adapterDir/config.toml <<'MOFOX_EOF'
             [plugin]
             enabled = true
@@ -602,12 +649,17 @@ class RuntimeScripts(
             qq_id = "$botQq"
             qq_nickname = "$botNickname"
 
-            [napcat_server]
+            [snowluma_server]
             mode = "reverse"
             host = "localhost"
             port = $wsPort
             access_token = ""
             MOFOX_EOF
+            if [ -f $obDir/config.toml ]; then
+              sed -i 's/^enabled *= *true/enabled = false/' $obDir/config.toml || true
+            else
+              printf '[plugin]\nenabled = false\n' > $obDir/config.toml
+            fi
             """.trimIndent(),
         )
     }
