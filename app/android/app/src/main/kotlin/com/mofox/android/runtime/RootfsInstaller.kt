@@ -32,25 +32,59 @@ class RootfsInstaller(private val context: Context) {
     }
 
     /**
-     * 把 `flutter_assets/assets/scripts/napcat-install.sh` 拷到 rootfs 内的
-     * `/usr/local/bin/napcat-install.sh`，供 installNapcat 任务体直接执行。
-     * 幂等：文件已存在且大小一致则跳过。
+     * 把 `flutter_assets/assets/scripts/snowluma-install.sh` 拷到 rootfs 内的
+     * `/usr/local/bin/snowluma-install.sh`，供 installSnowluma 任务体直接执行。
+     * 每次调用都无条件覆盖：rootfs 会跨 APK 覆盖安装存活，若按"存在即跳过"，
+     * 旧版 APK 留下的脚本会一直被执行，必须与 APK 内置脚本保持一致。
+     * 拷贝时统一 CRLF→LF 并去掉 UTF-8 BOM：Windows 构建机打出的 APK 资产
+     * 可能带 CRLF，bash 会把 `set -e\r` 的 \r 当成选项名（"无效的选项"）。
      */
-    fun stageNapcatInstaller(): File {
+    fun stageSnowlumaInstaller(): File {
         ensureBaseDirectories()
-        val target = File(ubuntuPath, "usr/local/bin/napcat-install.sh")
-        if (target.exists() && target.length() > 0) return target
+        val target = File(ubuntuPath, "usr/local/bin/snowluma-install.sh")
         ubuntuPath.mkdirs()
         File(ubuntuPath, "usr/local/bin").mkdirs()
         try {
-            context.assets.open("flutter_assets/assets/scripts/napcat-install.sh").use { input ->
-                target.outputStream().buffered().use { output -> input.copyTo(output) }
+            context.assets.open("flutter_assets/assets/scripts/snowluma-install.sh").use { input ->
+                val raw = input.readBytes()
+                var text = raw.toString(Charsets.UTF_8).replace("\uFEFF", "")
+                text = text.replace("\r\n", "\n").replace('\r', '\n')
+                target.outputStream().buffered().use { output ->
+                    output.write(text.toByteArray(Charsets.UTF_8))
+                }
             }
             target.setExecutable(true, false)
         } catch (e: java.io.FileNotFoundException) {
-            throw RuntimeException("缺少 assets/scripts/napcat-install.sh", e)
+            throw RuntimeException("缺少 assets/scripts/snowluma-install.sh", e)
         }
         return target
+    }
+
+    /**
+     * 把 APK 内置的 SnowLuma 适配器插件包（`assets/plugins/snowluma_*.mfp`）
+     * 铺到 rootfs 的 `/root/.mofox/plugin-cache/`。bot 进程脚本启动时从这里
+     * 复制进实例的 plugins/ 目录——每次启动都执行，旧实例无需重装即可获得插件，
+     * 升级 APK 即可升级插件。文件不存在时静默跳过（兼容未打包的构建）。
+     */
+    fun stageSnowlumaPlugins() {
+        ensureBaseDirectories()
+        val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
+        cacheDir.mkdirs()
+        val names = listOf(
+            "snowluma_adapter-2.2.10.mfp",
+            "snowluma_extension-1.0.11.mfp",
+        )
+        for (name in names) {
+            try {
+                context.assets.open("flutter_assets/assets/plugins/$name").use { input ->
+                    File(cacheDir, name).outputStream().buffered().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            } catch (e: java.io.FileNotFoundException) {
+                // 该构建未打包插件资产时跳过，不影响 bot 启动。
+            }
+        }
     }
 
     fun ensureBaseDirectories() {

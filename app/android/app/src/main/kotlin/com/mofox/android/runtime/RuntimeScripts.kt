@@ -35,52 +35,205 @@ class RuntimeScripts(
     }
 
     /**
-     * bot / napcat 长进程脚本。
+     * bot / snowluma 长进程脚本。
      *
      * - `bot`：每个实例的 Neo-MoFox 落在 `args["repoPath"]`（通常是
      *   `/root/instances/<inst-id>/Neo-MoFox`），脚本里写实际路径。脚本文件名
      *   带上 `instanceId`，避免多实例同时启动覆盖同一份脚本。
-     * - `napcat`：全局唯一安装在 `/root/napcat`，所有实例共用。
+     * - `snowluma`：全局唯一安装在 `/root/snowluma`，所有实例共用。
+     *   进程 = Xvfb + fluxbox + LinuxQQ + SnowLuma(node)。
      */
     fun processScript(name: String, args: Map<String, String> = emptyMap()): File {
         val (script, suffix) = when (name) {
             "bot" -> {
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val instanceId = args["instanceId"]
-                val cmd = "cd ${shellQuote(repoPath)} && export PATH=\"/root/.local/bin:${'$'}PATH\" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"
+                val botQq = args["botQq"].orEmpty()
+                val botNickname = args["botNickname"].orEmpty()
+                val wsPort = args["wsPort"] ?: "8095"
+                // SnowLuma 适配器自愈：每次 bot 启动前，把 plugin-cache 里的适配器
+                // 插件铺进本实例、写入 snowluma_adapter 配置（reverse ws，等
+                // SnowLuma 作为 ws 客户端连入 8095）、停用 NapCat 时代的
+                // onebot_adapter（避免两个适配器争抢 8095 端口）。旧实例无需
+                // 重装即可获得整套修复。
+                val cmd = """# --- SnowLuma 适配器自愈 ---
+                PLUGINS_DIR=${shellQuote(repoPath)}/plugins
+                ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}ADAPTER_DIR"
+                if ls /root/.mofox/plugin-cache/snowluma_adapter-*.mfp >/dev/null 2>&1; then
+                  cp -f /root/.mofox/plugin-cache/snowluma_adapter-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
+                  cp -f /root/.mofox/plugin-cache/snowluma_extension-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
+                  echo "[bot] SnowLuma 适配器插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep snowluma | tr '\\n' ' ')"
+                else
+                  echo "[bot] 警告: plugin-cache 中没有 SnowLuma 插件，适配器不可用"
+                fi
+                cat > "${'$'}ADAPTER_DIR/config.toml" <<'MOFOX_EOF'
+                [plugin]
+                enabled = true
+                config_version = "2.0.0"
+
+                [bot]
+                qq_id = "$botQq"
+                qq_nickname = "$botNickname"
+
+                [snowluma_server]
+                mode = "reverse"
+                host = "localhost"
+                port = $wsPort
+                access_token = ""
+                MOFOX_EOF
+                # 停用 NapCat 时代的 onebot_adapter（保留文件作为回滚开关）
+                OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
+                mkdir -p "${'$'}OB_DIR"
+                if [ -f "${'$'}OB_DIR/config.toml" ]; then
+                  sed -i 's/^enabled *= *true/enabled = false/' "${'$'}OB_DIR/config.toml" || true
+                else
+                  printf '[plugin]\nenabled = false\n' > "${'$'}OB_DIR/config.toml"
+                fi
+                # --- 自愈结束，启动 bot ---
+                cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"""
                 cmd to (instanceId?.let { "-$it" } ?: "")
             }
-            "napcat" -> {
+            "snowluma" -> {
               val botQq = args["botQq"].orEmpty()
-              val cmd = """cd /root/napcat
+              val qqArgs = if (botQq.isNotBlank()) " -q ${shellQuote(botQq)}" else ""
+              // hook 管道（AF_UNIX socket）的 runtime 目录不能用 rootfs 内的
+              // /tmp：proot 把 guest 路径翻译成宿主真实路径后约 125 字节，超过
+              // AF_UNIX sun_path 的 108 字节上限，bind() 会静默失败（组件无任何
+              // 输出）。改用 proot 已有的恒等挂载 -b $TMPDIR:$TMPDIR：host 的
+              // files/tmp 在 guest 内同路径可见，socket 全长 ~76 字节。
+              val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
+              val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                mkdir -p /root/napcat/cache
-                NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
-                # 两个可能位置都必须清理。否则监控线程会先读到上次登录留下的
-                # 过期二维码，并在 NapCat 生成本次二维码之前就推送给 Flutter。
-                rm -f /root/napcat/cache/qrcode.png "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log
-                # 后台监控 QR 码文件并输出标记行
+                echo "[control] MoFox SnowLuma 脚本构建 20260928-2 (runtime dir=恒等挂载)"
+                mkdir -p /root/snowluma/cache $slRuntimeDir
+                # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
+                rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
+                # 兜底清理上次崩溃残留的显示服务
+                pgrep -f 'Xvfb :1' >/dev/null 2>&1 && pkill -f 'Xvfb :1' || true
+                pgrep -x fluxbox >/dev/null 2>&1 && pkill -x fluxbox || true
+                sleep 1
+                # 停止流程对 Xvfb 用 SIGKILL 会留下显示锁，残留的 /tmp/.X1-lock
+                # 会让下一次 Xvfb 立即退出（"Server is already active"）。
+                rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
+                # 重启时旧 node 可能没被进程树销毁带死（占住 5099）。
+                pgrep -f 'index\.mjs' >/dev/null 2>&1 && pkill -f 'index\.mjs' || true
+                sleep 1
+                # ptrace 注入在 proot 下不可用（QQ 进程已被 proot 占为唯一 tracee，
+                # 第二个 tracer 无法 attach）。改用 hook 组件自带的 LD_PRELOAD 模式，
+                # 需要同时设两个开关（反汇编确认）：
+                #   SNOWLUMA_HOOK_STUB_START=1  构造函数据此启动 stub 线程；
+                #   SNOWLUMA_HOOK_SERVICE_MODE=in-process  stub 线程据此启动真正的
+                #     服务（创建 mojo.<pid>.control.sock），缺了它组件静默不工作。
+                # SnowLuma 的 PipeWatcher 发现 socket 后直接接管，全程无 ptrace。
+                # 组件与 QQ 的 runtime dir 必须一致，且必须是恒等挂载下的短路径。
+                HOOK_SO=/root/snowluma/app/native/snowluma-linux-arm64.so
+                QQ_HOOK_ENV=""
+                if [ -f "${'$'}HOOK_SO" ]; then
+                  QQ_HOOK_ENV="SNOWLUMA_HOOK_STUB_START=1 SNOWLUMA_HOOK_SERVICE_MODE=in-process SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir LD_PRELOAD=${'$'}HOOK_SO"
+                fi
+                # 后台监控：截屏推送二维码变化、探测登录状态与 WebUI
                 (
                   QR_EMITTED=0
-                  QR_MTIME=""
-                  for i in ${'$'}(seq 1 300); do
-                    sleep 1
-                    QR_PATH=""
-                    [ -s /root/napcat/cache/qrcode.png ] && QR_PATH=/root/napcat/cache/qrcode.png
-                    if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
-                      QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
+                  QR_MD5=""
+                  QR_LAST_EMIT=0
+                  LOGIN_DONE=0
+                  WEBUI_EMITTED=0
+                  QQ_DEAD_REPORTED=0
+                  QQ_ALIVE_REPORTED=0
+                  ONLINE_WAIT_REPORTED=0
+                  HOOK_DIAG_REPORTED=0
+                  for i in ${'$'}(seq 1 225); do
+                    sleep 4
+                    if [ "${'$'}LOGIN_DONE" = "1" ]; then
+                      break
                     fi
-                    if [ -n "${'$'}QR_PATH" ] && [ -s "${'$'}QR_PATH" ]; then
-                      CURRENT_MTIME=${'$'}(stat -c %Y "${'$'}QR_PATH" 2>/dev/null || echo "")
-                      if [ "${'$'}QR_EMITTED" = "0" ] || [ -n "${'$'}CURRENT_MTIME" -a "${'$'}CURRENT_MTIME" != "${'$'}QR_MTIME" ]; then
-                        echo "MOFOX_QR_IMAGE=${'$'}QR_PATH"
-                        QR_EMITTED=1
-                        QR_MTIME="${'$'}CURRENT_MTIME"
+                    # QQ 启动诊断：报出存活/死亡状态（各只报一次），用于区分
+                    # "QQ 崩了"和"QQ 活着但窗口没映射到虚拟屏幕"。
+                    if [ -f /tmp/snowluma-qq.pid ]; then
+                      QQ_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
+                      if [ -n "${'$'}QQ_PID" ] && kill -0 "${'$'}QQ_PID" 2>/dev/null; then
+                        if [ "${'$'}QQ_ALIVE_REPORTED" != "1" ]; then
+                          QQ_ALIVE_REPORTED=1
+                          echo "[control] LinuxQQ 进程已启动 (pid=${'$'}QQ_PID)"
+                        fi
+                      else
+                        if [ "${'$'}QQ_DEAD_REPORTED" != "1" ]; then
+                          QQ_DEAD_REPORTED=1
+                          echo "[control] LinuxQQ 进程已退出 (pid=${'$'}QQ_PID)，启动日志尾部："
+                          tail -n 8 /tmp/snowluma-qq.log 2>/dev/null || echo "(无启动日志)"
+                        fi
                       fi
+                    fi
+                    # 前 15 轮 Xvfb 可能还没就绪，截屏失败直接跳过
+                    SCREEN_MD5=""
+                    if DISPLAY=:1 ffmpeg -y -loglevel error -f x11grab -video_size 800x600 -i :1 -frames:v 1 /root/snowluma/cache/screen.png 2>/dev/null; then
+                      SCREEN_MD5=${'$'}(md5sum /root/snowluma/cache/screen.png 2>/dev/null | awk '{print ${'$'}1}')
+                    else
+                      [ "${'$'}i" -le 15 ] && continue
+                    fi
+                    if [ -n "${'$'}SCREEN_MD5" ]; then
+                      NOW=${'$'}(date +%s)
+                      if [ "${'$'}SCREEN_MD5" != "${'$'}QR_MD5" ] && [ ${'$'}((NOW - QR_LAST_EMIT)) -ge 4 ]; then
+                        echo "MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png"
+                        QR_EMITTED=1
+                        QR_MD5="${'$'}SCREEN_MD5"
+                        QR_LAST_EMIT=${'$'}NOW
+                      fi
+                    fi
+                    # 登录成功检测：SnowLuma OneBot http 上报在线状态
+                    if curl -fsS -m 3 -H "Authorization: Bearer mofox" http://127.0.0.1:3000/get_status 2>/dev/null | grep -q '"online":true'; then
+                      echo "MOFOX_LOGIN_OK=1"
+                      LOGIN_DONE=1
+                      break
+                    fi
+                    # QQ 已登录但 OneBot 还没上线时（启动约 1 分钟后），把
+                    # get_status 的原始返回打出来一次，用于区分"hook 没接管"
+                    # 和"HTTP 服务没起"。
+                    if [ "${'$'}QQ_ALIVE_REPORTED" = "1" ] && [ "${'$'}i" -ge 15 ] && [ "${'$'}ONLINE_WAIT_REPORTED" != "1" ]; then
+                      ONLINE_WAIT_REPORTED=1
+                      ONLINE_BODY=${'$'}(curl -fsS -m 3 -H "Authorization: Bearer mofox" http://127.0.0.1:3000/get_status 2>/dev/null || echo "(HTTP 不可达)")
+                      echo "[control] OneBot get_status: ${'$'}{ONLINE_BODY:0:200}"
+                    fi
+                    # hook 预加载链路诊断（QQ 起来约 20s 后一次性收集）：
+                    # 1) SNOWLUMA_* 环境变量是否真的进了 QQ 进程
+                    # 2) hook 组件是否被 LD_PRELOAD 映射进 QQ 地址空间
+                    # 3) runtime dir 里有没有组件创建的 mojo.*.sock 管道
+                    if [ "${'$'}QQ_ALIVE_REPORTED" = "1" ] && [ "${'$'}i" -ge 5 ] && [ "${'$'}HOOK_DIAG_REPORTED" != "1" ]; then
+                      HOOK_DIAG_REPORTED=1
+                      DIAG_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
+                      echo "[control] === hook 预加载诊断 (pid=${'$'}DIAG_PID) ==="
+                      echo "[control] runtime dir: $slRuntimeDir"
+                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep -a SNOWLUMA | tr '\\n' ';' || echo 未检出)"
+                      echo "[control] hook 已映射页数: ${'$'}(grep -ac snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
+                      echo "[control] runtime dir 内容:"
+                      ls -la "$slRuntimeDir" 2>/dev/null | tail -n +2 || echo "(目录不存在)"
+                    fi
+                    # WebUI 就绪后只上报一次
+                    if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -fsS -m 3 http://127.0.0.1:5099/ >/dev/null 2>&1; then
+                      echo "MOFOX_WEBUI_URL=http://127.0.0.1:5099/?token=${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)"
+                      WEBUI_EMITTED=1
                     fi
                   done
                 ) &
-                exec xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q ${shellQuote(botQq)}""".trimIndent()
+                Xvfb :1 -screen 0 800x600x24 -ac >/dev/null 2>/tmp/snowluma-xvfb.log || {
+                  log_warn "Xvfb 启动失败"
+                  tail -n 5 /tmp/snowluma-xvfb.log 2>/dev/null
+                } &
+                sleep 2
+                DISPLAY=:1 fluxbox >/dev/null 2>/tmp/snowluma-fluxbox.log || {
+                  log_warn "fluxbox 启动失败"
+                  tail -n 5 /tmp/snowluma-fluxbox.log 2>/dev/null
+                } &
+                # 注意：直接展开成 `VAR=v cmd` 形式时，bash 会把第一个 VAR=v
+                # 当成命令名（"未找到命令"），QQ 根本不会启动。必须经 env 命令
+                # 传递环境变量。
+                DISPLAY=:1 env ${'$'}QQ_HOOK_ENV /root/snowluma/opt/QQ/qq --no-sandbox --disable-gpu --disable-software-rasterizer --disable-gpu-compositing$qqArgs >/dev/null 2>/tmp/snowluma-qq.log &
+                echo ${'$'}! > /tmp/snowluma-qq.pid
+                sleep 3
+                # 前台运行 SnowLuma，进程退出码即脚本退出码；pipefail 保证管道
+                # 退出码等于 launcher.sh 的退出码。
+                cd /root/snowluma/app && export DISPLAY=:1 SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir SNOWLUMA_ACCEPT_EULA=1 SNOWLUMA_ACCEPT_PRIVACY=1 SNOWLUMA_HOOK_AUTOLOAD=1 SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD="${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)" && ./launcher.sh 2>&1 | tee /tmp/snowluma-run.log""".trimIndent()
                 cmd to ""
             }
             else -> error("Unknown process: $name")
@@ -126,9 +279,9 @@ class RuntimeScripts(
             true
             """.trimIndent()
           }
-          "napcat" -> {
+          "snowluma" -> {
             """
-            _stop_napcat_proc() {
+            _stop_snowluma_proc() {
               SIGNAL=${'$'}1
               PATTERN=${'$'}2
               PIDS=${'$'}(pgrep -f "${'$'}PATTERN" 2>/dev/null || true)
@@ -136,15 +289,19 @@ class RuntimeScripts(
                 [ "${'$'}PID" = "${'$'}${'$'}" ] && continue
                 CMDLINE=${'$'}(tr '\0' ' ' < "/proc/${'$'}PID/cmdline" 2>/dev/null || true)
                 case "${'$'}CMDLINE" in
-                  *pgrep*|*stop-process-napcat*|*login_ubuntu*|*mofox_log*|*_stop_napcat_proc*) continue ;;
+                  *pgrep*|*stop-process-snowluma*|*login_ubuntu*|*mofox_log*|*_stop_snowluma_proc*) continue ;;
                 esac
                 kill -"${'$'}SIGNAL" "${'$'}PID" 2>/dev/null || true
               done
             }
-            _stop_napcat_proc QUIT '/root/Napcat/opt/QQ/qq'
+            _stop_snowluma_proc QUIT '/root/snowluma/opt/QQ/qq'
             sleep 3
-            _stop_napcat_proc KILL '/root/Napcat/opt/QQ/qq'
-            _stop_napcat_proc TERM 'Xvfb'
+            _stop_snowluma_proc KILL '/root/snowluma/opt/QQ/qq'
+            _stop_snowluma_proc KILL 'Xvfb'
+            _stop_snowluma_proc KILL 'fluxbox'
+            _stop_snowluma_proc TERM 'index.mjs'
+            sleep 2
+            _stop_snowluma_proc KILL 'index.mjs'
             true
             """.trimIndent()
           }
@@ -206,7 +363,7 @@ class RuntimeScripts(
                 apt-get update -y
                 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
                   python3 python3-pip python3-venv git curl ca-certificates xz-utils locales \
-                  ffmpeg libgcrypt20 xvfb
+                  ffmpeg libgcrypt20 xvfb xdotool
                 sed -i 's/^# *\(zh_CN.UTF-8 UTF-8\)/\1/' /etc/locale.gen
                 sed -i 's/^# *\(en_US.UTF-8 UTF-8\)/\1/' /etc/locale.gen
                 locale-gen zh_CN.UTF-8 en_US.UTF-8 || true
@@ -312,184 +469,75 @@ class RuntimeScripts(
                     """.trimIndent(),
                 )
             }
-            "installNapcat" -> loginBody(
+            "installSnowluma" -> loginBody(
                 """
                 set -e
-                QQ_ROOT=/root/Napcat/opt/QQ
-                NAPCAT_ENTRY="${'$'}QQ_ROOT/resources/app/app_launcher/napcat/napcat.mjs"
-                NAPCAT_LOADER="${'$'}QQ_ROOT/resources/app/loadNapCat.js"
-                QQ_PACKAGE="${'$'}QQ_ROOT/resources/app/package.json"
-                if [ ! -x "${'$'}QQ_ROOT/qq" ] ||
-                   [ ! -s "${'$'}NAPCAT_ENTRY" ] ||
-                   [ ! -s "${'$'}NAPCAT_LOADER" ] ||
-                  ! jq -e '.main == "./loadNapCat.js"' "${'$'}QQ_PACKAGE" >/dev/null 2>&1; then
-                  log_info "执行本地 NapCat 安装脚本…"
-                  bash /usr/local/bin/napcat-install.sh || {
+                if [ ! -x /root/snowluma/opt/QQ/qq ] ||
+                   [ ! -s /root/snowluma/app/index.mjs ] ||
+                   [ ! -s /root/snowluma/app/launcher.sh ] ||
+                  ! command -v node >/dev/null 2>&1; then
+                  log_info "执行本地 SnowLuma 安装脚本…"
+                  bash /usr/local/bin/snowluma-install.sh || {
                     code=${'$'}?
-                    log_error "NapCat 安装脚本失败（退出码 ${'$'}code）"
+                    log_error "SnowLuma 安装脚本失败（退出码 ${'$'}code）"
                     exit "${'$'}code"
                   }
                 else
-                  log_info "NapCat 已安装，跳过"
+                  log_info "SnowLuma 已安装，跳过"
                 fi
-                mkdir -p /root/napcat/config
-                cat > /root/napcat/napcat.sh <<'MOFOX_NAPCAT_EOF'
-                #!/bin/sh
-                set -e
-                ACTION="${'$'}{1:-start}"
-                QQ="${'$'}{2:-${'$'}BOT_QQ}"
-                QQ_BIN="/root/Napcat/opt/QQ/qq"
-                case "${'$'}ACTION" in
-                  start)
-                    if [ -n "${'$'}QQ" ]; then
-                      exec xvfb-run -a "${'$'}QQ_BIN" --no-sandbox -q "${'$'}QQ"
-                    fi
-                    exec xvfb-run -a "${'$'}QQ_BIN" --no-sandbox
-                    ;;
-                  *)
-                    echo "usage: napcat.sh start [qq]" >&2
-                    exit 2
-                    ;;
-                esac
-                MOFOX_NAPCAT_EOF
-                chmod +x /root/napcat/napcat.sh
                 """.trimIndent(),
             )
-            "verifyNapcat" -> loginBody(
+            "verifySnowluma" -> loginBody(
                 """
-                QQ_ROOT=/root/Napcat/opt/QQ
-                NAPCAT_ENTRY="${'$'}QQ_ROOT/resources/app/app_launcher/napcat/napcat.mjs"
-                NAPCAT_LOADER="${'$'}QQ_ROOT/resources/app/loadNapCat.js"
-                QQ_PACKAGE="${'$'}QQ_ROOT/resources/app/package.json"
-
-                [ -x "${'$'}QQ_ROOT/qq" ] || {
-                  log_error "NapCat 复查失败：QQ 主程序不存在或不可执行"
+                [ -x /root/snowluma/opt/QQ/qq ] || {
+                  log_error "SnowLuma 复查失败：QQ 主程序不存在或不可执行"
                   exit 21
                 }
-                [ -s "${'$'}NAPCAT_ENTRY" ] || {
-                  log_error "NapCat 复查失败：缺少 napcat.mjs"
+                [ -s /root/snowluma/app/index.mjs ] || {
+                  log_error "SnowLuma 复查失败：缺少 index.mjs"
                   exit 22
                 }
-                [ -s "${'$'}NAPCAT_LOADER" ] || {
-                  log_error "NapCat 复查失败：缺少 QQ 启动加载器"
+                command -v node >/dev/null 2>&1 || {
+                  log_error "SnowLuma 复查失败：node 不可用"
                   exit 23
                 }
-                jq -e '.main == "./loadNapCat.js"' "${'$'}QQ_PACKAGE" >/dev/null 2>&1 || {
-                  log_error "NapCat 复查失败：QQ package.json 未指向 NapCat 加载器"
+                command -v xvfb-run >/dev/null 2>&1 || {
+                  log_error "SnowLuma 复查失败：xvfb-run 不可用"
                   exit 24
                 }
-                command -v xvfb-run >/dev/null 2>&1 || {
-                  log_error "NapCat 复查失败：xvfb-run 不可用"
+                command -v fluxbox >/dev/null 2>&1 || {
+                  log_error "SnowLuma 复查失败：fluxbox 不可用"
                   exit 25
                 }
-                [ -x /root/napcat/napcat.sh ] || {
-                  log_error "NapCat 复查失败：MoFox 启动脚本不存在或不可执行"
+                [ -s /root/snowluma/app/launcher.sh ] || {
+                  log_error "SnowLuma 复查失败：缺少 launcher.sh"
                   exit 26
                 }
-                log_ok "NapCat 安装复查通过"
+                log_ok "SnowLuma 安装复查通过"
                 """.trimIndent(),
             )
-            "napcatLogin" -> {
-                val botQq = args["botQq"].orEmpty()
-                loginBody(
-                    """
-                    cd /root/napcat
-                    export BOT_QQ=${shellQuote(botQq)}
-                    DEFAULT_QR_PATH=/root/napcat/cache/qrcode.png
-                    NAPCAT_APP_QR_PATH=/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/cache/qrcode.png
-                    CANCEL_FILE=/tmp/napcat-login.cancel
-                    mkdir -p /root/napcat/cache
-                    rm -f "${'$'}DEFAULT_QR_PATH" "${'$'}NAPCAT_APP_QR_PATH" /tmp/napcat-login.log "${'$'}CANCEL_FILE"
-                    xvfb-run -a /root/Napcat/opt/QQ/qq --no-sandbox -q "${'$'}BOT_QQ" > /tmp/napcat-login.log 2>&1 &
-                    NAPCAT_PID=${'$'}!
-                    _stop_nc_proc() {
-                      SIGNAL=${'$'}1
-                      PATTERN=${'$'}2
-                      PIDS=${'$'}(pgrep -f "${'$'}PATTERN" 2>/dev/null || true)
-                      for PID in ${'$'}PIDS; do
-                        [ "${'$'}PID" = "${'$'}${'$'}" ] && continue
-                        CMDLINE=${'$'}(tr '\0' ' ' < "/proc/${'$'}PID/cmdline" 2>/dev/null || true)
-                        case "${'$'}CMDLINE" in
-                          *pgrep*|*napcatLogin*|*login_ubuntu*|*mofox_log*|*_stop_nc_proc*|*stop_napcat_login_process*) continue ;;
-                        esac
-                        kill -"${'$'}SIGNAL" "${'$'}PID" 2>/dev/null || true
-                      done
-                    }
-                    stop_napcat_login_process() {
-                      _stop_nc_proc TERM '/root/Napcat/opt/QQ/qq'
-                      _stop_nc_proc TERM 'Xvfb'
-                      _stop_nc_proc TERM 'dbus-launch'
-                      kill "${'$'}NAPCAT_PID" 2>/dev/null || true
-                      for _ in ${'$'}(seq 1 5); do
-                        if ! kill -0 "${'$'}NAPCAT_PID" 2>/dev/null; then
-                          wait "${'$'}NAPCAT_PID" 2>/dev/null || true
-                          return 0
-                        fi
-                        sleep 1
-                      done
-                      _stop_nc_proc KILL '/root/Napcat/opt/QQ/qq'
-                      _stop_nc_proc KILL 'Xvfb'
-                      kill -KILL "${'$'}NAPCAT_PID" 2>/dev/null || true
-                      wait "${'$'}NAPCAT_PID" 2>/dev/null || true
-                    }
-                    QR_EMITTED=0
-                    QR_MTIME=""
-                    LOGIN_DONE=0
-                    for i in ${'$'}(seq 1 180); do
-                      sleep 1
-                      # 用户取消登录
-                      if [ -f "${'$'}CANCEL_FILE" ]; then
-                        log_warn "用户取消登录"
-                        stop_napcat_login_process
-                        exit 1
-                      fi
-                      if [ -s /tmp/napcat-login.log ]; then
-                        tail -n 20 /tmp/napcat-login.log
-                      fi
-                      # 检测二维码（支持刷新：文件 mtime 变化时重新输出）
-                      QR_PATH=""
-                      if [ -s /tmp/napcat-login.log ]; then
-                        QR_PATH=${'$'}(sed -n 's/.*二维码已保存到 \([^[:space:]]*qrcode\.png\).*/\1/p' /tmp/napcat-login.log | tail -n 1)
-                      fi
-                      if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}NAPCAT_APP_QR_PATH" ]; then
-                        QR_PATH="${'$'}NAPCAT_APP_QR_PATH"
-                      fi
-                      if [ -z "${'$'}QR_PATH" ] && [ -s "${'$'}DEFAULT_QR_PATH" ]; then
-                        QR_PATH="${'$'}DEFAULT_QR_PATH"
-                      fi
-                      if [ -n "${'$'}QR_PATH" ] && [ -s "${'$'}QR_PATH" ]; then
-                        CURRENT_MTIME=${'$'}(stat -c %Y "${'$'}QR_PATH" 2>/dev/null || echo "")
-                        if [ "${'$'}QR_EMITTED" = "0" ] || [ -n "${'$'}CURRENT_MTIME" -a "${'$'}CURRENT_MTIME" != "${'$'}QR_MTIME" ]; then
-                          echo "MOFOX_QR_IMAGE=${'$'}QR_PATH"
-                          QR_EMITTED=1
-                          QR_MTIME="${'$'}CURRENT_MTIME"
-                        fi
-                      fi
-                      # 登录成功检测：配置加载（OneBot11 适配器初始化时输出，表示登录完成）
-                      if grep -q '配置加载' /tmp/napcat-login.log 2>/dev/null; then
-                        LOGIN_DONE=1
-                        break
-                      fi
-                      if grep -q 'Login Error' /tmp/napcat-login.log 2>/dev/null; then
-                        log_error "NapCat 登录失败"
-                        stop_napcat_login_process
-                        exit 1
-                      fi
-                      if ! kill -0 "${'$'}NAPCAT_PID" 2>/dev/null; then
-                        break
-                      fi
-                    done
-                    if [ "${'$'}LOGIN_DONE" != "1" ]; then
-                      log_error "登录等待超时或 NapCat 已退出"
-                      stop_napcat_login_process
-                      exit 1
-                    fi
-                    stop_napcat_login_process
-                    sleep 2
-                    """.trimIndent(),
-                )
-            }
-            "writeNapcatConfig" -> writeNapcatConfigBody(args)
+            "writeSnowlumaConfig" -> writeSnowlumaConfigBody(args)
+            "qqQuickLogin" -> loginBody(
+                """
+                command -v xdotool >/dev/null 2>&1 || {
+                  log_info "安装 xdotool…"
+                  apt-get update -y >/dev/null 2>&1 || true
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xdotool >/dev/null 2>&1 || {
+                    log_error "xdotool 安装失败，无法发送快捷登录"
+                    exit 31
+                  }
+                }
+                WID=${'$'}(DISPLAY=:1 xdotool search --onlyvisible --name "QQ" 2>/dev/null | tail -n 1)
+                if [ -z "${'$'}WID" ]; then
+                  log_error "未找到可见的 QQ 窗口"
+                  exit 32
+                fi
+                DISPLAY=:1 xdotool windowactivate --sync "${'$'}WID" >/dev/null 2>&1 || true
+                sleep 0.5
+                DISPLAY=:1 xdotool key --clearmodifiers Return
+                log_ok "已向 QQ 窗口发送回车（快捷登录）"
+                """.trimIndent(),
+            )
             "registerInstance" -> {
                 val instanceName = args["instanceName"].orEmpty()
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
@@ -584,10 +632,14 @@ class RuntimeScripts(
         val wsPort = args["wsPort"] ?: "8095"
         val botQq = args["botQq"].orEmpty()
         val botNickname = args["botNickname"].orEmpty()
-        val adapterDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
+        // SnowLuma 适配器（reverse 模式：适配器在 wsPort 起 ws 服务端，
+        // SnowLuma 按其 onebot.json 的 wsClients 连入）。NapCat 时代的
+        // onebot_adapter 停用，避免与 snowluma_adapter 争抢同一端口。
+        val adapterDir = "${shellQuote(repoPath)}/config/plugins/snowluma_adapter"
+        val obDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
         return loginBody(
             """
-            mkdir -p $adapterDir
+            mkdir -p $adapterDir $obDir
             cat > $adapterDir/config.toml <<'MOFOX_EOF'
             [plugin]
             enabled = true
@@ -597,52 +649,61 @@ class RuntimeScripts(
             qq_id = "$botQq"
             qq_nickname = "$botNickname"
 
-            [napcat_server]
+            [snowluma_server]
             mode = "reverse"
             host = "localhost"
             port = $wsPort
             access_token = ""
             MOFOX_EOF
+            if [ -f $obDir/config.toml ]; then
+              sed -i 's/^enabled *= *true/enabled = false/' $obDir/config.toml || true
+            else
+              printf '[plugin]\nenabled = false\n' > $obDir/config.toml
+            fi
             """.trimIndent(),
         )
     }
 
-    private fun writeNapcatConfigBody(args: Map<String, String>): String {
+    private fun writeSnowlumaConfigBody(args: Map<String, String>): String {
         val wsPort = args["wsPort"] ?: "8095"
-        val botQq = args["botQq"].orEmpty()
         return loginBody(
             """
-            mkdir -p /root/napcat/config
-            cat > /root/napcat/config/onebot11_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF'
+            mkdir -p /root/snowluma/app/config
+            cat > /root/snowluma/app/config/onebot.json <<'MOFOX_EOF'
             {
-              "network": {
-                "httpServers": [],
+              "networks": {
+                "httpServers": [
+                  {
+                    "name": "http-local",
+                    "enabled": true,
+                    "host": "127.0.0.1",
+                    "port": 3000,
+                    "path": "/",
+                    "accessToken": "mofox",
+                    "messageFormat": "array",
+                    "reportSelfMessage": false
+                  }
+                ],
                 "httpClients": [],
-                "websocketServers": [],
-                "websocketClients": [
+                "wsServers": [],
+                "wsClients": [
                   {
                     "name": "neo-mofox-ws-client",
-                    "enable": true,
-                    "url": "ws://127.0.0.1:${'$'}wsPort",
-                    "messagePostFormat": "array",
+                    "enabled": true,
+                    "url": "ws://127.0.0.1:$wsPort",
+                    "role": "Universal",
+                    "accessToken": "",
+                    "messageFormat": "array",
                     "reportSelfMessage": false,
-                    "reconnectInterval": 3000,
-                    "token": ""
+                    "reconnectIntervalMs": 3000
                   }
                 ]
               },
-              "musicSignUrl": "",
-              "enableLocalFile2Url": false,
-              "parseMultMsg": false
+              "musicSignUrl": ""
             }
             MOFOX_EOF
-            cat > /root/napcat/config/napcat_${'$'}{BOT_QQ:-${botQq}}.json <<'MOFOX_EOF2'
-            {
-              "fileLog": true,
-              "consoleLog": true,
-              "fileLogLevel": "info",
-              "consoleLogLevel": "info"
-            }
+            cat > /root/snowluma/app/config/runtime.json <<'MOFOX_EOF2'
+            { "webuiPort": 5099, "hookAutoLoad": true }
             MOFOX_EOF2
 
             """.trimIndent(),

@@ -37,9 +37,9 @@ class SettingsPage extends ConsumerWidget {
           );
           final botStatus =
               process.activeInstanceId == null ? 'stopped' : process.botStatus;
-          final napcatStatus = process.activeInstanceId == null
+          final snowlumaStatus = process.activeInstanceId == null
               ? 'stopped'
-              : process.napcatStatus;
+              : process.snowlumaStatus;
           final appearanceSubtitle = '${appSettings.themeMode.label} · '
               '${appSettings.dynamicColorEnabled ? '动态取色' : '品牌色'} · '
               '${appSettings.mainImageMode.label}';
@@ -137,15 +137,15 @@ class SettingsPage extends ConsumerWidget {
                   ),
                   AppSettingTile(
                     leading: const Icon(Icons.qr_code_2_outlined),
-                    title: 'NapCat',
+                    title: 'SnowLuma',
                     subtitle: process.errorMessage == null
                         ? _processStatusLabel(
-                            napcatStatus,
+                            snowlumaStatus,
                             activeInstanceLabel: activeInstanceLabel,
                           )
                         : '状态刷新失败，显示的状态可能已过期',
                     trailing: _processStatusBadge(
-                      napcatStatus,
+                      snowlumaStatus,
                       stale: process.errorMessage != null,
                     ),
                   ),
@@ -171,14 +171,14 @@ class SettingsPage extends ConsumerWidget {
                   AppSettingTile(
                     leading: const Icon(Icons.archive_outlined),
                     title: '一键打包导出',
-                    subtitle: 'TOML 配置 + NapCat 登录态 + 最近 7 天日志',
+                    subtitle: 'TOML 配置 + SnowLuma 登录态 + 最近 7 天日志',
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoute.backup),
                   ),
                   AppSettingTile(
                     leading: const Icon(Icons.tune_outlined),
                     title: '选择性导出',
-                    subtitle: '单独导出 core.toml、model.toml、NapCat 或日志',
+                    subtitle: '单独导出 core.toml、model.toml、SnowLuma 或日志',
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoute.backup),
                   ),

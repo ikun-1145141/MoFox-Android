@@ -2,7 +2,7 @@
 ///
 /// 实例创建走 `features/wizard`（独立路由），不在 OOBE 里。
 /// `extractRuntime` 阶段在 OOBE 里完成全局一次性安装：解压 Debian rootfs、
-/// 安装 apt 基础依赖，并按用户选择安装可选的 NapCat。
+/// 安装 apt 基础依赖，并按用户选择安装可选的 SnowLuma。
 enum OobeStep {
   welcome, // 1. 欢迎 + EULA
   systemCheck, // 2. 系统体检（ABI / 空间 / 内存）
@@ -23,8 +23,8 @@ enum OobeStep {
 enum OobeRuntimeTask {
   extractRootfs('extractRootfs', '解压 Debian 13 rootfs'),
   installRuntimeDeps('installRuntimeDeps', '安装 apt 基础依赖'),
-  installNapcat('installNapcat', '安装全局 NapCat'),
-  verifyNapcat('verifyNapcat', '复查 NapCat 安装');
+  installSnowluma('installSnowluma', '安装全局 SnowLuma'),
+  verifySnowluma('verifySnowluma', '复查 SnowLuma 安装');
 
   const OobeRuntimeTask(this.nativeName, this.label);
 
@@ -32,15 +32,15 @@ enum OobeRuntimeTask {
   final String label;
 }
 
-/// 生成本次 OOBE 的安装计划。基础环境始终必装，NapCat 只有在用户显式选择后
+/// 生成本次 OOBE 的安装计划。基础环境始终必装，SnowLuma 只有在用户显式选择后
 /// 才会进入计划。
-List<OobeRuntimeTask> oobeRuntimeTasks({required bool installNapcat}) =>
+List<OobeRuntimeTask> oobeRuntimeTasks({required bool installSnowluma}) =>
     <OobeRuntimeTask>[
       OobeRuntimeTask.extractRootfs,
       OobeRuntimeTask.installRuntimeDeps,
-      if (installNapcat) ...<OobeRuntimeTask>[
-        OobeRuntimeTask.installNapcat,
-        OobeRuntimeTask.verifyNapcat,
+      if (installSnowluma) ...<OobeRuntimeTask>[
+        OobeRuntimeTask.installSnowluma,
+        OobeRuntimeTask.verifySnowluma,
       ],
     ];
 

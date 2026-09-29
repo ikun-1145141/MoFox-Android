@@ -21,7 +21,6 @@ class WizardState {
     required this.taskProgress,
     required this.logs,
     this.errorMessage,
-    this.napcatQrPayload,
     this.installFinished = false,
     this.installStarted = false,
     this.installRunning = false,
@@ -38,7 +37,6 @@ class WizardState {
   final double taskProgress;
   final List<String> logs;
   final String? errorMessage;
-  final String? napcatQrPayload;
   final bool installFinished;
   final bool installStarted;
 
@@ -63,7 +61,6 @@ class WizardState {
     double? taskProgress,
     List<String>? logs,
     Object? errorMessage = _sentinel,
-    Object? napcatQrPayload = _sentinel,
     bool? installFinished,
     bool? installStarted,
     bool? installRunning,
@@ -82,9 +79,6 @@ class WizardState {
         errorMessage: identical(errorMessage, _sentinel)
             ? this.errorMessage
             : errorMessage as String?,
-        napcatQrPayload: identical(napcatQrPayload, _sentinel)
-            ? this.napcatQrPayload
-            : napcatQrPayload as String?,
         installFinished: installFinished ?? this.installFinished,
         installStarted: installStarted ?? this.installStarted,
         installRunning: installRunning ?? this.installRunning,
@@ -255,7 +249,6 @@ class WizardNotifier extends Notifier<WizardState> {
           '[last-error] ${instance.installError}',
       ],
       errorMessage: instance.installError,
-      napcatQrPayload: null,
       installFinished: false,
       installStarted: true,
       installRunning: false,
@@ -556,7 +549,7 @@ class WizardNotifier extends Notifier<WizardState> {
         ownerQq: draft.ownerQq,
         wsPort: draft.wsPort,
         channel: draft.channel,
-        installNapcat: true,
+        installSnowluma: true,
         installWebui: draft.installWebui,
         installDir: installDir,
         createdAt: DateTime.now(),
@@ -606,7 +599,7 @@ class WizardNotifier extends Notifier<WizardState> {
         InstallTask.writeModel => 'writeModel',
         InstallTask.writeAdapter => 'writeAdapter',
         InstallTask.installWebui => 'installWebui',
-        InstallTask.writeNapcatConfig => 'writeNapcatConfig',
+        InstallTask.writeSnowlumaConfig => 'writeSnowlumaConfig',
         InstallTask.registerInstance => null,
       };
 
@@ -636,7 +629,7 @@ class WizardNotifier extends Notifier<WizardState> {
         'webuiHost': '127.0.0.1',
         'webuiPort': '8000',
         'mirrorId': draft.mirrorId,
-        'installNapcat': true.toString(),
+        'installSnowluma': true.toString(),
         'installWebui': draft.installWebui.toString(),
       };
 

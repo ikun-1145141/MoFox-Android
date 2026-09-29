@@ -12,7 +12,7 @@ import 'package:mofox_android/features/file_manager/domain/rootfs_file_scope.dar
 import 'package:mofox_android/features/instance/application/instance_deletion_service.dart';
 import 'package:mofox_android/features/instance/application/instance_repository.dart';
 import 'package:mofox_android/features/instance/domain/instance.dart';
-import 'package:mofox_android/features/wizard/presentation/widgets/napcat_qr_sheet.dart';
+import 'package:mofox_android/features/wizard/presentation/widgets/snowluma_qr_sheet.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class InstanceDetailPage extends ConsumerStatefulWidget {
@@ -25,9 +25,11 @@ class InstanceDetailPage extends ConsumerStatefulWidget {
 }
 
 class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
-  bool _qrShown = false;
-  String? _qrPayload;
+  /// 用户点了"取消登录"后置位，隐藏扫码浮层直到 snowluma 重新回到运行态。
   bool _loginCancelled = false;
+
+  /// 用户点遮罩手动收起浮层（不停止进程）后置位；进程停止即复位。
+  bool _panelDismissed = false;
 
   Instance get instance => widget.instance;
 
@@ -38,92 +40,30 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     final console = ref.watch(processConsoleProvider);
     final installed = instance.installStatus == InstanceInstallStatus.installed;
     final botStatus = console.botStatusFor(instance.id);
-    final napcatStatus = console.napcatStatusFor(instance.id);
+    final snowlumaStatus = console.snowlumaStatusFor(instance.id);
     final anotherInstanceActive =
         console.hasRunningProcess && !console.isActiveInstance(instance.id);
 
-    ref.listen<ProcessConsoleState>(processConsoleProvider, (prev, next) {
-      final payload = next.napcatQrPayload;
-      // NapCat 进程在运行时才处理 QR；取消后忽略
-      final napcatRunning = next.napcatStatusFor(instance.id) == 'running';
-      // 用户主动取消：onCancel 已负责关闭 sheet，listener 不再 pop，避免双 pop
-      if (_loginCancelled) return;
-      if (!napcatRunning) {
-        if (_qrShown && mounted) {
-          Navigator.of(context).pop();
-          _qrShown = false;
-          _qrPayload = null;
-        }
-        return;
-      }
-      if (payload != null && !_qrShown) {
-        _qrShown = true;
-        _qrPayload = payload;
-        showModalBottomSheet<void>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: true,
-          isDismissible: false,
-          enableDrag: false,
-          builder: (_) => NapcatQrSheet(
-            payload: _qrPayload!,
-            onCancel: () {
-              // 先标记取消，阻止 listener 在 sheet 关闭期间二次 pop
-              _loginCancelled = true;
-              // 先 pop sheet，再停止进程；停止进程不再 setState payload=null，
-              // 避免在 pop 动画中触发 listener 导致 Navigator 状态崩溃。
-              if (_qrShown && mounted) {
-                Navigator.of(context).pop();
-                _qrShown = false;
-                _qrPayload = null;
-              }
-              ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
-            },
-          ),
-        ).whenComplete(() {
-          _qrShown = false;
-          _qrPayload = null;
-        });
-      } else if (payload != null && _qrShown && payload != _qrPayload) {
-        // 二维码刷新：更新 payload，sheet 用新 payload 重建
-        _qrPayload = payload;
-        Navigator.of(context).pop();
-        _qrShown = false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!_qrShown && mounted && !_loginCancelled) {
-            _qrShown = true;
-            showModalBottomSheet<void>(
-              context: context,
-              isScrollControlled: true,
-              showDragHandle: true,
-              isDismissible: false,
-              enableDrag: false,
-              builder: (_) => NapcatQrSheet(
-                payload: _qrPayload!,
-                onCancel: () {
-                  _loginCancelled = true;
-                  if (_qrShown && mounted) {
-                    Navigator.of(context).pop();
-                    _qrShown = false;
-                    _qrPayload = null;
-                  }
-                  ref.read(processConsoleProvider.notifier).cancelNapcatLogin();
-                },
-              ),
-            ).whenComplete(() {
-              _qrShown = false;
-              _qrPayload = null;
-            });
-          }
-        });
-      } else if (payload == null && _qrShown) {
-        Navigator.of(context).pop();
-        _qrShown = false;
-        _qrPayload = null;
-      }
-    });
+    // 扫码浮层不再走 Navigator 模态路由：go_router 的嵌套导航器会随状态刷新
+    // 重建，挂在上面的模态路由被悄悄丢弃，造成"弹窗反复弹出"。改为纯 widget
+    // 条件渲染——进程在跑且有新截图就显示，停止/取消就隐藏，零 push/pop。
+    final snowlumaRunning = snowlumaStatus == 'running';
+    final qrPayload = console.snowlumaQrPayload;
+    if (!snowlumaRunning) {
+      // 进程停了：取消/收起标记一并复位，下次登录恢复默认弹出。
+      _loginCancelled = false;
+      _panelDismissed = false;
+    }
+    final showQrPanel = snowlumaRunning &&
+        qrPayload != null &&
+        !_loginCancelled &&
+        !_panelDismissed;
+    final showQrRestorePill =
+        snowlumaRunning && qrPayload != null && _panelDismissed;
 
-    return Scaffold(
+    return Stack(
+      children: <Widget>[
+        Scaffold(
       body: SafeArea(
         child: DefaultTabController(
           length: 2,
@@ -176,7 +116,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                                     Expanded(
                                       child: Text(
                                         installed
-                                            ? 'Bot ${_processStatusLabel(botStatus)} · NapCat ${_processStatusLabel(napcatStatus)}'
+                                            ? 'Bot ${_processStatusLabel(botStatus)} · SnowLuma ${_processStatusLabel(snowlumaStatus)}'
                                             : _statusLabel(instance),
                                         style: text.bodySmall?.copyWith(
                                           color: scheme.onSurfaceVariant,
@@ -280,16 +220,16 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                               onPressed: !installed ||
                                       console.isBusy ||
                                       anotherInstanceActive ||
-                                      napcatStatus == 'running'
+                                      snowlumaStatus == 'running'
                                   ? null
                                   : () {
                                       _loginCancelled = false;
                                       ref
                                           .read(processConsoleProvider.notifier)
-                                          .startNapcat(instance);
+                                          .startSnowluma(instance);
                                     },
                               icon: const Icon(Icons.qr_code_2),
-                              label: const Text('NapCat'),
+                              label: const Text('SnowLuma'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -297,11 +237,11 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      napcatStatus != 'running'
+                                      snowlumaStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
-                                      .stopNapcat(),
+                                      .stopSnowluma(),
                               icon: const Icon(Icons.stop),
                               label: const Text('停止'),
                             ),
@@ -311,11 +251,11 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      napcatStatus != 'running'
+                                      snowlumaStatus != 'running'
                                   ? null
                                   : () => ref
                                       .read(processConsoleProvider.notifier)
-                                      .restartNapcat(instance),
+                                      .restartSnowluma(instance),
                               icon: const Icon(Icons.restart_alt),
                               label: const Text('重启'),
                             ),
@@ -345,15 +285,15 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: FilledButton.tonalIcon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      napcatStatus != 'running' ||
-                                      !instance.installNapcat
+                                      snowlumaStatus != 'running' ||
+                                      !instance.installSnowluma
                                   ? null
                                   : () async => _openWebUi(
                                         context,
-                                        target: 'napcat',
+                                        target: 'snowluma',
                                       ),
                               icon: const Icon(Icons.qr_code_2_outlined),
-                              label: const Text('NapCat WebUI'),
+                              label: const Text('SnowLuma WebUI'),
                             ),
                           ),
                         ],
@@ -388,7 +328,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
               TabBar(
                 tabs: const <Widget>[
                   Tab(icon: Icon(Icons.terminal), text: 'Bot 主程序'),
-                  Tab(icon: Icon(Icons.qr_code_2), text: 'NapCat'),
+                  Tab(icon: Icon(Icons.qr_code_2), text: 'SnowLuma'),
                 ],
                 labelColor: scheme.primary,
                 unselectedLabelColor: scheme.onSurfaceVariant,
@@ -397,7 +337,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                 child: TabBarView(
                   children: <Widget>[
                     _ProcessLogPane(lines: console.botLogs),
-                    _ProcessLogPane(lines: console.napcatLogs),
+                    _ProcessLogPane(lines: console.snowlumaLogs),
                   ],
                 ),
               ),
@@ -405,7 +345,39 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
           ),
         ),
       ),
+        ),
+        if (showQrPanel)
+          _QrLoginOverlay(
+            payload: qrPayload,
+            onCancel: _cancelLogin,
+            onDismiss: () => _setPanelDismissed(true),
+            onQuickLogin: () => ref
+                .read(processConsoleProvider.notifier)
+                .quickLoginQq(),
+          ),
+        if (showQrRestorePill)
+          Align(
+            alignment: Alignment.bottomRight,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FilledButton.tonalIcon(
+                onPressed: () => _setPanelDismissed(false),
+                icon: const Icon(Icons.qr_code_2),
+                label: const Text('查看扫码窗口'),
+              ),
+            ),
+          ),
+      ],
     );
+  }
+
+  void _cancelLogin() {
+    _loginCancelled = true;
+    ref.read(processConsoleProvider.notifier).cancelSnowlumaLogin();
+  }
+
+  void _setPanelDismissed(bool value) {
+    setState(() => _panelDismissed = value);
   }
 
   Future<void> _openWebUi(
@@ -413,13 +385,13 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
     required String target,
   }) async {
     final process = ref.read(processConsoleProvider);
-    final url = target == 'napcat'
-        ? process.napcatWebuiUrl
+    final url = target == 'snowluma'
+        ? process.snowlumaWebuiUrl
         : 'http://127.0.0.1:8000/webui/frontend';
 
     if (url == null || url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('NapCat WebUI 地址尚未就绪，请稍候再试')),
+        const SnackBar(content: Text('SnowLuma WebUI 地址尚未就绪，请稍候再试')),
       );
       return;
     }
@@ -527,7 +499,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                         'WebUI 管理面板',
                         instance.installWebui ? '已安装' : '未安装',
                       ),
-                      const _DetailRow('NapCat', '全局共享'),
+                      const _DetailRow('SnowLuma', '全局共享'),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -814,4 +786,61 @@ AppStatusTone _statusTone(
     InstanceInstallStatus.failed => AppStatusTone.error,
     InstanceInstallStatus.installed => AppStatusTone.neutral,
   };
+}
+
+/// 页面内的扫码登录浮层。
+///
+/// 故意不走 Navigator 模态路由：go_router 的嵌套导航器会随状态刷新重建，
+/// 挂在上面的模态路由会被悄悄丢弃（表现为"弹窗反复弹出"）。纯 widget
+/// 条件渲染没有 push/pop，浮层的显隐完全由进程状态与截图 payload 驱动。
+class _QrLoginOverlay extends StatelessWidget {
+  const _QrLoginOverlay({
+    required this.payload,
+    required this.onCancel,
+    required this.onDismiss,
+    required this.onQuickLogin,
+  });
+
+  final String payload;
+  final VoidCallback onCancel;
+  final VoidCallback onDismiss;
+  final VoidCallback onQuickLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDismiss,
+            child: const ColoredBox(color: Colors.black54),
+          ),
+        ),
+        Align(
+        alignment: Alignment.bottomCenter,
+        child: Material(
+          color: scheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+              ),
+              child: SnowlumaQrSheet(
+                payload: payload,
+                onCancel: onCancel,
+                onClose: onDismiss,
+                onQuickLogin: onQuickLogin,
+              ),
+            ),
+          ),
+        ),
+        ),
+      ],
+    );
+  }
 }

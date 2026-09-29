@@ -30,7 +30,7 @@ YOLO 模式面向明确不想逐步确认的用户。开启后，助手可在应
 | xterm.dart 终端界面 | `features/terminal/presentation/terminal_page.dart` | 助手可作为终端页的并列面板，不必重做终端 |
 | 持久 PTY 会话 | `features/terminal/application/terminal_session_provider.dart` | 支持把建议命令填入当前终端，页面重建时可复用会话 |
 | Shell 原生桥 | `core/runtime/runtime_bridge.dart`、`RuntimeBridgePlugin.kt` | 已具备打开、写入、缩放和关闭 Shell 的基础协议 |
-| Bot/NapCat 进程控制 | `ProcessConsoleNotifier`、`RuntimeProcessManager` | 重启、停止、状态查询应走语义接口，不必拼 Shell 命令 |
+| Bot/SnowLuma 进程控制 | `ProcessConsoleNotifier`、`RuntimeProcessManager` | 重启、停止、状态查询应走语义接口，不必拼 Shell 命令 |
 | 最近进程日志 | `ProcessConsoleState` | 可作为“Bot 为什么没回复”等问题的诊断上下文 |
 | 系统资源状态 | `systemStats()`、`SystemStatsProvider` | 可回答内存、磁盘和运行状态问题 |
 | 受限文件管理 | `features/file_manager/`、`RuntimeFileService` | 可安全读取实例配置；后续可生成配置修改预览 |
@@ -52,7 +52,7 @@ YOLO 模式面向明确不想逐步确认的用户。开启后，助手可在应
 ### 3.2 典型任务
 
 - “Bot 怎么突然不回复了？”
-- “NapCat 登录了吗？”
+- “SnowLuma 登录了吗？”
 - “帮我重启这个实例。”
 - “磁盘是不是满了？”
 - “这段红色日志是什么意思？”
@@ -87,7 +87,7 @@ YOLO 模式面向明确不想逐步确认的用户。开启后，助手可在应
 
 - 不让模型获得无限制、无人监督的 Shell 控制权。
 - 不用 AI 助手取代现有实例管理、进程按钮或文件编辑器。
-- 不保证修复任意 Debian、Python、NapCat 或第三方插件问题。
+- 不保证修复任意 Debian、Python、SnowLuma 或第三方插件问题。
 - 不在首版实现长时间后台 Agent、自主循环修复或无人值守升级。
 - 不在首版把完整终端历史、完整日志或整个配置目录上传给模型。
 - 不把模型回复中的 Markdown 代码块直接视为可执行命令。
@@ -381,7 +381,7 @@ class AssistantSessionSpec {
 
 默认不发送：
 
-- API Key、WebUI Key、NapCat token。
+- API Key、WebUI Key、SnowLuma WebUI 密码。
 - QQ 登录态、二维码内容、Cookie。
 - 完整 TOML 配置。
 - 完整终端回滚缓冲区。
@@ -395,7 +395,7 @@ class AssistantSessionSpec {
 - `Authorization: Bearer ...`
 - 常见 `api_key`、`apikey`、`token`、`secret`、`password` 字段。
 - URL query 中的 `token`、`key`、`secret`。
-- NapCat WebUI 带 token 的 URL。
+- SnowLuma WebUI 地址（`127.0.0.1:5099`）。
 - 可能出现在 shell 历史中的 `export XXX_KEY=...`。
 
 脱敏输出用稳定占位符，例如 `<REDACTED_API_KEY>`，让模型仍能理解字段类型。正则脱敏不能宣称百分百可靠，因此 UI 还要在首次发送日志/文件时展示预览，并允许用户取消。
@@ -425,7 +425,7 @@ class AssistantSessionSpec {
 | `list_instance_files` | `RuntimeFileService.listDirectory` | 否 |
 | `read_instance_text` | `readTextDocument`，受 scope 限制 | 否 |
 | `start_bot` / `stop_bot` / `restart_bot` | 现有进程接口 | 是 |
-| `start_napcat` / `stop_napcat` / `restart_napcat` | 现有进程接口 | 是 |
+| `start_snowluma` / `stop_snowluma` / `restart_snowluma` | 现有进程接口 | 是 |
 | `propose_terminal_command` | 生成操作卡片 | 否，填入也不执行 |
 
 MVP 只实现前四个只读工具、进程语义操作和命令建议即可覆盖大部分新手排障场景。
@@ -469,7 +469,7 @@ class TerminalCommandProposal {
 | --- | --- | --- |
 | 只读 | 查看状态、磁盘、最近日志 | 显示正在读取，可允许本会话一次授权 |
 | 低 | 把单条只读命令填入终端 | 不执行，不需要二次确认 |
-| 中 | 启停/重启 Bot 或 NapCat | 明确影响对象，单次确认 |
+| 中 | 启停/重启 Bot 或 SnowLuma | 明确影响对象，单次确认 |
 | 高 | 写配置、安装包、升级、覆盖文件 | 展示 diff/影响，二次确认；MVP 不开放通用执行 |
 | 禁止 | 破坏性删除、读取凭据、外传数据、持久化后门 | 不执行，只解释拒绝原因和安全替代方案 |
 
@@ -638,7 +638,7 @@ assistantCommandEvents
 - 支持系统摘要、实例摘要、进程状态、最近日志四类只读上下文。
 - 支持结构化 `propose_terminal_command`。
 - 支持复制和“填入终端”，永不自动回车。
-- 支持已有 Bot/NapCat 重启语义接口，明确对象和影响并逐次确认。
+- 支持已有 Bot/SnowLuma 重启语义接口，明确对象和影响并逐次确认。
 - 支持显式启用的 YOLO 模式，通过独立执行器自动运行任意单行 Shell 命令；提供停止按钮、单轮上限、超时和输出上限。
 - 完成本地脱敏、上下文授权和基础单元测试。
 
@@ -646,7 +646,7 @@ assistantCommandEvents
 
 ### 阶段 2：扩展语义运维操作
 
-- 扩展 Bot/NapCat 启动、停止和更多实例级语义工具。
+- 扩展 Bot/SnowLuma 启动、停止和更多实例级语义工具。
 - 完善本地风险注册表、单次确认与操作审计。
 - 将常见故障固化为诊断 recipe，例如磁盘、进程、端口和最近错误检查。
 - 工具结果可继续交给模型解释。
@@ -674,7 +674,7 @@ assistantCommandEvents
 助手空状态可显示：
 
 - Bot 为什么没有回复？
-- 检查 Bot 和 NapCat 是否正常运行。
+- 检查 Bot 和 SnowLuma 是否正常运行。
 - 帮我看最近的错误日志。
 - 手机存储空间还够吗？
 - 解释我在终端里选中的内容。
@@ -762,7 +762,7 @@ assistantCommandEvents
 
 1. 首发是否只支持用户自备兼容 API，还是由项目提供默认服务。
 2. 是否允许显式复制某个 Bot 实例的模型配置给助手。
-3. MVP 是否包含 Bot/NapCat 重启语义工具；本方案建议包含，但始终单次确认。
+3. MVP 是否包含 Bot/SnowLuma 重启语义工具；本方案建议包含，但始终单次确认。
 4. 对话是否完全不落盘；本方案建议 MVP 不落盘。
 5. 首版支持哪些模型接口能力，遇到不支持 tool calling 的服务是否统一降级。
 6. “解释最近输出”默认行数和单次最大上传字符数。

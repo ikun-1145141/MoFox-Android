@@ -8,17 +8,17 @@
 
 ## 功能
 
-- **OOBE 一次性引导**：欢迎 → 系统体检 → 准备 rootfs（NapCat 可选）→ 保活授权，四步完成。
+- **OOBE 一次性引导**：欢迎 → 系统体检 → 准备 rootfs（SnowLuma 可选）→ 保活授权，四步完成。
 - **实例管理**：支持创建多个 Bot 实例，每个实例独立目录（`/root/instances/<id>/`），可启停、续装、查看日志。
 - **实例创建向导**：镜像源检测 → EULA → 实例信息 → 账号 → 模型 → 网络 → 摘要 → 安装，八步表单 + 彩色安装日志。
 - **首页概览**：CPU / 内存 / 存储使用率，主图模式（沉浸 / 紧凑 / 隐藏）。
 - **彩色终端**：xterm.dart + flutter_pty 直连 Debian bash，固定深色主题 + .bashrc 注入彩色 prompt。
 - **AI 运维助手**：终端内置自然语言排障、日志解释和结构化操作卡片，支持默认副驾驶、无限制 YOLO，以及实时检索 `docs.mofox-sama.com` 的官方文档 MCP。
-- **WebUI 壳**：Neo-MoFox WebUI 与 NapCat 控制台切换。
+- **WebUI 壳**：Neo-MoFox WebUI 与 SnowLuma 控制台切换。
 - **外观设置**：主题模式（跟随系统 / 浅色 / 深色）、Android 12+ 动态取色、主图模式。
 - **保活体检**：通知权限、电池白名单、前台服务、开机自启、厂商自启动一键检查与跳转。
 - **App 日志**：双路输出（控制台 + 文件），支持导出分享，方便排查问题。
-- **NapCat 扫码登录**：实例详情页内弹出二维码，QQ 扫码即登录。
+- **SnowLuma 扫码登录**：实例详情页展示虚拟桌面（Xvfb）截图中的 QQ 二维码，QQ 扫码即登录。
 
 ## 仓库结构
 
@@ -157,7 +157,8 @@ python tools/build.py --target-platform android-arm64 --artifact-label arm64-v8a
 
 - `Missing runtime asset: jniLibs/<abi>/libproot.so` 或 `assets/rootfs/debian-13-*.tar.xz`：本地 APK 没带运行时资产。按上面"本地手动准备运行时资产"准备齐全后重建。
 - 真机首启卡在 `安装系统依赖` / `apt install`：通常是设备网络或镜像源问题。OOBE 内置镜像源切换（清华 / 中科大 / 阿里 / 官方），可在向导日志页或设置内切换重试。
-- 安装 NapCat 卡住：NapCat 走 GitHub 原始链接，国内可能慢。可在 OOBE 中暂不安装；首次主动启动 NapCat 时 App 会再次安装并校验。
+- 安装 SnowLuma 卡住：SnowLuma 走 GitHub Release 原始链接，国内可能慢。可在 OOBE 中暂不安装；首次主动启动 SnowLuma 时 App 会再次安装并校验。
+- SnowLuma 通过 ptrace 向 QQ 进程注入 hook，在 proot（本身基于 ptrace 模拟）环境下注入是否成功取决于设备内核与 yama 配置，官方文档明示不保证可用。若登录后 Bot 收不到消息，请查看 SnowLuma 日志中的注入告警，该问题与设备相关。
 - `找不到 flutter`：确认 Flutter 已加入 `PATH`，或安装 / 配置 `fvm` 的默认版本。脚本也会尝试 `~/fvm/default/bin/flutter(.bat)`。
 - Release APK 默认未签名；正式分发前需要按 Android 签名流程配置 keystore。
 

@@ -5,7 +5,7 @@ import 'package:mofox_android/features/oobe/application/oobe_flow_notifier.dart'
 import 'package:mofox_android/features/oobe/presentation/widgets/extract_runtime_step.dart';
 
 void main() {
-  testWidgets('NapCat is opt-in and can be selected before installation', (
+  testWidgets('SnowLuma is opt-in and can be selected before installation', (
     tester,
   ) async {
     final container = ProviderContainer();
@@ -20,8 +20,8 @@ void main() {
       ),
     );
 
-    expect(find.text('安装 NapCat（可选）'), findsOneWidget);
-    expect(container.read(oobeFlowProvider).installNapcat, isFalse);
+    expect(find.text('安装 SnowLuma（可选）'), findsOneWidget);
+    expect(container.read(oobeFlowProvider).installSnowluma, isFalse);
     expect(
       tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
       isFalse,
@@ -30,7 +30,7 @@ void main() {
     await tester.tap(find.byType(SwitchListTile));
     await tester.pump();
 
-    expect(container.read(oobeFlowProvider).installNapcat, isTrue);
+    expect(container.read(oobeFlowProvider).installSnowluma, isTrue);
     expect(
       tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
       isTrue,

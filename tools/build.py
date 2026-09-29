@@ -41,7 +41,7 @@ ROOTFS_DIR = APP_DIR / "assets" / "rootfs"
 JNILIBS_DIR = APP_DIR / "android" / "app" / "src" / "main" / "jniLibs"
 
 # 与 RootfsInstaller.kt / build.gradle.kts 保持一致。
-# 只支持 arm64-v8a：32 位 ARM 装不了 napcat (Node.js 上游不再维护 armv7)，x86 安卓用户极少。
+# 只支持 arm64-v8a：32 位 ARM 跑不了 SnowLuma 依赖的 Node.js (上游不再维护 armv7)，x86 安卓用户极少。
 ABIS = ("arm64-v8a",)
 ABI_TO_ROOTFS_SUFFIX = {
     "arm64-v8a": "arm64",

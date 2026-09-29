@@ -64,27 +64,27 @@ void main() {
       ..setMockMessageHandler('mofox/runtime/events', null);
   });
 
-  test('default flow skips NapCat and still completes', () async {
+  test('default flow skips SnowLuma and still completes', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(oobeFlowProvider.notifier);
 
-    expect(container.read(oobeFlowProvider).installNapcat, isFalse);
+    expect(container.read(oobeFlowProvider).installSnowluma, isFalse);
 
     await notifier.runRuntimeInstall();
 
     final state = container.read(oobeFlowProvider);
     expect(runtimeTasks, <String>['extractRootfs', 'installRuntimeDeps']);
     expect(state.result, isA<OobeStepSuccess>());
-    expect(state.logs.join('\n'), contains('未安装 NapCat'));
+    expect(state.logs.join('\n'), contains('未安装 SnowLuma'));
     expect(keepScreenOnValues, <bool>[true, false]);
   });
 
-  test('opt-in flow installs and verifies NapCat', () async {
+  test('opt-in flow installs and verifies SnowLuma', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(oobeFlowProvider.notifier)
-      ..setInstallNapcat(true);
+      ..setInstallSnowluma(true);
 
     await notifier.runRuntimeInstall();
 
@@ -93,8 +93,8 @@ void main() {
       <String>[
         'extractRootfs',
         'installRuntimeDeps',
-        'installNapcat',
-        'verifyNapcat',
+        'installSnowluma',
+        'verifySnowluma',
       ],
     );
     expect(container.read(oobeFlowProvider).result, isA<OobeStepSuccess>());

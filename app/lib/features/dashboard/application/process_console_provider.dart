@@ -11,44 +11,44 @@ class ProcessConsoleState {
   const ProcessConsoleState({
     required this.status,
     required this.botLogs,
-    required this.napcatLogs,
+    required this.snowlumaLogs,
     this.activeInstanceId,
     this.busyAction,
     this.errorMessage,
-    this.napcatQrPayload,
-    this.napcatWebuiUrl,
+    this.snowlumaQrPayload,
+    this.snowlumaWebuiUrl,
   });
 
   factory ProcessConsoleState.initial() => const ProcessConsoleState(
-        status: <String, String>{'bot': 'stopped', 'napcat': 'stopped'},
+        status: <String, String>{'bot': 'stopped', 'snowluma': 'stopped'},
         botLogs: <String>[],
-        napcatLogs: <String>[],
+        snowlumaLogs: <String>[],
       );
 
   final Map<String, String> status;
   final List<String> botLogs;
-  final List<String> napcatLogs;
+  final List<String> snowlumaLogs;
 
   /// 当前占用原生单实例进程槽位的实例。
   ///
-  /// Bot 与 NapCat 的原生托管器都是全局唯一的，因此裸的 [botStatus] / [napcatStatus]
-  /// 不能直接用于任意实例卡片。界面应通过 [botStatusFor] / [napcatStatusFor]
+  /// Bot 与 SnowLuma 的原生托管器都是全局唯一的，因此裸的 [botStatus] / [snowlumaStatus]
+  /// 不能直接用于任意实例卡片。界面应通过 [botStatusFor] / [snowlumaStatusFor]
   /// 读取实例作用域内的状态。
   final String? activeInstanceId;
   final String? busyAction;
   final String? errorMessage;
-  final String? napcatQrPayload;
+  final String? snowlumaQrPayload;
 
-  /// NapCat WebUI 地址（含 token），从 napcat 日志解析。
-  /// 形如 `http://127.0.0.1:6099/webui?token=xxx`。
-  final String? napcatWebuiUrl;
+  /// SnowLuma WebUI 地址（含 token），从 snowluma 日志解析。
+  /// 形如 `http://127.0.0.1:5099/?token=xxx`。
+  final String? snowlumaWebuiUrl;
 
   bool get isBusy => busyAction != null;
   String get botStatus => status['bot'] ?? 'stopped';
-  String get napcatStatus => status['napcat'] ?? 'stopped';
+  String get snowlumaStatus => status['snowluma'] ?? 'stopped';
 
   bool get hasRunningProcess =>
-      botStatus == 'running' || napcatStatus == 'running';
+      botStatus == 'running' || snowlumaStatus == 'running';
 
   bool isActiveInstance(String instanceId) =>
       activeInstanceId != null && activeInstanceId == instanceId;
@@ -56,23 +56,23 @@ class ProcessConsoleState {
   String botStatusFor(String instanceId) =>
       isActiveInstance(instanceId) ? botStatus : 'stopped';
 
-  String napcatStatusFor(String instanceId) =>
-      isActiveInstance(instanceId) ? napcatStatus : 'stopped';
+  String snowlumaStatusFor(String instanceId) =>
+      isActiveInstance(instanceId) ? snowlumaStatus : 'stopped';
 
   ProcessConsoleState copyWith({
     Map<String, String>? status,
     List<String>? botLogs,
-    List<String>? napcatLogs,
+    List<String>? snowlumaLogs,
     Object? activeInstanceId = _sentinel,
     Object? busyAction = _sentinel,
     Object? errorMessage = _sentinel,
-    Object? napcatQrPayload = _sentinel,
-    Object? napcatWebuiUrl = _sentinel,
+    Object? snowlumaQrPayload = _sentinel,
+    Object? snowlumaWebuiUrl = _sentinel,
   }) =>
       ProcessConsoleState(
         status: status ?? this.status,
         botLogs: botLogs ?? this.botLogs,
-        napcatLogs: napcatLogs ?? this.napcatLogs,
+        snowlumaLogs: snowlumaLogs ?? this.snowlumaLogs,
         activeInstanceId: identical(activeInstanceId, _sentinel)
             ? this.activeInstanceId
             : activeInstanceId as String?,
@@ -82,12 +82,12 @@ class ProcessConsoleState {
         errorMessage: identical(errorMessage, _sentinel)
             ? this.errorMessage
             : errorMessage as String?,
-        napcatQrPayload: identical(napcatQrPayload, _sentinel)
-            ? this.napcatQrPayload
-            : napcatQrPayload as String?,
-        napcatWebuiUrl: identical(napcatWebuiUrl, _sentinel)
-            ? this.napcatWebuiUrl
-            : napcatWebuiUrl as String?,
+        snowlumaQrPayload: identical(snowlumaQrPayload, _sentinel)
+            ? this.snowlumaQrPayload
+            : snowlumaQrPayload as String?,
+        snowlumaWebuiUrl: identical(snowlumaWebuiUrl, _sentinel)
+            ? this.snowlumaWebuiUrl
+            : snowlumaWebuiUrl as String?,
       );
 }
 
@@ -142,46 +142,46 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     );
   }
 
-  Future<void> startNapcat(Instance instance) {
+  Future<void> startSnowluma(Instance instance) {
     if (!_canActivate(instance.id)) return Future<void>.value();
     appLogger.i(
-      'process: startNapcat instance=${instance.id}',
+      'process: startSnowluma instance=${instance.id}',
     );
     return ref.read(screenWakeLockProvider).keepAwakeWhile(
-          () => _runNapcatAction(
-            action: 'start-napcat',
-            busyLabel: 'NapCat 启动中',
+          () => _runSnowlumaAction(
+            action: 'start-snowluma',
+            busyLabel: 'SnowLuma 启动中',
             instance: instance,
             run: (runtime) async {
-              await _ensureNapcatReady(runtime);
-              final args = _napcatArgs(instance);
-              appLogger.i('process: starting napcat process');
-              await runtime.startProcess('napcat', args: args);
-              // 给 napcat 进程 2 秒稳定时间，避免 refreshStatus 读到刚启动还未就绪的状态
+              await _ensureSnowlumaReady(runtime);
+              final args = _snowlumaArgs(instance);
+              appLogger.i('process: starting snowluma process');
+              await runtime.startProcess('snowluma', args: args);
+              // 给 snowluma 进程 2 秒稳定时间，避免 refreshStatus 读到刚启动还未就绪的状态
               await Future<void>.delayed(const Duration(seconds: 2));
             },
           ),
         );
   }
 
-  Future<void> stopNapcat() => _runNapcatAction(
-        action: 'stop-napcat',
-        busyLabel: 'NapCat 停止中',
-        run: (runtime) => runtime.stopProcess('napcat'),
+  Future<void> stopSnowluma() => _runSnowlumaAction(
+        action: 'stop-snowluma',
+        busyLabel: 'SnowLuma 停止中',
+        run: (runtime) => runtime.stopProcess('snowluma'),
       );
 
-  /// 取消正在进行的 NapCat 扫码登录。
-  /// 新流程中 NapCat 进程直接启动，取消登录 = 停止 napcat 进程。
-  /// 不在这里清 napcatQrPayload——由调用方在 pop sheet 后清，
+  /// 取消正在进行的 SnowLuma 扫码登录。
+  /// 新流程中 SnowLuma 进程直接启动，取消登录 = 停止 snowluma 进程。
+  /// 不在这里清 snowlumaQrPayload——由调用方在 pop sheet 后清，
   /// 避免此处 setState 触发 listener 在 sheet 关闭动画中二次 pop 导致崩溃。
-  Future<void> cancelNapcatLogin() async {
-    appLogger.i('process: cancelNapcatLogin (stop napcat process)');
+  Future<void> cancelSnowlumaLogin() async {
+    appLogger.i('process: cancelSnowlumaLogin (stop snowluma process)');
     final runtime = ref.read(runtimeBridgeProvider);
     try {
-      await runtime.stopProcess('napcat');
+      await runtime.stopProcess('snowluma');
       final status = <String, String>{
         ...state.status,
-        'napcat': 'stopped',
+        'snowluma': 'stopped',
       };
       state = state.copyWith(
         status: status,
@@ -190,22 +190,22 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       );
       await refreshStatus();
     } catch (error) {
-      appLogger.e('process: cancelNapcatLogin failed', error: error);
+      appLogger.e('process: cancelSnowlumaLogin failed', error: error);
     }
   }
 
-  Future<void> restartNapcat(Instance instance) {
+  Future<void> restartSnowluma(Instance instance) {
     if (!_canActivate(instance.id)) return Future<void>.value();
     return ref.read(screenWakeLockProvider).keepAwakeWhile(
-          () => _runNapcatAction(
-            action: 'restart-napcat',
-            busyLabel: 'NapCat 重启中',
+          () => _runSnowlumaAction(
+            action: 'restart-snowluma',
+            busyLabel: 'SnowLuma 重启中',
             instance: instance,
             run: (runtime) async {
-              await _ensureNapcatReady(runtime);
+              await _ensureSnowlumaReady(runtime);
               await runtime.restartProcess(
-                'napcat',
-                args: _napcatArgs(instance),
+                'snowluma',
+                args: _snowlumaArgs(instance),
               );
             },
           ),
@@ -228,18 +228,18 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       if (state.botStatus != 'stopped') {
         await runtime.stopProcess('bot');
       }
-      if (state.napcatStatus != 'stopped') {
-        await runtime.stopProcess('napcat');
+      if (state.snowlumaStatus != 'stopped') {
+        await runtime.stopProcess('snowluma');
       }
       state = state.copyWith(
         status: <String, String>{
           ...state.status,
           'bot': 'stopped',
-          'napcat': 'stopped',
+          'snowluma': 'stopped',
         },
         activeInstanceId: null,
-        napcatQrPayload: null,
-        napcatWebuiUrl: null,
+        snowlumaQrPayload: null,
+        snowlumaWebuiUrl: null,
       );
       await refreshStatus();
       if (state.hasRunningProcess && state.isActiveInstance(instanceId)) {
@@ -255,10 +255,10 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     }
   }
 
-  /// OOBE 允许跳过 NapCat，因此第一次真正使用它时在这里做幂等安装。
+  /// OOBE 允许跳过 SnowLuma，因此第一次真正使用它时在这里做幂等安装。
   /// 原生安装任务会检测已有文件；已安装设备只做快速校验，不会重复下载。
-  Future<void> _ensureNapcatReady(RuntimeBridge runtime) async {
-    const taskNames = <String>['installNapcat', 'verifyNapcat'];
+  Future<void> _ensureSnowlumaReady(RuntimeBridge runtime) async {
+    const taskNames = <String>['installSnowluma', 'verifySnowluma'];
     final streamedTasks = <String>{};
     final subscription = runtime
         .installEvents()
@@ -267,23 +267,23 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         )
         .listen((event) {
       streamedTasks.add(event.task);
-      _appendNapcatLog(event.line);
+      _appendSnowlumaLog(event.line);
     });
 
     try {
       for (final task in taskNames) {
-        final label = task == 'installNapcat' ? '准备 NapCat' : '校验 NapCat';
-        _appendNapcatLog('[control] $label…');
+        final label = task == 'installSnowluma' ? '准备 SnowLuma' : '校验 SnowLuma';
+        _appendSnowlumaLog('[control] $label…');
         final result = await runtime.runInstallTask(task);
         if (!streamedTasks.contains(task)) {
           for (final line in result.logs) {
-            _appendNapcatLog(line);
+            _appendSnowlumaLog(line);
           }
         }
         if (!result.success) {
-          throw _NapcatSetupException(result.error ?? '$label失败');
+          throw _SnowlumaSetupException(result.error ?? '$label失败');
         }
-        _appendNapcatLog('[control] $label完成');
+        _appendSnowlumaLog('[control] $label完成');
       }
     } finally {
       await subscription.cancel();
@@ -296,11 +296,11 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       final status = <String, String>{
         ...state.status,
         if (snapshot['bot'] != null) 'bot': snapshot['bot']!,
-        if (snapshot['napcat'] != null) 'napcat': snapshot['napcat']!,
+        if (snapshot['snowluma'] != null) 'snowluma': snapshot['snowluma']!,
       };
       final rawActiveInstanceId = snapshot['activeInstanceId'];
       final hasRunningProcess =
-          status['bot'] == 'running' || status['napcat'] == 'running';
+          status['bot'] == 'running' || status['snowluma'] == 'running';
       final activeInstanceId = !hasRunningProcess
           ? null
           : rawActiveInstanceId != null && rawActiveInstanceId.isNotEmpty
@@ -345,7 +345,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       state = state.copyWith(
         status: status,
         activeInstanceId: action == 'stop'
-            ? status['napcat'] == 'running'
+            ? status['snowluma'] == 'running'
                 ? state.activeInstanceId
                 : null
             : instance!.id,
@@ -361,7 +361,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     }
   }
 
-  Future<void> _runNapcatAction({
+  Future<void> _runSnowlumaAction({
     required String action,
     required String busyLabel,
     required Future<void> Function(RuntimeBridge runtime) run,
@@ -369,81 +369,120 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   }) async {
     if (_actionInProgress || state.isBusy) return;
     _actionInProgress = true;
-    appLogger.i('process: napcat $action');
+    appLogger.i('process: snowluma $action');
     final runtime = ref.read(runtimeBridgeProvider);
     state = state.copyWith(
       busyAction: action,
       errorMessage: null,
-      napcatQrPayload: null,
+      snowlumaQrPayload: null,
     );
-    _appendNapcatLog('[control] $busyLabel');
+    _appendSnowlumaLog('[control] $busyLabel');
     try {
       await run(runtime);
       final status = <String, String>{
         ...state.status,
-        'napcat': action == 'stop-napcat' ? 'stopped' : 'running',
+        'snowluma': action == 'stop-snowluma' ? 'stopped' : 'running',
       };
       state = state.copyWith(
         status: status,
-        activeInstanceId: action == 'stop-napcat'
+        activeInstanceId: action == 'stop-snowluma'
             ? status['bot'] == 'running'
                 ? state.activeInstanceId
                 : null
             : instance!.id,
-        napcatWebuiUrl: action == 'stop-napcat' ? null : state.napcatWebuiUrl,
+        snowlumaWebuiUrl:
+            action == 'stop-snowluma' ? null : state.snowlumaWebuiUrl,
       );
       await refreshStatus();
     } catch (error) {
-      appLogger.e('process: napcat $action failed', error: error);
+      appLogger.e('process: snowluma $action failed', error: error);
       state = state.copyWith(
         errorMessage: '$busyLabel失败：$error',
-        napcatQrPayload: null,
+        snowlumaQrPayload: null,
       );
-      _appendNapcatLog('[control] $busyLabel失败：$error');
+      _appendSnowlumaLog('[control] $busyLabel失败：$error');
     } finally {
       state = state.copyWith(busyAction: null);
       _actionInProgress = false;
     }
   }
 
+  /// 把 UI 侧的弹窗决策写进 SnowLuma 日志 Tab。
+  /// 真机上没有 adb 时，这是唯一能看到"弹窗为什么开/关"的窗口。
+  void appendSnowlumaNote(String message) {
+    _appendSnowlumaLog('[ui] $message');
+  }
+
+  /// 快捷登录：向虚拟屏幕里的 QQ 窗口发送回车，触发 QQ 的"登录"默认按钮。
+  /// QQ 记住账号时启动显示的是快捷登录窗口而非二维码，需要这一步。
+  Future<void> quickLoginQq() async {
+    final runtime = ref.read(runtimeBridgeProvider);
+    _appendSnowlumaLog('[control] 发送快捷登录指令…');
+    try {
+      final result = await runtime.runInstallTask('qqQuickLogin');
+      for (final line in result.logs) {
+        _appendSnowlumaLog(line);
+      }
+      if (!result.success) {
+        _appendSnowlumaLog('[control] 快捷登录指令失败: ${result.error}');
+      }
+    } on Object catch (error) {
+      _appendSnowlumaLog('[control] 快捷登录指令异常: $error');
+    }
+    unawaited(refreshStatus());
+  }
+
   void _onProcessEvent(ProcessEvent event) {
     if (event.name == 'bot') {
       _appendBotLog(event.line);
-    } else if (event.name == 'napcat') {
+    } else if (event.name == 'snowluma') {
       // 检测 QR 码标记行：进程脚本后台监控 QR 文件并输出 MOFOX_QR_IMAGE=<path>
       if (event.line.startsWith('MOFOX_QR_IMAGE=')) {
         final hostPath = event.line.substring('MOFOX_QR_IMAGE='.length);
-        // NapCat 刷新二维码时会覆盖同一个 qrcode.png。附加只用于 UI 缓存键的
+        // SnowLuma 刷新二维码时会覆盖同一个 screen.png。附加只用于 UI 缓存键的
         // 版本号，让 Riverpod listener 能识别同路径的新图片并触发弹窗刷新。
         final version = DateTime.now().microsecondsSinceEpoch;
         final payload = 'file:$hostPath#$version';
         appLogger.i(
-          'process: napcat QR from process stream (len=${payload.length})',
+          'process: snowluma QR from process stream (len=${payload.length})',
         );
-        state = state.copyWith(napcatQrPayload: payload);
+        // 先更新 payload 再写日志：日志触发的 listener 重入要能看到新 payload，
+        // 否则会按"payload 已清除"的错误理由把刚要打开的弹窗又收起。
+        state = state.copyWith(snowlumaQrPayload: payload);
+        _appendSnowlumaLog('[control] 检测到二维码截图更新 (v$version)');
         return;
       }
-      // 登录成功标记
-      if (event.line.contains('配置加载')) {
-        appLogger.i('process: napcat login success detected');
-        state = state.copyWith(napcatQrPayload: null);
+      // 登录成功标记：旧版靠日志里的「配置加载」，新版原生直接给 MOFOX_LOGIN_OK=
+      if (event.line.contains('配置加载') ||
+          event.line.startsWith('MOFOX_LOGIN_OK=')) {
+        appLogger.i('process: snowluma login success detected');
+        state = state.copyWith(snowlumaQrPayload: null);
       }
-      // 解析 NapCat WebUI 地址（含 token）
-      // 形如：[WebUi] WebUi User Panel Url: http://127.0.0.1:6099/webui?token=xxx
-      final webuiMatch = RegExp(
-        r'WebUi User Panel Url:\s*(https?://[^\s]+)',
+      // 解析 SnowLuma WebUI 地址（含 token）
+      // 新版原生直接输出 MOFOX_WEBUI_URL=<url>；旧版日志形如：
+      // [WebUi] WebUi User Panel Url: http://127.0.0.1:5099/?token=xxx
+      final mofoxWebuiMatch = RegExp(
+        r'MOFOX_WEBUI_URL=(https?://\S+)',
       ).firstMatch(event.line);
+      final webuiMatch = mofoxWebuiMatch ??
+          RegExp(
+            r'WebUi User Panel Url:\s*(https?://[^\s]+)',
+          ).firstMatch(event.line);
       if (webuiMatch != null) {
         final url = webuiMatch.group(1)!;
-        appLogger.i('process: napcat webui url detected');
-        state = state.copyWith(napcatWebuiUrl: url);
+        appLogger.i('process: snowluma webui url detected');
+        state = state.copyWith(snowlumaWebuiUrl: url);
       }
-      _appendNapcatLog(event.line);
+      _appendSnowlumaLog(event.line);
     }
     if (event.line.contains('exited with')) {
-      // 进程退出时清理对应的 WebUI 地址
-      if (event.name == 'napcat') {
-        state = state.copyWith(napcatWebuiUrl: null);
+      // 进程退出时清理对应的 WebUI 地址与二维码 payload，
+      // 避免下次启动后弹窗直接展示上一轮的过期二维码。
+      if (event.name == 'snowluma') {
+        state = state.copyWith(
+          snowlumaWebuiUrl: null,
+          snowlumaQrPayload: null,
+        );
       }
       unawaited(refreshStatus());
     }
@@ -456,19 +495,23 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     );
   }
 
-  void _appendNapcatLog(String line) {
+  void _appendSnowlumaLog(String line) {
     final safeLine = _redactSensitiveLogLine(line);
     state = state.copyWith(
-      napcatLogs: _tail(<String>[...state.napcatLogs, safeLine]),
+      snowlumaLogs: _tail(<String>[...state.snowlumaLogs, safeLine]),
     );
   }
 
   Map<String, String> _botArgs(Instance instance) => <String, String>{
         'instanceId': instance.id,
         'repoPath': instance.repoPath,
+        // bot 进程脚本用这些写 snowluma_adapter 的 config.toml（自愈块）。
+        'botQq': instance.botQq,
+        'botNickname': instance.botNickname,
+        'wsPort': instance.wsPort.toString(),
       };
 
-  Map<String, String> _napcatArgs(Instance instance) => <String, String>{
+  Map<String, String> _snowlumaArgs(Instance instance) => <String, String>{
         'instanceId': instance.id,
         'botQq': instance.botQq,
       };
@@ -513,8 +556,8 @@ String _redactSensitiveLogLine(String line) {
 
 const int _maxLogs = 400;
 
-class _NapcatSetupException implements Exception {
-  const _NapcatSetupException(this.message);
+class _SnowlumaSetupException implements Exception {
+  const _SnowlumaSetupException(this.message);
 
   final String message;
 

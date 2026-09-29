@@ -83,3 +83,4 @@ flutter:
     - assets/icons/
     - assets/rootfs/
     - assets/scripts/
+    - assets/plugins/

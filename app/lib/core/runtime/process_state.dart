@@ -1,4 +1,4 @@
-/// Bot / Napcat 的进程三态机。`http_router` 健康检查通过即升 `running`。
+/// Bot / SnowLuma 的进程三态机。`http_router` 健康检查通过即升 `running`。
 enum ProcessState { stopped, starting, running, restarting }
 
 extension ProcessStateLabel on ProcessState {

@@ -5,22 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mofox_android/features/wizard/presentation/widgets/napcat_qr_sheet.dart';
+import 'package:mofox_android/features/wizard/presentation/widgets/snowluma_qr_sheet.dart';
 
 void main() {
   test('extracts the file path without the refresh version', () {
     expect(
-      napcatQrImagePath('file:/data/user/0/mofox/qrcode.png#123456'),
+      snowlumaQrImagePath('file:/data/user/0/mofox/qrcode.png#123456'),
       '/data/user/0/mofox/qrcode.png',
     );
     expect(
-      napcatQrImagePath('file:/data/user/0/mofox/qrcode.png'),
+      snowlumaQrImagePath('file:/data/user/0/mofox/qrcode.png'),
       '/data/user/0/mofox/qrcode.png',
     );
-    expect(napcatQrImagePath('https://example.com/qr'), isNull);
+    expect(snowlumaQrImagePath('https://example.com/qr'), isNull);
   });
 
-  test('reloads bytes when NapCat overwrites the same QR path', () async {
+  test('reloads bytes when SnowLuma overwrites the same QR path', () async {
     final directory = await Directory.systemTemp.createTemp('mofox-qr-test-');
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/qrcode.png');
@@ -28,10 +28,10 @@ void main() {
     final secondBytes = base64Decode(_blackPng);
     await file.writeAsBytes(firstBytes);
 
-    expect(napcatQrImageBytes('file:${file.path}#1'), firstBytes);
+    expect(snowlumaQrImageBytes('file:${file.path}#1'), firstBytes);
 
     await file.writeAsBytes(secondBytes, flush: true);
-    expect(napcatQrImageBytes('file:${file.path}#2'), secondBytes);
+    expect(snowlumaQrImageBytes('file:${file.path}#2'), secondBytes);
   });
 
   testWidgets('offers a labelled and guarded non-visual login alternative', (
@@ -89,7 +89,7 @@ void main() {
             child: child!,
           ),
           home: const Scaffold(
-            body: NapcatQrSheet(payload: loginInfo),
+            body: SnowlumaQrSheet(payload: loginInfo),
           ),
         ),
       ),
@@ -119,10 +119,10 @@ void main() {
 
   test('local QR paths are never exposed as copyable login data', () {
     expect(
-      napcatQrCopyableLoginInfo('file:/data/user/0/mofox/qr.png#2'),
+      snowlumaQrCopyableLoginInfo('file:/data/user/0/mofox/qr.png#2'),
       isNull,
     );
-    expect(napcatQrCopyableLoginInfo('  login-value  '), 'login-value');
+    expect(snowlumaQrCopyableLoginInfo('  login-value  '), 'login-value');
   });
 }
 
