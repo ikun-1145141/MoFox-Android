@@ -71,6 +71,7 @@ class RootfsInstaller(private val context: Context) {
         val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
         cacheDir.mkdirs()
         val names = listOf(
+            "snowluma_trampoline-1.1.0.mfp",
             "snowluma_adapter-2.2.10.mfp",
             "snowluma_extension-1.0.11.mfp",
         )
@@ -84,6 +85,21 @@ class RootfsInstaller(private val context: Context) {
             } catch (e: java.io.FileNotFoundException) {
                 // 该构建未打包插件资产时跳过，不影响 bot 启动。
             }
+        }
+        // 引擎启动跳板（arm64 预编译，源码见 assets/scripts/snowluma-trampoline.c）：
+        // 铺到 rootfs /usr/local/lib/，snowluma 进程脚本把它追加进 QQ 的
+        // LD_PRELOAD 链（LD_PRELOAD=hook.so:trampoline.so）。文件不存在时
+        // 静默跳过（兼容未打包的构建）。
+        try {
+            context.assets.open("flutter_assets/assets/scripts/snowluma-trampoline.so").use { input ->
+                val soDir = File(ubuntuPath, "usr/local/lib")
+                soDir.mkdirs()
+                File(soDir, "snowluma-trampoline.so").outputStream().buffered().use { output ->
+                    input.copyTo(output)
+                }
+            }
+        } catch (e: java.io.FileNotFoundException) {
+            // 该构建未打包跳板资产时跳过，不影响 SnowLuma 启动。
         }
     }
 

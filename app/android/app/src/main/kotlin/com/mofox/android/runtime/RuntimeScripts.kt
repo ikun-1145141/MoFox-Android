@@ -56,7 +56,21 @@ class RuntimeScripts(
                 // SnowLuma 作为 ws 客户端连入 8095）、停用 NapCat 时代的
                 // onebot_adapter（避免两个适配器争抢 8095 端口）。旧实例无需
                 // 重装即可获得整套修复。
-                val cmd = """# --- SnowLuma 适配器自愈 ---
+                // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
+                // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
+                val cmd = """
+                # --- SnowLuma 适配器自愈 ---
+                PLUGINS_DIR=${shellQuote(repoPath)}/plugins
+                ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
+                # bot 核心自愈：SnowLuma 插件需要 dev 分支的新插件 API
+                # （media_api 1.2.0 / event_api 1.1.0 / PlatformSendResult），
+                # main 分支核心过旧会被加载器拒载。config/plugins/data 均为
+                # 未跟踪文件，force checkout 不会碰它们。
+                cd ${shellQuote(repoPath)}
+                if [ -d .git ]; then
+                  git fetch origin dev --depth=1 >/dev/null 2>&1 || true
+                  git checkout -f -B dev FETCH_HEAD >/dev/null 2>&1 || true
+                fi
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
                 mkdir -p "${'$'}PLUGINS_DIR" "${'$'}ADAPTER_DIR"
@@ -91,7 +105,7 @@ class RuntimeScripts(
                   printf '[plugin]\nenabled = false\n' > "${'$'}OB_DIR/config.toml"
                 fi
                 # --- 自愈结束，启动 bot ---
-                cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py"""
+                cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py""".trimIndent()
                 cmd to (instanceId?.let { "-$it" } ?: "")
             }
             "snowluma" -> {
@@ -105,7 +119,7 @@ class RuntimeScripts(
               val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
               val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                echo "[control] MoFox SnowLuma 脚本构建 20260928-2 (runtime dir=恒等挂载)"
+                echo "[control] MoFox SnowLuma 脚本构建 20261002-1 (影子路径+引擎启动跳板)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
@@ -127,10 +141,29 @@ class RuntimeScripts(
                 #     服务（创建 mojo.<pid>.control.sock），缺了它组件静默不工作。
                 # SnowLuma 的 PipeWatcher 发现 socket 后直接接管，全程无 ptrace。
                 # 组件与 QQ 的 runtime dir 必须一致，且必须是恒等挂载下的短路径。
+                # --- 影子路径（proot 宿主路径符号化，详见
+                # docs/snowluma-proot-engine-fix.md）：/proc/self/maps 里的模块
+                # 路径是宿主形态（/data/data/...），引擎目标解析要在进程内打开
+                # 这些路径；guest 内默认 ENOENT → 钩子永不安装（所有请求报
+                # -39 "The QQ connection changed"）。在 rootfs 内建立指向 guest
+                # 真实位置的符号链接即可修复，无需 root。 ---
+                SHADOW_BASE=/data/data/com.mofox.android/files/usr/var/lib/proot-distro/installed-rootfs/ubuntu
+                mkdir -p "${'$'}SHADOW_BASE"
+                ln -sfn /root "${'$'}SHADOW_BASE/root"
+                ln -sfn /usr "${'$'}SHADOW_BASE/usr"
                 HOOK_SO=/root/snowluma/app/native/snowluma-linux-arm64.so
+                TRAMPOLINE_SO=/usr/local/lib/snowluma-trampoline.so
                 QQ_HOOK_ENV=""
                 if [ -f "${'$'}HOOK_SO" ]; then
                   QQ_HOOK_ENV="SNOWLUMA_HOOK_STUB_START=1 SNOWLUMA_HOOK_SERVICE_MODE=in-process SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir LD_PRELOAD=${'$'}HOOK_SO"
+                  # 引擎启动跳板：stub 线程在 pre-main 只创建了 socket 服务，
+                  # 从未调用 snowluma_linux_hook_start_dynamic（官方注入器的
+                  # 最后一步），引擎静默休眠。跳板在 Electron 就绪后执行
+                  # stop_dynamic + start_dynamic，强制引擎以正确时机完整启动。
+                  # 源码与预编译产物见 assets/scripts/snowluma-trampoline.c/.so。
+                  if [ -f "${'$'}TRAMPOLINE_SO" ]; then
+                    QQ_HOOK_ENV="${'$'}QQ_HOOK_ENV:${'$'}TRAMPOLINE_SO"
+                  fi
                 fi
                 # 后台监控：截屏推送二维码变化、探测登录状态与 WebUI
                 (
