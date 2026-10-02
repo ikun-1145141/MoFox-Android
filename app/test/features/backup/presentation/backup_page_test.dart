@@ -62,7 +62,7 @@ Instance _instance(String id) => Instance(
       ownerQq: 'owner',
       wsPort: id == 'first' ? 8095 : 8096,
       channel: 'main',
-      installNapcat: true,
+      installSnowluma: true,
       installWebui: true,
       installDir: '/root/instances/$id',
       createdAt: DateTime.utc(2026),

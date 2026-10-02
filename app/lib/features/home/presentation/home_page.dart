@@ -26,8 +26,8 @@ class HomePage extends ConsumerWidget {
     final botStatus = ref.watch(
       processConsoleProvider.select((state) => state.botStatus),
     );
-    final napcatStatus = ref.watch(
-      processConsoleProvider.select((state) => state.napcatStatus),
+    final snowlumaStatus = ref.watch(
+      processConsoleProvider.select((state) => state.snowlumaStatus),
     );
     final busyAction = ref.watch(
       processConsoleProvider.select((state) => state.busyAction),
@@ -68,7 +68,7 @@ class HomePage extends ConsumerWidget {
             instances: instances,
             activeInstanceId: activeInstanceId,
             botStatus: botStatus,
-            napcatStatus: napcatStatus,
+            snowlumaStatus: snowlumaStatus,
             busyAction: busyAction,
             onRetry: () => ref.invalidate(instancesProvider),
           ),
@@ -89,7 +89,7 @@ class _InstanceOverview extends StatelessWidget {
     required this.instances,
     required this.activeInstanceId,
     required this.botStatus,
-    required this.napcatStatus,
+    required this.snowlumaStatus,
     required this.busyAction,
     required this.onRetry,
   });
@@ -97,7 +97,7 @@ class _InstanceOverview extends StatelessWidget {
   final AsyncValue<List<Instance>> instances;
   final String? activeInstanceId;
   final String botStatus;
-  final String napcatStatus;
+  final String snowlumaStatus;
   final String? busyAction;
   final VoidCallback onRetry;
 
@@ -154,7 +154,7 @@ class _InstanceOverview extends StatelessWidget {
       }
     }
     final hasRunningProcess =
-        botStatus == 'running' || napcatStatus == 'running';
+        botStatus == 'running' || snowlumaStatus == 'running';
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -234,7 +234,7 @@ class _InstanceOverview extends StatelessWidget {
                     )
                   else ...<Widget>[
                     _processBadge('Bot', botStatus, active != null),
-                    _processBadge('NapCat', napcatStatus, active != null),
+                    _processBadge('SnowLuma', snowlumaStatus, active != null),
                   ],
                 ],
               ),

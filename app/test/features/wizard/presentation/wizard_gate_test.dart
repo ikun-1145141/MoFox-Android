@@ -155,7 +155,7 @@ Instance _instance(String id, String name) => Instance(
       ownerQq: '987654321',
       wsPort: 8095,
       channel: 'main',
-      installNapcat: true,
+      installSnowluma: true,
       installWebui: true,
       installDir: '/root/instances/$id',
       createdAt: DateTime.utc(2026),

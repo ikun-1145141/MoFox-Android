@@ -95,7 +95,7 @@ final Instance _instance = Instance(
   ownerQq: '10002',
   wsPort: 8095,
   channel: 'main',
-  installNapcat: true,
+  installSnowluma: true,
   installWebui: false,
   installDir: '/root/instances/instance-a',
   createdAt: DateTime.utc(2026),

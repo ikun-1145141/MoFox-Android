@@ -22,7 +22,7 @@ class RuntimeBridge {
   /// receiveBroadcastStream。安装日志、托管进程日志和 PTY 输出都从这条共享流过滤。
   ///
   /// 如果每个 topic 各建一条平台订阅，后建立的订阅会覆盖原生 sink；其中任意一条
-  /// cancel 时又会把 sink 清空，导致安装完成后 Bot/NapCat 已启动却收不到任何日志，
+  /// cancel 时又会把 sink 清空，导致安装完成后 Bot/SnowLuma 已启动却收不到任何日志，
   /// 直到 App 重启重新订阅。
   static final Stream<Object?> _eventStream = _events.receiveBroadcastStream();
   static int _nextFileRequestId = 0;
@@ -101,11 +101,11 @@ class RuntimeBridge {
     }).where((event) => event.task.isNotEmpty && event.line.isNotEmpty);
   }
 
-  /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, napcat}.
+  /// 启动 / 停止 / 重启托管进程。`name` ∈ {bot, snowluma}.
   ///
   /// `args` 给原生端 `processScript` 取参数：
   /// - bot：`repoPath`（实例的 Neo-MoFox 路径）、`instanceId`（脚本文件名后缀，避免多实例覆盖）。
-  /// - napcat：`botQq`（NapCat 登录/启动使用的 QQ 号），NapCat 是全局唯一安装。
+  /// - snowluma：`botQq`（SnowLuma 登录/启动使用的 QQ 号），SnowLuma 是全局唯一安装。
   Future<void> startProcess(
     String name, {
     Map<String, String> args = const <String, String>{},
@@ -123,12 +123,6 @@ class RuntimeBridge {
       'stopProcess',
       <String, Object>{'name': name},
     );
-  }
-
-  /// 取消正在进行的 NapCat 扫码登录任务。
-  Future<void> cancelNapcatLogin() {
-    appLogger.i('runtime: cancelNapcatLogin');
-    return _channel.invokeMethod<void>('cancelNapcatLogin');
   }
 
   Future<void> restartProcess(
@@ -150,7 +144,7 @@ class RuntimeBridge {
         const <String, String>{};
   }
 
-  /// 托管进程实时日志流。`name` 为 `bot` 或 `napcat`。
+  /// 托管进程实时日志流。`name` 为 `bot` 或 `snowluma`。
   Stream<ProcessEvent> processEvents() {
     return _eventStream
         .where(

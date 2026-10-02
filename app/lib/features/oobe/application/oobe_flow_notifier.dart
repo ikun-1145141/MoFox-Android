@@ -12,15 +12,15 @@ class OobeFlowState {
   const OobeFlowState({
     required this.current,
     required this.result,
-    required this.installNapcat,
+    required this.installSnowluma,
     this.logs = const <String>[],
   });
 
   final OobeStep current;
   final OobeStepResult result;
 
-  /// 是否在首次初始化时一并安装 NapCat。默认关闭，必须由用户主动选择。
-  final bool installNapcat;
+  /// 是否在首次初始化时一并安装 SnowLuma。默认关闭，必须由用户主动选择。
+  final bool installSnowluma;
 
   /// `extractRuntime` 阶段的实时日志（成功后保留供翻看）。
   final List<String> logs;
@@ -28,20 +28,20 @@ class OobeFlowState {
   OobeFlowState copyWith({
     OobeStep? current,
     OobeStepResult? result,
-    bool? installNapcat,
+    bool? installSnowluma,
     List<String>? logs,
   }) =>
       OobeFlowState(
         current: current ?? this.current,
         result: result ?? this.result,
-        installNapcat: installNapcat ?? this.installNapcat,
+        installSnowluma: installSnowluma ?? this.installSnowluma,
         logs: logs ?? this.logs,
       );
 
   static const OobeFlowState initial = OobeFlowState(
     current: OobeStep.welcome,
     result: OobeStepPending(),
-    installNapcat: false,
+    installSnowluma: false,
   );
 }
 
@@ -71,7 +71,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       result: next == OobeStep.done
           ? const OobeStepSuccess()
           : const OobeStepPending(),
-      installNapcat: state.installNapcat,
+      installSnowluma: state.installSnowluma,
       logs: state.logs,
     );
   }
@@ -92,20 +92,20 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       result: step == OobeStep.extractRuntime && _runtimeInstallCompleted
           ? const OobeStepSuccess()
           : const OobeStepPending(),
-      installNapcat: state.installNapcat,
+      installSnowluma: state.installSnowluma,
       logs: state.logs,
     );
   }
 
   /// 修改可选组件。安装执行期间或完成后锁定，避免任务计划与界面选择不一致。
-  void setInstallNapcat(bool value) {
+  void setInstallSnowluma(bool value) {
     if (_runtimeInstallStarted || _runtimeInstallCompleted) return;
-    state = state.copyWith(installNapcat: value);
+    state = state.copyWith(installSnowluma: value);
   }
 
   /// 跑 OOBE 的 extractRuntime 阶段：
   /// 始终执行 `extractRootfs` → `installRuntimeDeps`；只有用户显式选择时才继续
-  /// `installNapcat` → `verifyNapcat`。
+  /// `installSnowluma` → `verifySnowluma`。
   ///
   /// 这些全是「全局一次性」的事情。每次只跑一遍，靠 `_runtimeInstallStarted`
   /// 防止用户来回切步骤导致重入。失败后会把 flag 重置，按重试按钮可以再来一次。
@@ -116,9 +116,9 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
     }
     if (_runtimeInstallStarted) return;
     _runtimeInstallStarted = true;
-    final installNapcat = state.installNapcat;
+    final installSnowluma = state.installSnowluma;
     appLogger.i(
-      'oobe: runRuntimeInstall start installNapcat=$installNapcat',
+      'oobe: runRuntimeInstall start installSnowluma=$installSnowluma',
     );
 
     final wakeLock = ref.read(screenWakeLockProvider);
@@ -127,7 +127,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       result: const OobeStepRunning('解压运行环境…'),
       logs: <String>[
         '[info] 开始安装 MoFox 运行环境',
-        if (!installNapcat) '[info] 已选择跳过可选组件 NapCat',
+        if (!installSnowluma) '[info] 已选择跳过可选组件 SnowLuma',
       ],
     );
     _pendingLogs.clear();
@@ -138,7 +138,7 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
       logSub = runtime.installEvents().listen((event) {
         _appendLog(event.line);
       });
-      final tasks = oobeRuntimeTasks(installNapcat: installNapcat);
+      final tasks = oobeRuntimeTasks(installSnowluma: installSnowluma);
       for (final task in tasks) {
         state = state.copyWith(result: OobeStepRunning(task.label));
         _appendLog('[run] ${task.label}…');
@@ -158,14 +158,14 @@ class OobeFlowNotifier extends Notifier<OobeFlowState> {
         _appendLog('[ok] ${task.label} 完成');
       }
       _appendLog(
-        installNapcat
-            ? '[done] 运行环境和 NapCat 已就绪'
-            : '[done] 基础运行环境已就绪（未安装 NapCat）',
+        installSnowluma
+            ? '[done] 运行环境和 SnowLuma 已就绪'
+            : '[done] 基础运行环境已就绪（未安装 SnowLuma）',
       );
       _flushLogs();
       _runtimeInstallCompleted = true;
       appLogger.i(
-        'oobe: runtime install completed installNapcat=$installNapcat',
+        'oobe: runtime install completed installSnowluma=$installSnowluma',
       );
       state = state.copyWith(result: const OobeStepSuccess());
     } on PlatformException catch (e) {

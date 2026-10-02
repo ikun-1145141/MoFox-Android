@@ -5,7 +5,7 @@ import '../../../../core/ui/ansi_color_text.dart';
 import '../../application/oobe_flow_notifier.dart';
 import '../../domain/oobe_step.dart';
 
-/// OOBE 第 3 步：解压 Debian rootfs + 装 apt 依赖，可选安装 NapCat。
+/// OOBE 第 3 步：解压 Debian rootfs + 装 apt 依赖，可选安装 SnowLuma。
 ///
 /// 这两件全是全局一次性的（不属于单个 bot 实例），所以放在 OOBE 而不是 Wizard。
 /// 先让用户确认可选组件，再由页面底部主按钮开始执行。
@@ -62,7 +62,7 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
     final statusLabel = switch (result) {
       OobeStepRunning(:final message) => message,
       OobeStepSuccess() =>
-        flow.installNapcat ? '基础环境和 NapCat 已就绪' : '基础运行环境已就绪',
+        flow.installSnowluma ? '基础环境和 SnowLuma 已就绪' : '基础运行环境已就绪',
       OobeStepFailure(:final message) => message,
       OobeStepPending() => '等待开始…',
     };
@@ -95,7 +95,7 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
           ),
           const SizedBox(height: 12),
           Text(
-            'Debian 13 和基础依赖为必需组件；NapCat 仅用于 QQ / OneBot 接入，可按需安装。',
+            'Debian 13 和基础依赖为必需组件；SnowLuma 仅用于 QQ / OneBot 接入，可按需安装。',
             style: text.bodyLarge?.copyWith(
               color: scheme.onSurfaceVariant,
               height: 1.5,
@@ -104,15 +104,15 @@ class _ExtractRuntimeStepState extends ConsumerState<ExtractRuntimeStep> {
           ),
           const SizedBox(height: 24),
           SwitchListTile.adaptive(
-            key: const ValueKey<String>('oobe-install-napcat-switch'),
-            value: flow.installNapcat,
-            onChanged: canConfigure ? notifier.setInstallNapcat : null,
+            key: const ValueKey<String>('oobe-install-snowluma-switch'),
+            value: flow.installSnowluma,
+            onChanged: canConfigure ? notifier.setInstallSnowluma : null,
             secondary: const Icon(Icons.extension_outlined),
-            title: const Text('安装 NapCat（可选）'),
+            title: const Text('安装 SnowLuma（可选）'),
             subtitle: Text(
-              flow.installNapcat
-                  ? '将安装全局 NapCat，用于 QQ 登录和 OneBot v11 接入。'
-                  : '暂不安装；不影响完成初始化，首次启动 NapCat 时会再安装。',
+              flow.installSnowluma
+                  ? '将安装全局 SnowLuma，用于 QQ 登录和 OneBot v11 接入。'
+                  : '暂不安装；不影响完成初始化，首次启动 SnowLuma 时会再安装。',
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
