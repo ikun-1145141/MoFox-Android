@@ -133,7 +133,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                           IconButton(
                             tooltip: 'Bot 目录终端',
                             onPressed: () => context.push(
-                              AppRoute.terminal,
+                              AppRoute.instanceTerminal,
                               extra: <String, String>{
                                 'cwd': instance.repoPath,
                                 'title': '${instance.name} - Bot 目录',
