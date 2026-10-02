@@ -122,13 +122,35 @@ class RootfsInstaller(private val context: Context) {
         ensureBaseDirectories()
         val logs = mutableListOf<String>()
         val target = File(homeDir, ubuntuTarballName)
+        // 长度校验标记：只在完整拷贝后写入。中断的拷贝（杀后台/存储压力）
+        // 留下的残缺包没有标记，会在下次启动时被识别并重新铺发——否则
+        // "存在且 size>0 即跳过" 会把残缺包当有效，解压阶段
+        // busybox xz 读到截断流崩溃（proot vpid terminated with signal 11），
+        // 且重试永远复用同一个坏包。
+        val sizeMarker = File(homeDir, "$ubuntuTarballName.size")
 
-        if (target.exists() && target.length() > 0) {
-            val msg = "[runtime] $ubuntuTarballName already staged (${target.length()} bytes)"
+        if (target.exists() && sizeMarker.exists()) {
+            val recorded = sizeMarker.readText().trim().toLongOrNull()
+            if (recorded != null && recorded > 0 && recorded == target.length()) {
+                val msg = "[runtime] $ubuntuTarballName already staged (${target.length()} bytes)"
+                logs += msg
+                onLog(msg)
+                onProgress(1.0)
+                return logs
+            }
+            val msg =
+                "[runtime] $ubuntuTarballName 大小与校验标记不符 " +
+                    "(${target.length()} != $recorded)，重新从 assets 铺发"
             logs += msg
             onLog(msg)
-            onProgress(1.0)
-            return logs
+            target.delete()
+            sizeMarker.delete()
+        } else if (target.exists()) {
+            // 旧版本遗留的无标记文件（可能残缺）：重新铺发以确保完整。
+            val msg = "[runtime] $ubuntuTarballName 无校验标记，重新从 assets 铺发以确保完整"
+            logs += msg
+            onLog(msg)
+            target.delete()
         }
 
         val assetRelativePath = "flutter_assets/assets/rootfs/$ubuntuTarballName"
@@ -137,9 +159,13 @@ class RootfsInstaller(private val context: Context) {
         onLog(startMsg)
         onProgress(0.05)
 
+        // 拷到临时文件后原子落位：进程被杀只会留下残缺的 .tmp（下次启动
+        // 清掉重来），target 上永远不会出现"看似有效"的半截包。
+        val tmpTarget = File(homeDir, "$ubuntuTarballName.tmp")
+        tmpTarget.delete()
         try {
             context.assets.open(assetRelativePath).use { input ->
-                target.outputStream().buffered(BUFFER_SIZE).use { output ->
+                tmpTarget.outputStream().buffered(BUFFER_SIZE).use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     var totalCopied: Long = 0
                     var lastReported: Long = 0
@@ -158,11 +184,19 @@ class RootfsInstaller(private val context: Context) {
                 }
             }
         } catch (error: java.io.FileNotFoundException) {
+            tmpTarget.delete()
             throw RuntimeException(
                 "缺少 rootfs 资源：$assetRelativePath。请先运行 tools/build.py 把 Debian 13 rootfs 下载到 app/assets/rootfs/。",
                 error,
             )
         }
+
+        if (!tmpTarget.renameTo(target)) {
+            // 个别文件系统 rename 跨场景失败：退化为主要拷贝路径。
+            tmpTarget.copyTo(target, overwrite = true)
+            tmpTarget.delete()
+        }
+        sizeMarker.writeText(target.length().toString())
 
         val doneMsg = "[runtime] staged $ubuntuTarballName -> ${target.absolutePath} (${target.length()} bytes)"
         logs += doneMsg
