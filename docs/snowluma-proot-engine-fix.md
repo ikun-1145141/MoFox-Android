@@ -80,9 +80,10 @@ SnowLuma 引擎的目标解析要在进程内打开这些路径；guest 内该�
    `/usr/local/lib/snowluma-trampoline.so`。重编（与 QQ 同为 guest 内
    glibc arm64，建议在 rootfs 内编译）：
    `gcc -shared -fPIC -O2 -o snowluma-trampoline.so snowluma-trampoline.c`。
-3. **bot 侧插件** `snowluma_trampoline-1.1.0.mfp`（可选的独立分发形态）：
-   Bot 每次加载时自动部署上述两件（含指纹校验与幂等清理），提供
-   `trampoline_status / trampoline_deploy / trampoline_remove` 三个动作。
+3. **bot 侧过渡插件（已整合）**：`snowluma_trampoline-1.1.0.mfp` 曾作为
+   独立分发形态（Bot 加载时自动部署上述两件），其功能现已原生并入 App：
+   影子路径与跳板注入由 snowluma 进程脚本直接执行，bot 启动自愈会清理
+   遗留的插件分发包。
 4. **bot 核心版本**：SnowLuma 适配器（media_api 1.2.0）要求 dev 分支核心；
    bot 启动脚本已有 `git fetch origin dev + checkout` 自愈，需确保网络可达。
 
@@ -101,4 +102,4 @@ App 侧登录检测（轮询 `get_status` 的 `online:true`）随之闭环。
 ## 回滚
 
 - 删除 `TRAMPOLINE_SO` 与两处影子符号链接即回到修复前行为；
-- bot 插件形态：`trampoline_remove` 动作一键清理。
+- 遗留插件实例：`trampoline_remove` 动作一键清理（或由新 App 启动自愈自动移除）。

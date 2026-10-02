@@ -104,6 +104,9 @@ class RuntimeScripts(
                 else
                   printf '[plugin]\nenabled = false\n' > "${'$'}OB_DIR/config.toml"
                 fi
+                # 跳板/影子路径已整合进 App 本体（snowluma 进程脚本原生执行），
+                # 清理旧版本以插件形态遗留的分发包。
+                rm -f "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
                 # --- 自愈结束，启动 bot ---
                 cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py""".trimIndent()
                 cmd to (instanceId?.let { "-$it" } ?: "")
@@ -151,6 +154,12 @@ class RuntimeScripts(
                 mkdir -p "${'$'}SHADOW_BASE"
                 ln -sfn /root "${'$'}SHADOW_BASE/root"
                 ln -sfn /usr "${'$'}SHADOW_BASE/usr"
+                # 清理插件时代的遗留 env 包装器：跳板已原生并入 QQ 的
+                # LD_PRELOAD 链，包装器只会多一层无谓的间接。仅删除带本
+                # 项目签名的包装器，外来 env 不动。
+                if [ -f /usr/local/bin/env ] && grep -q '# snowluma_trampoline' /usr/local/bin/env 2>/dev/null; then
+                  rm -f /usr/local/bin/env
+                fi
                 HOOK_SO=/root/snowluma/app/native/snowluma-linux-arm64.so
                 TRAMPOLINE_SO=/usr/local/lib/snowluma-trampoline.so
                 QQ_HOOK_ENV=""

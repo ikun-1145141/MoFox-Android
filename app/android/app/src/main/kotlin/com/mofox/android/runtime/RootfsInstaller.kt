@@ -71,7 +71,6 @@ class RootfsInstaller(private val context: Context) {
         val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
         cacheDir.mkdirs()
         val names = listOf(
-            "snowluma_trampoline-1.1.0.mfp",
             "snowluma_adapter-2.2.10.mfp",
             "snowluma_extension-1.0.11.mfp",
         )

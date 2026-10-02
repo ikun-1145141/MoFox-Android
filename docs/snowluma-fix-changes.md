@@ -284,14 +284,17 @@ README/ARCHITECTURE 同步更新。
      时刻；
    - 全程写日志 `/tmp/snowluma-trampoline.log`（raw write，任何阶段可查）。
 
-3. **env 包装器**（投递通道）：`/usr/local/bin/env` 透明包装器——进程
-   脚本里 QQ 启动是唯一"裸 env + QQ 路径参数"的调用（其余 env 均为绝对
-   路径或无 QQ 参数），包装器拦截该次调用、把跳板追加进 `LD_PRELOAD=`
-   参数、exec 真正的 `/usr/bin/env`。依赖 guest PATH 中 `/usr/local/bin`
-   先于 `/usr/bin`；带插件签名，部署/移除都按指纹判定，遇外来文件拒绝
-   覆盖；**不触碰 `/etc/ld.so.preload`**（层 4 的教训）。
+3. **env 包装器**（投递通道，插件时代方案，已由原生 LD_PRELOAD 取代）：
+   `/usr/local/bin/env` 透明包装器——进程脚本里 QQ 启动是唯一"裸 env +
+   QQ 路径参数"的调用（其余 env 均为绝对路径或无 QQ 参数），包装器拦截
+   该次调用、把跳板追加进 `LD_PRELOAD=` 参数、exec 真正的 `/usr/bin/env`。
+   依赖 guest PATH 中 `/usr/local/bin` 先于 `/usr/bin`；带插件签名，遇
+   外来文件拒绝覆盖；**不触碰 `/etc/ld.so.preload`**（层 4 的教训）。
+   整合后跳板由进程脚本直接并入 QQ 的 `LD_PRELOAD` 链，包装器仅在
+   插件时代的存量实例中存在，snowluma 脚本启动时会移除带本项目签名的
+   遗留包装器。
 
-### 3.3 插件的目的
+### 3.3 插件的目的（及其最终归宿）
 
 1. **立即可用**：在不更新 App 的存量实例上补齐全链路（Bot 加载插件时
    自动部署，下次 SnowLuma 重启生效）；
@@ -303,7 +306,14 @@ README/ARCHITECTURE 同步更新。
 4. **面向未来**：若 SnowLuma 上游在 stub 模式内自行补齐引擎启动或修正
    proot 路径解析，插件保持幂等无冲突。
 
-### 3.4 插件结构
+> **最终归宿：已原生整合进 App 本体。** 插件验证路线可行后，其全部
+> 功能（影子路径创建、跳板铺发、LD_PRELOAD 注入）由 snowluma 进程脚本
+> 直接执行（见 3.2 各节引注），bot 启动自愈会清理遗留的插件分发包，
+> 插件时代的 env 包装器也由脚本移除（跳板已原生并入 LD_PRELOAD，无需
+> 再经包装器间接投递）。本节保留作设计记录；历史说明见
+> [snowluma-trampoline-plugin.md](snowluma-trampoline-plugin.md)。
+
+### 3.4 插件结构（历史形态，v1.1.0）
 
 ```text
 snowluma_trampoline-1.1.0.mfp

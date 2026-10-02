@@ -1,5 +1,10 @@
 # snowluma_trampoline 插件说明
 
+> ⚠️ **状态更新（2026-10-02）**：本插件的功能已**原生整合进 App 本体**
+> （snowluma 进程脚本直接创建影子路径、铺发跳板并把跳板并入 QQ 的
+> LD_PRELOAD 链；bot 启动自愈会清理遗留的插件分发包）。本文保留作历史
+> 说明与排障参考；手动安装 .mfp 仍可工作，但不再必要。
+
 > SnowLuma 引擎启动跳板 + proot 宿主路径影子化的 bot 侧独立分发形态。
 > 适用于：不更新 App、只想在现有实例上启用修复的场景；或作为诊断工具。
 > 包体：`app/assets/plugins/snowluma_trampoline-1.1.0.mfp`（随 APK 铺发）。
