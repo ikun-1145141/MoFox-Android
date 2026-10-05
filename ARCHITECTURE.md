@@ -146,7 +146,7 @@ WebUI 不在 Flutter 组件树内渲染。实例详情页使用 `url_launcher` �
 | `genConfig` | 生成默认 toml |
 | `writeCore` | 写入 core.toml |
 | `writeModel` | 写入 model.toml |
-| `writeAdapter` | 写入 adapter.toml |
+| `writeAdapter` | 写入 onebot_adapter/config.toml |
 | `installWebui` | 安装 WebUI（可跳过） |
 | `writeSnowlumaConfig` | 写入 SnowLuma onebot.json/runtime.json 配置 |
 | `registerInstance` | 写实例到本地仓库 |

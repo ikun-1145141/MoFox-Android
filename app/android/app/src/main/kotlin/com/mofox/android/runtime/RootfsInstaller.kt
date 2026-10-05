@@ -61,19 +61,19 @@ class RootfsInstaller(private val context: Context) {
     }
 
     /**
-     * 把 APK 内置的 SnowLuma 适配器插件包（`assets/plugins/snowluma_*.mfp`）
-     * 铺到 rootfs 的 `/root/.mofox/plugin-cache/`。bot 进程脚本启动时从这里
-     * 复制进实例的 plugins/ 目录——每次启动都执行，旧实例无需重装即可获得插件，
-     * 升级 APK 即可升级插件。文件不存在时静默跳过（兼容未打包的构建）。
+     * 把 APK 内置的插件包（assets/plugins 目录下的 .mfp 文件）铺到 rootfs 的
+     * `/root/.mofox/plugin-cache/`。bot 进程脚本启动时从这里复制进实例的
+     * plugins/ 目录——每次启动都执行，旧实例无需重装即可获得插件，升级
+     * APK 即可升级插件。文件不存在时静默跳过（兼容未打包的构建）。
+     *
+     * 当前清单为空：QQ 适配器使用 bot 仓库自带的 onebot_adapter（无需
+     * 分发）；本函数保留铺发机制供未来插件使用。
      */
-    fun stageSnowlumaPlugins() {
+    fun stageBundledPlugins() {
         ensureBaseDirectories()
         val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
         cacheDir.mkdirs()
-        val names = listOf(
-            "snowluma_adapter-2.2.10.mfp",
-            "snowluma_extension-1.0.11.mfp",
-        )
+        val names = listOf<String>()
         for (name in names) {
             try {
                 context.assets.open("flutter_assets/assets/plugins/$name").use { input ->

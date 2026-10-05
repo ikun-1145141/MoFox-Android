@@ -51,43 +51,33 @@ class RuntimeScripts(
                 val botQq = args["botQq"].orEmpty()
                 val botNickname = args["botNickname"].orEmpty()
                 val wsPort = args["wsPort"] ?: "8095"
-                // SnowLuma 适配器自愈：每次 bot 启动前，把 plugin-cache 里的适配器
-                // 插件铺进本实例、写入 snowluma_adapter 配置（reverse ws，等
-                // SnowLuma 作为 ws 客户端连入 8095）、停用 NapCat 时代的
-                // onebot_adapter（避免两个适配器争抢 8095 端口）。旧实例无需
-                // 重装即可获得整套修复。
+                // OneBot 适配器自愈：bot 侧适配器使用 bot 仓库自带的
+                // onebot_adapter（写入配置：reverse ws，等 SnowLuma 作为
+                // ws 客户端连入 wsPort——SnowLuma 协议端链路不变）。
+                // 历史上曾随 APK 分发 snowluma_adapter/snowluma_extension
+                // 并停用 onebot_adapter，现全部反转：清理遗留 .mfp 分发
+                // 包、停用其残留配置。不管理 bot 仓库分支（插件市场生态
+                // 常依赖 dev 分支核心的新 API，实例分支由其已装插件决定）。
                 // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
                 // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
                 val cmd = """
-                # --- SnowLuma 适配器自愈 ---
+                # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
-                ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
-                # bot 核心自愈：SnowLuma 插件需要 dev 分支的新插件 API
-                # （media_api 1.2.0 / event_api 1.1.0 / PlatformSendResult），
-                # main 分支核心过旧会被加载器拒载。config/plugins/data 均为
-                # 未跟踪文件，force checkout 不会碰它们。
-                cd ${shellQuote(repoPath)}
-                if [ -d .git ]; then
-                  git fetch origin dev --depth=1 >/dev/null 2>&1 || true
-                  git checkout -f -B dev FETCH_HEAD >/dev/null 2>&1 || true
-                fi
-                PLUGINS_DIR=${shellQuote(repoPath)}/plugins
-                ADAPTER_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
-                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}ADAPTER_DIR"
-                if ls /root/.mofox/plugin-cache/snowluma_adapter-*.mfp >/dev/null 2>&1; then
-                  cp -f /root/.mofox/plugin-cache/snowluma_adapter-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  cp -f /root/.mofox/plugin-cache/snowluma_extension-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  echo "[bot] SnowLuma 适配器插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep snowluma | tr '\\n' ' ')"
-                else
-                  echo "[bot] 警告: plugin-cache 中没有 SnowLuma 插件，适配器不可用"
-                fi
+                OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
+                # 注意：不管理 bot 仓库分支（既不强推 dev 也不迁回 main）——
+                # 插件市场生态的插件常依赖 dev 分支核心的新 API（如
+                # create_llm_request 的 stream_id 参数），实例停留在哪个分支
+                # 由其已装插件决定，这里保持现状。
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
                 # 短信桥接插件（独立于 SnowLuma，单独就位以免 snowluma 缺失时被跳过）
                 if ls /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp >/dev/null 2>&1; then
                   cp -f /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '
-' ' ')"
+                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '\n' ' ')"
                 fi
-                cat > "${'$'}ADAPTER_DIR/config.toml" <<'MOFOX_EOF'
+                # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
+                # 以及更早的跳板插件分发包（跳板已整合进 App 本体）。
+                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
+                cat > "${'$'}OB_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true
                 config_version = "2.0.0"
@@ -96,23 +86,17 @@ class RuntimeScripts(
                 qq_id = "$botQq"
                 qq_nickname = "$botNickname"
 
-                [snowluma_server]
+                [onebot_server]
                 mode = "reverse"
                 host = "localhost"
                 port = $wsPort
                 access_token = ""
                 MOFOX_EOF
-                # 停用 NapCat 时代的 onebot_adapter（保留文件作为回滚开关）
-                OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
-                mkdir -p "${'$'}OB_DIR"
-                if [ -f "${'$'}OB_DIR/config.toml" ]; then
-                  sed -i 's/^enabled *= *true/enabled = false/' "${'$'}OB_DIR/config.toml" || true
-                else
-                  printf '[plugin]\nenabled = false\n' > "${'$'}OB_DIR/config.toml"
+                # 停用历史遗留的 snowluma_adapter（仅当配置存在；不新建文件）
+                SL_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
+                if [ -f "${'$'}SL_DIR/config.toml" ]; then
+                  sed -i 's/^enabled *= *true/enabled = false/' "${'$'}SL_DIR/config.toml" || true
                 fi
-                # 跳板/影子路径已整合进 App 本体（snowluma 进程脚本原生执行），
-                # 清理旧版本以插件形态遗留的分发包。
-                rm -f "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
                 # --- 自愈结束，启动 bot ---
                 cd ${shellQuote(repoPath)} && export PATH="/root/.local/bin:${'$'}PATH" && export UV_LINK_MODE=copy && export MOFOX_ACCEPT_STARTUP_AGREEMENTS=1 && uv run python main.py""".trimIndent()
                 cmd to (instanceId?.let { "-$it" } ?: "")
@@ -700,15 +684,15 @@ class RuntimeScripts(
         val wsPort = args["wsPort"] ?: "8095"
         val botQq = args["botQq"].orEmpty()
         val botNickname = args["botNickname"].orEmpty()
-        // SnowLuma 适配器（reverse 模式：适配器在 wsPort 起 ws 服务端，
-        // SnowLuma 按其 onebot.json 的 wsClients 连入）。NapCat 时代的
-        // onebot_adapter 停用，避免与 snowluma_adapter 争抢同一端口。
-        val adapterDir = "${shellQuote(repoPath)}/config/plugins/snowluma_adapter"
+        // OneBot 适配器（bot 仓库自带的 onebot_adapter，reverse 模式：
+        // 适配器在 wsPort 起 ws 服务端，SnowLuma 按其 onebot.json 的
+        // wsClients 连入）。历史遗留的 snowluma_adapter 停用，避免争抢端口。
         val obDir = "${shellQuote(repoPath)}/config/plugins/onebot_adapter"
+        val slDir = "${shellQuote(repoPath)}/config/plugins/snowluma_adapter"
         return loginBody(
             """
-            mkdir -p $adapterDir $obDir
-            cat > $adapterDir/config.toml <<'MOFOX_EOF'
+            mkdir -p $obDir
+            cat > $obDir/config.toml <<'MOFOX_EOF'
             [plugin]
             enabled = true
             config_version = "2.0.0"
@@ -717,16 +701,14 @@ class RuntimeScripts(
             qq_id = "$botQq"
             qq_nickname = "$botNickname"
 
-            [snowluma_server]
+            [onebot_server]
             mode = "reverse"
             host = "localhost"
             port = $wsPort
             access_token = ""
             MOFOX_EOF
-            if [ -f $obDir/config.toml ]; then
-              sed -i 's/^enabled *= *true/enabled = false/' $obDir/config.toml || true
-            else
-              printf '[plugin]\nenabled = false\n' > $obDir/config.toml
+            if [ -f $slDir/config.toml ]; then
+              sed -i 's/^enabled *= *true/enabled = false/' $slDir/config.toml || true
             fi
             """.trimIndent(),
         )

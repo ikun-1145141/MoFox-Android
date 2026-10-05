@@ -389,7 +389,8 @@ snowluma 进程脚本首行打印构建标识（`20260928-2` → `20261002-1 影
 ### 4.9 安装脚本输出治理与下载重试（用户反馈：installSnowluma exited with 1）
 
 一位用户 OOBE 第 3 步 `installSnowluma exited with 1`，日志尾部全是被打散的
-`# -=0=-` 进度条残骸——`curl -#` 进度条用 `` 刷新，App 控制台按行渲染后
+`# -=0=-` 进度条残骸——`curl -#` 进度条用 `
+` 刷新，App 控制台按行渲染后
 把真正的报错冲出可视区。修复：
 
 - 三处大下载（Node.js ×2、SnowLuma tarball、QQ deb）的 `curl -#` 全部改为
@@ -398,6 +399,31 @@ snowluma 进程脚本首行打印构建标识（`20260928-2` → `20261002-1 影
 - SnowLuma tarball 增加"代理失败后直连 GitHub"兜底；
 - 下载来源不变：Node 走 npmmirror + nodejs.org 双源，QQ deb 多候选镜像
   循环 + 魔数/大小校验，SnowLuma 经测速代理选择。
+
+### 4.10 bot 侧适配器切换：snowluma_adapter → onebot_adapter
+
+应用户要求，bot 侧 QQ 适配器从随 APK 分发的 `snowluma_adapter`/
+`snowluma_extension`（.mfp 插件）切回 **bot 仓库自带的 `onebot_adapter`**
+（标准 OneBot v11，main 核心即可加载，无 media_api 1.2.0 依赖）。
+**SnowLuma 协议端链路完全不变**（安装编排、引擎跳板、影子路径、
+onebot.json 的 wsClients → 8095、登录检测照旧）——只换 bot 侧"谁监听
+8095、谁解析消息"。
+
+- bot 自愈段反转：写 `config/plugins/onebot_adapter/config.toml`
+  （reverse ws，等 SnowLuma 连入）；停用遗留的 snowluma_adapter 配置
+  （仅当存在）；清理实例 `plugins/` 里历史分发的
+  `snowluma_adapter-*.mfp` / `snowluma_extension-*.mfp`；
+- **dev 分支强推自愈移除**（每次启动联网 fetch+checkout dev 的行为取消）：
+  实测发现插件市场生态的插件普遍依赖 dev 分支核心的新 API（如
+  create_llm_request 的 stream_id 参数），dev→main 迁移会破坏已装插件，
+  故自愈不管理仓库分支——实例停留在哪个分支由其已装插件决定；
+- 资产分发：`stageSnowlumaPlugins` 更名 `stageBundledPlugins`，清单清空
+  （机制保留给未来插件），删除 `assets/plugins/snowluma_*.mfp`；
+- `writeAdapter` 任务（向导安装步骤）改为写 onebot 配置；任务名不变
+  （旧向导断点的枚举反序列化兼容）；
+- 代价说明：snowluma_extension 提供的群管/表情回应等扩展动作随切换
+  不再安装（其能力本就经 adapter_api 优先调用 onebot_adapter 也能覆盖
+  大部分场景，如需可后续单独装回）。
 
 ## 5. 验证记录（真机 Android 16 / HyperOS，无 root）
 
