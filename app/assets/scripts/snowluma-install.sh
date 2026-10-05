@@ -265,9 +265,9 @@ function install_node() {
     local tarball="${node_version}-linux-${node_arch}.tar.xz"
     if [ ! -f "${tarball}" ]; then
         log "正在从 npmmirror 下载 Node.js..."
-        if ! curl -fL --connect-timeout 10 --max-time 600 -# "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}"; then
+        if ! curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}"; then
             log "npmmirror 下载失败，尝试 nodejs.org..."
-            curl -fL --connect-timeout 10 --max-time 600 -# "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}" || fail "Node.js 下载失败 (curl 退出码: $?)"
+            curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}" || fail "Node.js 下载失败 (curl 退出码: $?)"
         fi
     fi
 
@@ -352,7 +352,10 @@ function download_snowluma() {
 
         log "开始下载 SnowLuma 安装包..."
         # -f: HTTP 错误时返回非 0，避免把错误页存成安装包
-        curl -kfL -# "${snowluma_download_url}" -o "${default_file}" || fail "SnowLuma 安装包下载失败 (curl 退出码: $?)，请检查网络或代理设置"
+        if ! curl -kfL -sS --retry 2 --retry-delay 2 "${snowluma_download_url}" -o "${default_file}"; then
+            log "经代理下载失败, 尝试直连 GitHub..."
+            curl -kfL -sS --retry 2 --retry-delay 2 "${snowluma_asset}" -o "${default_file}" || fail "SnowLuma 安装包下载失败 (curl 退出码: $?)，请检查网络或代理设置"
+        fi
 
         if [ ! -f "${default_file}" ]; then
             fail "文件下载失败, 未找到下载文件"
@@ -541,7 +544,7 @@ function install_linuxqq_rootless() {
     for url in "${candidates[@]}"; do
         log "QQ下载链接: ${url}"
         # -f: HTTP 错误时返回非 0，避免把错误页存成安装包
-        if ! curl -kfL -# "${url}" -o "${qq_package_file}"; then
+        if ! curl -kfL -sS --retry 2 --retry-delay 2 "${url}" -o "${qq_package_file}"; then
             log "警告: 下载失败, 尝试下一个来源…"
             rm -f "${qq_package_file}"
             continue

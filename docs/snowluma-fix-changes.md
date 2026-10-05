@@ -386,6 +386,19 @@ snowluma 进程脚本首行打印构建标识（`20260928-2` → `20261002-1 影
 
 ---
 
+### 4.9 安装脚本输出治理与下载重试（用户反馈：installSnowluma exited with 1）
+
+一位用户 OOBE 第 3 步 `installSnowluma exited with 1`，日志尾部全是被打散的
+`# -=0=-` 进度条残骸——`curl -#` 进度条用 `` 刷新，App 控制台按行渲染后
+把真正的报错冲出可视区。修复：
+
+- 三处大下载（Node.js ×2、SnowLuma tarball、QQ deb）的 `curl -#` 全部改为
+  `-sS --retry 2 --retry-delay 2`（静默 + 瞬时失败自动重试），控制台尾部
+  从此可见真实报错；
+- SnowLuma tarball 增加"代理失败后直连 GitHub"兜底；
+- 下载来源不变：Node 走 npmmirror + nodejs.org 双源，QQ deb 多候选镜像
+  循环 + 魔数/大小校验，SnowLuma 经测速代理选择。
+
 ## 5. 验证记录（真机 Android 16 / HyperOS，无 root）
 
 ```text
