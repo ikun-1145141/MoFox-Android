@@ -9,7 +9,7 @@ import 'package:mofox_android/core/ui/app_components.dart';
 import 'package:mofox_android/features/dashboard/application/process_console_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-class SnowlumaQrSheet extends ConsumerWidget {
+class SnowlumaQrSheet extends ConsumerStatefulWidget {
   const SnowlumaQrSheet({
     required this.payload,
     this.onCancel,
@@ -29,9 +29,21 @@ class SnowlumaQrSheet extends ConsumerWidget {
   final VoidCallback? onQuickLogin;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SnowlumaQrSheet> createState() => _SnowlumaQrSheetState();
+}
+
+class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
+  /// 触屏操控开关：开启后点按截图区域即点击虚拟屏幕对应位置。
+  bool _touchMode = false;
+
+  @override
+  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
+    final payload = widget.payload;
+    final onCancel = widget.onCancel;
+    final onClose = widget.onClose;
+    final onQuickLogin = widget.onQuickLogin;
     // 实时跟随 provider：SnowLuma 覆盖 screen.png 后 payload 版本号变化，
     // 这里重建时 _QrFileImage 通过 cacheKey 变化重新读文件，无需关闭重开弹窗。
     final livePayload = ref.watch(
@@ -44,7 +56,10 @@ class SnowlumaQrSheet extends ConsumerWidget {
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final qrSize = (constraints.maxWidth - 80).clamp(140.0, 220.0);
+            // 触屏模式下放大截图以获得更精细的点击坐标。
+            final qrSize = _touchMode
+                ? (constraints.maxWidth - 32).clamp(140.0, 480.0)
+                : (constraints.maxWidth - 80).clamp(140.0, 220.0);
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.xl,
@@ -103,11 +118,21 @@ class SnowlumaQrSheet extends ConsumerWidget {
                                 backgroundColor: Colors.white,
                                 semanticsLabel: 'QQ 登录二维码',
                               )
-                            : _QrFileImage(
-                                path: imagePath,
-                                cacheKey: effectivePayload,
-                                errorColor: scheme.error,
-                                size: qrSize,
+                            : GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTapUp: _touchMode
+                                    ? (details) => _handleScreenTap(
+                                        context,
+                                        details.localPosition,
+                                        qrSize,
+                                      )
+                                    : null,
+                                child: _QrFileImage(
+                                  path: imagePath,
+                                  cacheKey: effectivePayload,
+                                  errorColor: scheme.error,
+                                  size: qrSize,
+                                ),
                               ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
@@ -116,6 +141,31 @@ class SnowlumaQrSheet extends ConsumerWidget {
                         tone: AppStatusTone.info,
                         icon: Icons.hourglass_top,
                       ),
+                      if (imagePath != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.md),
+                        ActionChip(
+                          avatar: Icon(
+                            _touchMode
+                                ? Icons.touch_app
+                                : Icons.touch_app_outlined,
+                          ),
+                          label: Text(
+                            _touchMode ? '触屏操控：开' : '触屏操控',
+                          ),
+                          onPressed: () =>
+                              setState(() => _touchMode = !_touchMode),
+                        ),
+                      ],
+                      if (_touchMode && imagePath != null) ...<Widget>[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text(
+                          '触屏模式已开启：点按截图即可点击虚拟屏幕的对应位置',
+                          style: text.bodySmall?.copyWith(
+                            color: scheme.primary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                       const SizedBox(height: AppSpacing.md),
                       Text(
                         copyableLoginInfo == null
@@ -171,6 +221,26 @@ class SnowlumaQrSheet extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  /// 触屏操控：把截图框内的点按换算为 Xvfb 800x600 坐标并执行左键单击。
+  ///
+  /// 截图框是 [boxSize] 见方的方形容器，800x600（4:3）帧以 contain 方式
+  /// 横向充满、上下留边——纵向需先减去留边再等比换算（比例 = 800/边长）。
+  void _handleScreenTap(
+    BuildContext context,
+    Offset local,
+    double boxSize,
+  ) {
+    final scale = boxSize / 800;
+    final contentHeight = 600 * scale;
+    final offsetY = (boxSize - contentHeight) / 2;
+    final dy = (local.dy - offsetY).clamp(0.0, contentHeight);
+    ref.read(processConsoleProvider.notifier).touchVirtualScreen(
+          dx: local.dx.clamp(0.0, boxSize),
+          dy: dy,
+          boxWidth: boxSize,
+        );
   }
 
   Future<void> _confirmAndCopy(

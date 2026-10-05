@@ -81,6 +81,12 @@ class RuntimeScripts(
                 else
                   echo "[bot] 警告: plugin-cache 中没有 SnowLuma 插件，适配器不可用"
                 fi
+                # 短信桥接插件（独立于 SnowLuma，单独就位以免 snowluma 缺失时被跳过）
+                if ls /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp >/dev/null 2>&1; then
+                  cp -f /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
+                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '
+' ' ')"
+                fi
                 cat > "${'$'}ADAPTER_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true
@@ -580,6 +586,26 @@ class RuntimeScripts(
                 log_ok "已向 QQ 窗口发送回车（快捷登录）"
                 """.trimIndent(),
             )
+            // 虚拟屏幕触控：x/y 为 Xvfb 800x600 坐标系里的点（Dart 侧已换算
+            // 并钳位）。点击落到指针所在的任意窗口/位置，不要求 QQ 前台。
+            "virtualTouch" -> {
+                val x = (args["x"]?.toIntOrNull() ?: 0).coerceIn(0, 799)
+                val y = (args["y"]?.toIntOrNull() ?: 0).coerceIn(0, 599)
+                loginBody(
+                    """
+                    command -v xdotool >/dev/null 2>&1 || {
+                      log_info "安装 xdotool…"
+                      apt-get update -y >/dev/null 2>&1 || true
+                      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xdotool >/dev/null 2>&1 || {
+                        log_error "xdotool 安装失败，无法执行触屏点击"
+                        exit 31
+                      }
+                    }
+                    DISPLAY=:1 xdotool mousemove $x $y click 1
+                    log_ok "已点击虚拟屏幕 ($x, $y)"
+                    """.trimIndent(),
+                )
+            }
             "registerInstance" -> {
                 val instanceName = args["instanceName"].orEmpty()
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"

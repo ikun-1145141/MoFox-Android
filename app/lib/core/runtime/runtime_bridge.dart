@@ -73,6 +73,17 @@ class RuntimeBridge {
     }
   }
 
+  /// 触屏操控虚拟屏幕：在 Xvfb 800x600 坐标系的 (x, y) 处执行一次左键单击。
+  Future<RuntimeTaskResult> virtualTouch(int x, int y) {
+    return runInstallTask(
+      'virtualTouch',
+      args: <String, String>{
+        'x': x.clamp(0, 799).toString(),
+        'y': y.clamp(0, 599).toString(),
+      },
+    );
+  }
+
   /// 原生安装任务实时日志（按 task 过滤）。
   Stream<String> installTaskLogs(String task) {
     return installEvents()

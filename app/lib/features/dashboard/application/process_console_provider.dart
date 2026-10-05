@@ -432,6 +432,32 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     unawaited(refreshStatus());
   }
 
+  /// 触屏操控虚拟屏幕：把截图上的点按换算为 Xvfb 800x600 坐标并执行左键单击。
+  /// [dx]/[dy] 为点按处在"去除上下留边后的 4:3 画面"内的像素偏移，
+  /// [boxWidth] 为该画面的渲染宽度（用于等比换算）。
+  Future<void> touchVirtualScreen({
+    required double dx,
+    required double dy,
+    required double boxWidth,
+  }) async {
+    final x = (dx * 800 / boxWidth).round().clamp(0, 799);
+    final y = (dy * 800 / boxWidth).round().clamp(0, 599);
+    final runtime = ref.read(runtimeBridgeProvider);
+    _appendSnowlumaLog('[touch] 点击虚拟屏幕 ($x, $y)…');
+    try {
+      final result = await runtime.virtualTouch(x, y);
+      for (final line in result.logs) {
+        _appendSnowlumaLog(line);
+      }
+      if (!result.success) {
+        _appendSnowlumaLog('[touch] 点击失败: ${result.error}');
+      }
+    } on Object catch (error) {
+      _appendSnowlumaLog('[touch] 点击异常: $error');
+    }
+    unawaited(refreshStatus());
+  }
+
   void _onProcessEvent(ProcessEvent event) {
     if (event.name == 'bot') {
       _appendBotLog(event.line);
