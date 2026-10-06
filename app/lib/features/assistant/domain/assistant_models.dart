@@ -14,7 +14,7 @@ class AssistantMessage {
       };
 }
 
-enum AssistantActionType { command, restartBot, restartNapcat, mcpTool }
+enum AssistantActionType { command, restartBot, restartSnowluma, mcpTool }
 
 class AssistantAction {
   const AssistantAction({
@@ -34,7 +34,7 @@ class AssistantAction {
   String get title => switch (type) {
         AssistantActionType.command => '运行终端命令',
         AssistantActionType.restartBot => '重启 Bot',
-        AssistantActionType.restartNapcat => '重启 NapCat',
+        AssistantActionType.restartSnowluma => '重启 SnowLuma',
         AssistantActionType.mcpTool => '查询官方文档',
       };
 
@@ -52,7 +52,7 @@ class AssistantAction {
       final type = switch (json['type']) {
         'command' => AssistantActionType.command,
         'restart_bot' => AssistantActionType.restartBot,
-        'restart_napcat' => AssistantActionType.restartNapcat,
+        'restart_snowluma' => AssistantActionType.restartSnowluma,
         'mcp_tool' => AssistantActionType.mcpTool,
         _ => null,
       };

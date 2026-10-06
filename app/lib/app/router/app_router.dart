@@ -31,6 +31,7 @@ abstract final class AppRoute {
   static const String dashboard = '/dashboard';
   static const String instanceDetail = '/dashboard/instance';
   static const String instanceFiles = '/instance-files';
+  static const String instanceTerminal = '/instance-terminal';
   static const String tomlEditor = '/toml-editor';
   static const String textEditor = '/text-editor';
   static const String terminal = '/terminal';
@@ -141,6 +142,30 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           return MaterialPage(
             key: ValueKey('instanceFiles-${extra.scope.id}'),
             child: InstanceFilesPage(args: extra),
+          );
+        },
+      ),
+      // 实例目录终端：必须是顶层独立路由（不能复用底部导航的 /terminal
+      // 分支——push 一个 StatefulShellBranch 路由会让 shell 页面以相同
+      // key 重复入栈，触发 Navigator 的重复 page key 断言红屏）。
+      // key 含微秒时间戳：同实例可以反复 push，不与栈中已有页冲突。
+      GoRoute(
+        path: AppRoute.instanceTerminal,
+        pageBuilder: (_, state) {
+          final extra = state.extra;
+          final values = extra is Map<String, String> ? extra : null;
+          final instanceId = values?['instanceId'] ?? '';
+          final cwd = values?['cwd'] ?? '/root';
+          return MaterialPage(
+            key: ValueKey(
+              'instanceTerminal-$instanceId-$cwd-'
+              '${DateTime.now().microsecondsSinceEpoch}',
+            ),
+            child: TerminalPage(
+              cwd: cwd,
+              title: values?['title'] ?? '终端',
+              instanceId: values?['instanceId'],
+            ),
           );
         },
       ),

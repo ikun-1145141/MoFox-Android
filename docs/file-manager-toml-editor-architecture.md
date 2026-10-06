@@ -287,7 +287,7 @@ app/lib/features/file_manager/
 ```text
 RootfsFileScope
 ├── id                 页面与 provider 的稳定标识
-├── kind               instance | repository | napcat | container
+├── kind               instance | repository | snowluma | container
 ├── instanceId         与实例关联时必填
 ├── containerRoot      容器内绝对根，只能由领域对象构造
 ├── displayName        UI 名称
@@ -381,7 +381,7 @@ Bot 仓库虽然是实例目录的子集，仍保留为独立作用域。这样�
 
 | 作用域 | 容器根 | 建议策略 |
 | --- | --- | --- |
-| NapCat | `/root/napcat` | 独立入口和权限 |
+| SnowLuma | `/root/snowluma` | 独立入口和权限 |
 | 整个容器 | `/` | 高级模式、风险提示、默认关闭，可先只读 |
 
 整个容器作用域可能暴露系统配置、认证信息和关键运行时文件，也允许删除破坏 rootfs 的内容，不建议作为 MVP 默认能力。
@@ -483,12 +483,12 @@ MVP 采用保守策略：
 
 ```text
 scope:
-  kind: instance | repository | napcat | container
+  kind: instance | repository | snowluma | container
   instanceId: string?
   instanceRootPath: string?
 ```
 
-对于 `repository`，原生层从实例根派生 `Neo-MoFox` 子目录，而不是接受任意仓库根。对于 `napcat` 和 `container`，根路径由原生常量决定。
+对于 `repository`，原生层从实例根派生 `Neo-MoFox` 子目录，而不是接受任意仓库根。对于 `snowluma` 和 `container`，根路径由原生常量决定。
 
 ### 11.2 `listDirectory`
 
@@ -1060,7 +1060,7 @@ CI 继续要求：
 
 ### 阶段 5：扩展与迁移
 
-- 评估 NapCat 和整个容器作用域；
+- 评估 SnowLuma 和整个容器作用域；
 - 评估通用文本只读预览；
 - 让备份复用安全解析基础设施；
 - 根据数据调整分页、线程和文件大小阈值；

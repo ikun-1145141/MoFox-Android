@@ -63,3 +63,6 @@ app/assets/runtime/wheels/*.whl
 *.swp
 .envrc
 POST_FIX_CHECKLIST.md
+# Python 工具缓存
+__pycache__/
+*.pyc

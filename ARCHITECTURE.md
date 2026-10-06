@@ -10,9 +10,9 @@
 
 MoFox-Android 是 [Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安卓原生外壳：
 
-- **主界面**：Flutter 原生管理界面；Neo-MoFox WebUI 与 NapCat WebUI 通过系统默认浏览器访问。
+- **主界面**：Flutter 原生管理界面；Neo-MoFox WebUI 与 SnowLuma WebUI 通过系统默认浏览器访问。
 - **原生层**：Kotlin 负责 OOBE、内嵌 Linux 运行时、终端、保活、系统级设置。
-- **运行时**：通过 `jniLibs` 投放原生二进制 + `proot` rootless 容器 + **Debian 13 (trixie)** rootfs，跑 Neo-MoFox 主程序与 NapCat。
+- **运行时**：通过 `jniLibs` 投放原生二进制 + `proot` rootless 容器 + **Debian 13 (trixie)** rootfs，跑 Neo-MoFox 主程序与 SnowLuma。
 
 **不依赖 Termux**，App 自带完整运行时，安装即可用。
 
@@ -42,13 +42,13 @@ MoFox-Android 是 [Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安�
 | 内嵌运行时 | **jniLibs 原生二进制 + proot + Debian 13 (trixie) rootfs** | 详见 §5.3 |
 | 原生桥接 | **MethodChannel + EventChannel** | `mofox/runtime` / `mofox/runtime/events` / `mofox/platform` |
 | 持久化 | `shared_preferences` + `flutter_secure_storage` | OOBE 状态、实例列表、Token |
-| WebUI 入口 | `url_launcher`（`LaunchMode.externalApplication`） | 将 Neo-MoFox / NapCat 本机 URL 交给系统默认浏览器 |
+| WebUI 入口 | `url_launcher`（`LaunchMode.externalApplication`） | 将 Neo-MoFox / SnowLuma 本机 URL 交给系统默认浏览器 |
 | 保活 | Android 原生 `MoFoxForegroundService` | 前台服务 + 常驻通知 + 开机广播 |
 | 归档 | `archive ^4.0.7` | 实例备份 ZIP 编解码与导入校验 |
 | 网络与 AI | `dio` | 离线包 / 镜像下载 / EULA 拉取 / OpenAI-compatible 流式对话 |
 | 权限 | `permission_handler` | 通知 / 存储 / 自启 |
 | 日志 | `logger ^2.3.0` + `share_plus ^10.0.0` | 双路输出（控制台 + 文件），支持导出分享 |
-| 二维码 | `qr_flutter` | NapCat 扫码登录 |
+| 二维码 | 实例详情截图面板（ffmpeg x11grab 轮询 Xvfb 桌面） | SnowLuma 扫码登录 |
 | 构建 | Gradle 8 + AGP 8 + Kotlin 1.9 | targetSdk **35**, minSdk 24 |
 
 ---
@@ -100,7 +100,7 @@ MoFox-Android 是 [Neo-MoFox](https://github.com/MoFox-Studio/Neo-MoFox) 的安�
 ┌───────────────────────┼─────────────────────────────────────┐
 │         Debian 13 (trixie) rootfs (内嵌 .tar.xz)            │
 │   /usr/bin/apt   /usr/bin/python3   /root/instances/<id>/…  │
-│   NapCat (全局)  uv venv   sqlite3                           │
+│   SnowLuma (全局)  uv venv   sqlite3                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -117,12 +117,12 @@ WebUI 不在 Flutter 组件树内渲染。实例详情页使用 `url_launcher` �
 
 1. **欢迎与隐私同意**（`welcome_step`）：展示品牌、协议（AGPL-3.0）、隐私政策、EULA，用户点击"同意并继续"。
 2. **系统体检**（`system_check_step`）：当前为 UI 占位检查，展示 arm64-v8a、磁盘、内存和 Android API 要求；尚未接入 `RuntimeBridge.probe()`，不能作为真实硬件检测结果。
-3. **解压运行时**（`extract_runtime_step`）：用户先确认组件，再开始解压 Debian 13 (trixie) rootfs、首次启动 proot、`apt update && apt install` 基础工具链。NapCat 默认不安装，只有用户显式开启开关后才安装并执行完整性复查（QQ 可执行文件、`napcat.mjs`、启动加载器、`package.json` 注入、`xvfb-run` 与 MoFox 启动脚本）；失败可重试。日志用 `AnsiColorText` 彩色渲染。
+3. **解压运行时**（`extract_runtime_step`）：用户先确认组件，再开始解压 Debian 13 (trixie) rootfs、首次启动 proot、`apt update && apt install` 基础工具链。SnowLuma 默认不安装，只有用户显式开启开关后才安装并执行完整性复查（QQ 可执行文件、`/root/snowluma/app/index.mjs`、node、`xvfb-run`、fluxbox、launcher.sh）；失败可重试。SnowLuma 为非容器手动部署：安装系统依赖（Xvfb/fluxbox/CJK 字体等）+ Node.js 24 LTS（npmmirror 源）+ LinuxQQ（dpkg 解包到 `/root/snowluma/opt/QQ`，并冻结 `qqpatch.gtimg.cn` 静默热更新）+ 从 GitHub Release 下载 SnowLuma-lite tarball 解到 `/root/snowluma/app`。日志用 `AnsiColorText` 彩色渲染。
 4. **保活授权引导**（`keepalive_step`）：通知权限、忽略电池优化、厂商自启动引导。
 
 完成后写 `SharedPreferences.oobe_done = true`，路由 redirect 自动跳到 `/home`。
 
-> **OOBE ≠ Wizard**：OOBE 只做全局一次性的事情（rootfs 解压、apt 依赖、可选的 NapCat 安装与复查、保活授权）。跳过 NapCat 后，首次主动启动时会幂等补装并复查。创建 Bot 实例走 §5.2 的 Wizard，可反复创建多个实例。
+> **OOBE ≠ Wizard**：OOBE 只做全局一次性的事情（rootfs 解压、apt 依赖、可选的 SnowLuma 安装与复查、保活授权）。跳过 SnowLuma 后，首次主动启动时会幂等补装并复查。创建 Bot 实例走 §5.2 的 Wizard，可反复创建多个实例。
 
 ### 5.2 实例创建向导（`app/lib/features/wizard/`）
 
@@ -146,9 +146,9 @@ WebUI 不在 Flutter 组件树内渲染。实例详情页使用 `url_launcher` �
 | `genConfig` | 生成默认 toml |
 | `writeCore` | 写入 core.toml |
 | `writeModel` | 写入 model.toml |
-| `writeAdapter` | 写入 adapter.toml |
+| `writeAdapter` | 写入 onebot_adapter/config.toml |
 | `installWebui` | 安装 WebUI（可跳过） |
-| `writeNapcatConfig` | 写入 onebot11 配置 |
+| `writeSnowlumaConfig` | 写入 SnowLuma onebot.json/runtime.json 配置 |
 | `registerInstance` | 写实例到本地仓库 |
 
 每步使用 Riverpod `Notifier` 暴露 `WizardState`：
@@ -161,7 +161,7 @@ class WizardState {
   final double taskProgress;
   final List<String> logs;
   final String? errorMessage;
-  final String? napcatQrPayload;
+  final String? snowlumaQrPayload;
   final bool installFinished;
   final bool installStarted;
   final bool resumeAvailable;  // 失败后允许从断点续装
@@ -247,7 +247,7 @@ android {
 1. `RootfsInstaller` 把 `assets/rootfs/debian-13-arm64.tar.xz` 和运行时脚本复制到 App 私有目录。
 2. `RuntimeScripts` 调用随 APK 投放的 BusyBox `tar xJf` 解包到 rootfs；Kotlin 层不自行解析 tar.xz。
 3. 解包后以 rootfs 内关键文件存在作为引导完成条件，后续启动直接复用现有 rootfs。
-4. 当前 APK 只构建 `arm64-v8a`；NapCat 依赖的 Node.js 不支持本项目原先考虑的 32 位 ARM 方案。
+4. 当前 APK 只构建 `arm64-v8a`；SnowLuma 依赖的 Node.js 不支持本项目原先考虑的 32 位 ARM 方案。
 
 > **rootfs 来源**：[LXC images](https://images.linuxcontainers.org/) 的 `debian/trixie/<arch>/default/` 每日构建，文件已经是 `rootfs.tar.xz` 不需要重压。`python tools/build.py --fetch-rootfs` 会自动列目录抓最新时间戳并下载，按优先级走清华 → BFSU → 上游官方三个镜像。下载产物按 `debian-13-<arm64|armhf|amd64>.tar.xz` 命名落到 `app/assets/rootfs/`。codename `trixie` 写死在 `RuntimeScripts.UBUNTU_CODENAME`。
 >
@@ -329,8 +329,8 @@ exec "$NATIVE/libproot.so" \
 - **模型配置**：设置页 `/settings/assistant` 保存 OpenAI-compatible Base URL、模型名和启用状态；启用与 HTTP 授权开关切换后立即持久化，API Key 单独存入 `flutter_secure_storage`，不进入 SharedPreferences。
 - **官方文档 MCP**：`MofoxDocsMcpClient` 实现 MCP initialize、`tools/list` 和 `tools/call`，提供 `search_mofox_docs` / `read_mofox_doc`。搜索实时调用官方站使用的 Algolia DocSearch 索引，读取实时抓取 `docs.mofox-sama.com` 的 `.vp-doc` 正文；仅做 5 分钟内存缓存，不在 APK 内置文档快照。
 - **流式对话**：`AssistantApiClient` 使用 Dio 解析 SSE 或非流式兼容响应；请求支持停止、超时、错误分类和最近 12 条消息上限。
-- **上下文**：默认只附加系统资源、托管进程状态和当前实例的非敏感摘要。最近 Bot/NapCat 日志必须由用户在会话中单独同意，截取各 20 行并在本地脱敏；终端内容只发送用户主动选择的文本。
-- **结构化动作**：模型只能在 `<mofox_action>` JSON envelope 中提出单个 `command`、`restart_bot` 或 `restart_napcat`。未知或非法 schema 不产生操作按钮。
+- **上下文**：默认只附加系统资源、托管进程状态和当前实例的非敏感摘要。最近 Bot/SnowLuma 日志必须由用户在会话中单独同意，截取各 20 行并在本地脱敏；终端内容只发送用户主动选择的文本。
+- **结构化动作**：模型只能在 `<mofox_action>` JSON envelope 中提出单个 `command`、`restart_bot` 或 `restart_snowluma`。未知或非法 schema 不产生操作按钮。
 - **副驾驶模式**：命令可复制或填入当前 PTY，但填入时不附加回车；已注册且通过策略的语义操作/只读命令显示确认按钮。
 - **YOLO 模式**：默认关闭，用户输入确认短语后才启用。通过相同本地策略的动作可自动执行，单轮最多 5 次；面板常驻急停，关闭面板、离开页面或 App 进入后台会停止当前链路。
 - **双模式策略**：副驾驶模式由 Dart `AssistantPolicy` 与 Kotlin `validateAssistantCommand` 双层检查命令、路径和 executable 白名单；用户显式确认 YOLO 后，两层均不限制命令内容。
@@ -347,13 +347,13 @@ exec "$NATIVE/libproot.so" \
 
 - **DashboardPage**：实例卡片网格 + "创建实例" FAB。空态引导用户创建第一个实例。
 - **InstanceDetailPage**：实例详情全屏页，双 Tab（控制台 + 日志）：
-  - 控制台 Tab：Bot/NapCat 进程启停按钮、状态指示灯、NapCat 扫码登录弹窗（`NapcatQrSheet`），以及 WebUI 外部浏览器入口。
-  - 日志 Tab：Bot 日志 + NapCat 日志，用 `AnsiColorText` 彩色渲染。
-- **WebUI 按钮**：Neo-MoFox 固定打开 `http://127.0.0.1:8000/webui/frontend`；NapCat 使用进程日志解析出的带 token URL。两者都明确使用 `LaunchMode.externalApplication`。
-- **ProcessConsoleNotifier**：管理 bot/napcat 进程的启停、状态轮询（3 秒）、日志累积（最多 400 行）、NapCat 扫码登录与 WebUI URL 解析。
-- **NapCat 二维码**：启动前同时清理兼容目录和 NapCat 实际缓存目录中的旧二维码；同一路径被覆盖时给 payload 附加刷新版本，并直接读取文件字节，避免显示 Flutter 图片缓存中的过期二维码。
+  - 控制台 Tab：Bot/SnowLuma 进程启停按钮、状态指示灯、SnowLuma 扫码登录弹窗（`SnowlumaQrSheet`，展示 Xvfb 桌面截图），以及 WebUI 外部浏览器入口。
+  - 日志 Tab：Bot 日志 + SnowLuma 日志，用 `AnsiColorText` 彩色渲染。
+- **WebUI 按钮**：Neo-MoFox 固定打开 `http://127.0.0.1:8000/webui/frontend`；SnowLuma WebUI 固定监听 `127.0.0.1:5099`，访问密码在首次安装时生成于 rootfs `/root/snowluma/secrets/webui_password`（日志面板可见）。两者都明确使用 `LaunchMode.externalApplication`。
+- **ProcessConsoleNotifier**：管理 bot/snowluma 进程的启停、状态轮询（3 秒）、日志累积（最多 400 行）、SnowLuma 扫码登录与 WebUI URL 解析。
+- **SnowLuma 二维码**：SnowLuma 没有 CLI 登录，二维码出现在 QQ 的 X11（Xvfb）窗口里。App 用 ffmpeg x11grab 定时截取虚拟桌面整屏到 `/root/snowluma/cache/screen.png`，截图 md5 变化时刷新二维码面板；同时轮询 SnowLuma OneBot `get_status`（`http://127.0.0.1:3000`，token `mofox`），检测到 `"online":true` 即判定登录成功并自动关闭面板。
 - **InstanceRepository**：用 SharedPreferences 存 JSON 数组（`instances_v2`），支持 `add` / `upsert` / `remove` / `loadAll`。
-- **Instance** 模型：id、name、botQq、botNickname、ownerQq、wsPort、channel、installNapcat、installWebui、installDir、createdAt、installStatus（installing/failed/installed）、lastInstallTask、installError。
+- **Instance** 模型：id、name、botQq、botNickname、ownerQq、wsPort、channel、installSnowluma、installWebui、installDir、createdAt、installStatus（installing/failed/installed）、lastInstallTask、installError。
 
 ### 5.8 设置（`app/lib/features/settings/`）
 
@@ -366,7 +366,7 @@ exec "$NATIVE/libproot.so" \
 - **KeepaliveStatusPage**（`/settings/keepalive`）：保活体检面板，展示通知权限、电池优化白名单、前台服务、开机自启声明、厂商自启动状态，每项可一键跳转授权。
 - **AboutPage**（`/settings/about`）：版本号、源代码链接、AGPL-3.0 许可、第三方库许可入口。
 - **ThirdPartyLicensesPage**（`/settings/about/licenses`）：Flutter `LicensePage`，自动列出所有依赖库的 LICENSE。
-- **BackupPage**（`/settings/backup`）：通过 SAF 导出/导入 ZIP。完整备份包含实例 `config/`、NapCat 配置与登录态，可选包含日志；导入时校验 `manifest.json`、格式版本、文件数量与解压体积，并拒绝路径穿越、重复目标和未知目录。
+- **BackupPage**（`/settings/backup`）：通过 SAF 导出/导入 ZIP。完整备份包含实例 `config/`、SnowLuma 配置与登录态，可选包含日志；导入时校验 `manifest.json`、格式版本、文件数量与解压体积，并拒绝路径穿越、重复目标和未知目录。
 - **AppSettings**：持久化到 SharedPreferences，包含 `themeMode`、`dynamicColorEnabled`、`mainImageMode`、`terminalHapticsEnabled`。
 
 ### 5.9 外部浏览器 WebUI
@@ -374,8 +374,8 @@ exec "$NATIVE/libproot.so" \
 - 项目不包含 `features/webview/`、`WebViewPage`、`WebViewController` 或 `webview_flutter` 依赖。
 - 实例详情页仅在对应进程运行时启用 WebUI 按钮。
 - Neo-MoFox WebUI 使用固定回环地址 `http://127.0.0.1:8000/webui/frontend`。
-- NapCat 启动日志中的 `WebUi User Panel Url` 会被解析到 `napcatWebuiUrl`；该 URL 自带 token，原样交给浏览器。
-- 如果 NapCat URL 尚未就绪或系统无法处理 URL，应用使用 `SnackBar` 给出明确提示。
+- SnowLuma WebUI 固定监听 `127.0.0.1:5099`；进程日志中的 `MOFOX_WEBUI_URL=` 标记行会被解析到 `snowlumaWebuiUrl`，原样交给浏览器。
+- 如果 SnowLuma URL 尚未就绪或系统无法处理 URL，应用使用 `SnackBar` 给出明确提示。
 - 外部浏览器拥有独立的 Cookie、localStorage、返回栈和生命周期，App 不注入脚本、不缓存网页，也不持有网页内容。
 
 ### 5.10 日志系统（`app/lib/core/utils/app_logger.dart`）
@@ -384,7 +384,7 @@ exec "$NATIVE/libproot.so" \
 
 - **双路输出**：控制台（`PrettyPrinter` 带颜色）+ 文件（`<appDocDir>/logs/mofox_<date>.log`，追加模式）。
 - **release 也输出**：自定义 `_MoFoxLogFilter` 覆盖默认的 `DevelopmentFilter`（默认 release 全屏蔽）。
-- **日志调用点**：`main.dart`（启动、FlutterError、未捕获异步异常）、`WizardNotifier`（每步安装开始/失败/完成）、`OobeFlowNotifier`（运行时安装）、`ProcessConsoleNotifier`（进程启停、NapCat 登录）、`RuntimeBridge`（安装任务、进程操作、shell 操作）。
+- **日志调用点**：`main.dart`（启动、FlutterError、未捕获异步异常）、`WizardNotifier`（每步安装开始/失败/完成）、`OobeFlowNotifier`（运行时安装）、`ProcessConsoleNotifier`（进程启停、SnowLuma 登录）、`RuntimeBridge`（安装任务、进程操作、shell 操作）。
 - **导出分享**：`currentLogFilePath()` 获取当天日志路径，`shareLogFile()` 用 `share_plus` 分享日志文件。
 - **Provider**：`appLoggerProvider`（虽然当前直接用全局 `appLogger`，保留 provider 供后续依赖注入）。
 
@@ -394,7 +394,7 @@ exec "$NATIVE/libproot.so" \
 
 - **支持**：前景色 30-37 / 90-97（bright）、背景色 40-47 / 100-107、重置 0、粗体 1、暗淡 2、斜体 3、下划线 4、闪烁 5、反色 7、256 色 `38;5;<n>` / `48;5;<n>`、TrueColor `38;2;r;g;b` / `48;2;r;g;b`。
 - **不支持**的序列静默忽略，只输出可见字符。
-- **使用场景**：Wizard 安装日志、OOBE 解压日志、实例详情 Bot/NapCat 日志面板。
+- **使用场景**：Wizard 安装日志、OOBE 解压日志、实例详情 Bot/SnowLuma 日志面板。
 - **调色板**：标准 16 色 + 256 色扩展（6×6×6 RGB 立方体 + 24 级灰度），与终端 `TerminalTheme` 调色板一致。
 
 ### 5.12 平台网关（`app/lib/core/platform/platform_gateway.dart`）
@@ -433,9 +433,9 @@ sequenceDiagram
     K->>P: exec proot ... apt update && apt install ...
     P-->>K: stdout 日志
     K-->>F: EventChannel 推送日志
-    opt 用户选择安装 NapCat
-        F->>K: runInstallTask("installNapcat")
-        F->>K: runInstallTask("verifyNapcat")
+    opt 用户选择安装 SnowLuma
+        F->>K: runInstallTask("installSnowluma")
+        F->>K: runInstallTask("verifySnowluma")
     end
     F->>F: 保活授权引导
     F->>F: markOobeDone()
@@ -462,7 +462,7 @@ sequenceDiagram
     F->>K: runInstallTask("syncDeps") → uv sync
     F->>K: runInstallTask("genConfig/writeCore/writeModel/writeAdapter")
     F->>K: runInstallTask("installWebui")（可选）
-    F->>K: runInstallTask("writeNapcatConfig")
+    F->>K: runInstallTask("writeSnowlumaConfig")
     F->>F: registerInstance → SharedPreferences
     F-->>U: 安装完成，返回 Dashboard
 ```
@@ -551,7 +551,7 @@ MoFox-Android/
     │       │   ├── domain/wizard_mirror_source.dart
     │       │   └── presentation/
     │       │       ├── wizard_page.dart
-    │       │       └── widgets/       # mirror_check / eula / instance_info / account / model / network / summary / install / napcat_qr_sheet
+    │       │       └── widgets/       # mirror_check / eula / instance_info / account / model / network / summary / install / snowluma_qr_sheet
     │       ├── home/                  # 首页：系统概览 + 主图
     │       │   └── presentation/home_page.dart
     │       ├── dashboard/             # 管理页：实例卡片网格
@@ -684,13 +684,13 @@ CI 阶段：
 
 | 风险 | 缓解 |
 | --- | --- |
-| **proot 性能损失** | proot 在系统调用上有 30%~50% 的开销。Neo-MoFox 主要 IO bound，影响有限；NapCat 启动慢一次性。终端纯 IO，体感无差异。 |
+| **proot 性能损失** | proot 在系统调用上有 30%~50% 的开销。Neo-MoFox 主要 IO bound，影响有限；SnowLuma 启动慢一次性。终端纯 IO，体感无差异。 |
 | **APK 体积** | 当前只支持 `arm64-v8a`；jniLibs + rootfs 进入单架构包，后续扩展 ABI 时再按 ABI 分包。 |
 | **Debian 13 trixie 周期** | trixie 已于 2025-08 正式发布稳定版，LTS 至 2030（普通安全维护），Freexian ELTS 可延至 2033。LXC 上游每天 rebuild，`tools/build.py --fetch-rootfs` 自动拉最新时间戳。**架构上无需任何改动，仅替换 rootfs 产物。** |
 | **SELinux W^X 加严** | targetSdk≥28 默认禁止 `/data/data/<pkg>/files/**` 执行；使用 `nativeLibraryDir` 规避。未来 Android 版本若加严 jniLibs 也禁止执行，需要切到 `app_process` + `dex2oat` 思路。 |
 | **rootfs 升级** | 用户已经在 rootfs 内 `apt install` 装了一堆软件，App 升级时不能直接覆盖。策略：**rootfs 版本号不变就不动**；版本号变更时引导用户备份 `/root` + 重新解压。 |
 | **设备 /proc 限制** | OnePlus / 小米等设备禁读 `/proc/loadavg`。`FakeProcSysdata` 检测后用 bind mount 假数据兜底。 |
-| **NapCat 网络敏感** | NapCat 安装走 GitHub 原始链接，国内可能慢。OOBE 内置 4 个 GitHub 加速代理，按延迟自动选最快。 |
+| **SnowLuma 网络敏感** | SnowLuma 安装走 GitHub Release 原始链接（SnowLuma-lite tarball 与 LinuxQQ 安装包），国内可能慢。OOBE 内置 4 个 GitHub 加速代理，按延迟自动选最快。 |
 | **默认浏览器不可用或被禁用** | `launchUrl(..., mode: externalApplication)` 返回失败时显示提示；不回退到内置 WebView。 |
 | **保活仍可能被杀** | 国产 ROM 后台限制极激进。文档明确告诉用户开"自启"+"电池白名单"，并提供一键跳转。**承诺尽力而为，不保证 100%。** |
 | **AI/YOLO 误操作与隐私** | 助手默认副驾驶；YOLO 需显式风险确认、有限循环和常驻急停。YOLO 不限制命令，可能修改或删除运行时数据；最近日志仍需单独授权并脱敏。 |

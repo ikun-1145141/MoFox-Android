@@ -13,8 +13,8 @@ import '../../instance/domain/instance.dart';
 /// 备份与导出服务。
 ///
 /// 参考 PC 端启动器的两套体系：
-/// 1. **一键打包导出** — config/ + napcat 登录态 + 最近日志 → ZIP → SAF
-/// 2. **选择性导出** — 单独导出 core.toml / model.toml / napcat / 日志
+/// 1. **一键打包导出** — config/ + snowluma 登录态 + 最近日志 → ZIP → SAF
+/// 2. **选择性导出** — 单独导出 core.toml / model.toml / snowluma / 日志
 /// 3. **从备份导入** — SAF 读取 ZIP → 解压恢复到实例目录
 ///
 /// Android 端文件在 rootfs 内（proot Debian），通过 [RuntimeBridge] 读取。
@@ -26,7 +26,7 @@ class BackupService {
 
   /// 一键打包导出。
   ///
-  /// 收集实例的 config/ 目录、napcat 配置、最近 N 天日志，
+  /// 收集实例的 config/ 目录、snowluma 配置、最近 N 天日志，
   /// 打包成 ZIP 后通过 SAF 让用户选保存位置。
   ///
   /// [instance] 要导出的实例。
@@ -50,19 +50,18 @@ class BackupService {
       archivePrefix: 'config/',
     );
 
-    // 2. 收集 napcat 配置
+    // 2. 收集 snowluma 配置
     await _addDirToArchive(
       archive: archive,
-      rootfsDirPath: '/root/napcat/config',
-      archivePrefix: 'napcat/config/',
+      rootfsDirPath: '/root/snowluma/app/config',
+      archivePrefix: 'snowluma/config/',
     );
 
-    // 3. 收集 napcat 登录态（token/session）
+    // 3. 收集 snowluma 登录态（token/session）
     await _addDirToArchive(
       archive: archive,
-      rootfsDirPath:
-          '/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config',
-      archivePrefix: 'napcat/login_state/',
+      rootfsDirPath: '/root/.config/QQ',
+      archivePrefix: 'snowluma/login_state/',
     );
 
     // 4. 收集日志
@@ -289,12 +288,12 @@ String? _backupDestination(String path, Instance instance) {
   if (path.startsWith('logs/')) {
     return '${instance.repoPath}/$path';
   }
-  if (path.startsWith('napcat/config/')) {
-    return '/root/napcat/config/${path.substring('napcat/config/'.length)}';
+  if (path.startsWith('snowluma/config/')) {
+    return '/root/snowluma/app/config/${path.substring('snowluma/config/'.length)}';
   }
-  if (path.startsWith('napcat/login_state/')) {
-    return '/root/Napcat/opt/QQ/resources/app/app_launcher/napcat/config/'
-        '${path.substring('napcat/login_state/'.length)}';
+  if (path.startsWith('snowluma/login_state/')) {
+    return '/root/.config/QQ/'
+        '${path.substring('snowluma/login_state/'.length)}';
   }
   return null;
 }

@@ -14,7 +14,7 @@ class Instance {
     required this.ownerQq,
     required this.wsPort,
     required this.channel,
-    required this.installNapcat,
+    required this.installSnowluma,
     required this.installWebui,
     required this.installDir,
     required this.createdAt,
@@ -30,12 +30,12 @@ class Instance {
   final String ownerQq;
   final int wsPort;
   final String channel; // 'main' | 'dev'
-  final bool installNapcat;
+  final bool installSnowluma;
   final bool installWebui;
 
   /// 此实例在 rootfs 内的安装根目录，例如 `/root/instances/inst-1717000000000`。
   ///
-  /// NapCat 是全局共享的（`/root/napcat`），所以这里只描述 bot 自己的目录。
+  /// SnowLuma 是全局共享的（`/root/snowluma`），所以这里只描述 bot 自己的目录。
   final String installDir;
   final DateTime createdAt;
 
@@ -58,7 +58,7 @@ class Instance {
     String? ownerQq,
     int? wsPort,
     String? channel,
-    bool? installNapcat,
+    bool? installSnowluma,
     bool? installWebui,
     String? installDir,
     InstanceInstallStatus? installStatus,
@@ -73,7 +73,7 @@ class Instance {
         ownerQq: ownerQq ?? this.ownerQq,
         wsPort: wsPort ?? this.wsPort,
         channel: channel ?? this.channel,
-        installNapcat: installNapcat ?? this.installNapcat,
+        installSnowluma: installSnowluma ?? this.installSnowluma,
         installWebui: installWebui ?? this.installWebui,
         installDir: installDir ?? this.installDir,
         createdAt: createdAt,
@@ -94,7 +94,7 @@ class Instance {
         'ownerQq': ownerQq,
         'wsPort': wsPort,
         'channel': channel,
-        'installNapcat': installNapcat,
+        'installSnowluma': installSnowluma,
         'installWebui': installWebui,
         'installDir': installDir,
         'createdAt': createdAt.toIso8601String(),
@@ -111,7 +111,8 @@ class Instance {
         ownerQq: json['ownerQq']! as String,
         wsPort: (json['wsPort']! as num).toInt(),
         channel: json['channel']! as String,
-        installNapcat: json['installNapcat']! as bool,
+        // 兼容旧版本地记录中的 installNapcat 字段。
+        installSnowluma: (json['installSnowluma'] ?? json['installNapcat'])! as bool,
         installWebui: json['installWebui']! as bool,
         installDir:
             json['installDir'] as String? ?? '/root/instances/${json['id']}',

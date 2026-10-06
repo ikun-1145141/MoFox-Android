@@ -112,7 +112,7 @@ enum InstallTask {
   writeModel, // 写 model.toml
   writeAdapter, // 写 onebot_adapter/config.toml
   installWebui, // 装 WebUI（每实例的前端构建）
-  writeNapcatConfig, // 写 NapCat onebot11 + napcat 配置
+  writeSnowlumaConfig, // 写 SnowLuma onebot11 配置
   registerInstance; // 写实例到本地仓库
 
   String get label => switch (this) {
@@ -121,9 +121,9 @@ enum InstallTask {
         InstallTask.genConfig => '生成默认配置',
         InstallTask.writeCore => '写入 core.toml',
         InstallTask.writeModel => '写入 model.toml',
-        InstallTask.writeAdapter => '写入 onebot_adapter 配置',
+        InstallTask.writeAdapter => '写入 OneBot 适配器配置',
         InstallTask.installWebui => '安装 WebUI',
-        InstallTask.writeNapcatConfig => '写入 NapCat 配置',
+        InstallTask.writeSnowlumaConfig => '写入 SnowLuma 配置',
         InstallTask.registerInstance => '注册实例',
       };
 }
