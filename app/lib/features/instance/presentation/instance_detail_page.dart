@@ -31,7 +31,38 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
   /// 用户点遮罩手动收起浮层（不停止进程）后置位；进程停止即复位。
   bool _panelDismissed = false;
 
+  /// 当前日志页签（Bot 主程序=0 / SnowLuma=1），切换时通知日志面板滚底。
+  int _logTabIndex = 0;
+  TabController? _observedTabController;
+
   Instance get instance => widget.instance;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // maybeOf：测试与局部复用时可能没有 DefaultTabController 祖先。
+    final controller = DefaultTabController.maybeOf(context);
+    if (controller != _observedTabController) {
+      _observedTabController?.removeListener(_handleTabChange);
+      _observedTabController = controller;
+      controller?.addListener(_handleTabChange);
+      _logTabIndex = controller?.index ?? 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _observedTabController?.removeListener(_handleTabChange);
+    super.dispose();
+  }
+
+  void _handleTabChange() {
+    final controller = _observedTabController;
+    if (controller == null) return;
+    if (controller.index != _logTabIndex) {
+      setState(() => _logTabIndex = controller.index);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -336,8 +367,14 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
               Expanded(
                 child: TabBarView(
                   children: <Widget>[
-                    _ProcessLogPane(lines: console.botLogs),
-                    _ProcessLogPane(lines: console.snowlumaLogs),
+                    _ProcessLogPane(
+                      lines: console.botLogs,
+                      isActive: _logTabIndex == 0,
+                    ),
+                    _ProcessLogPane(
+                      lines: console.snowlumaLogs,
+                      isActive: _logTabIndex == 1,
+                    ),
                   ],
                 ),
               ),
@@ -615,10 +652,62 @@ class _LiveDot extends StatelessWidget {
   }
 }
 
-class _ProcessLogPane extends StatelessWidget {
-  const _ProcessLogPane({required this.lines});
+class _ProcessLogPane extends StatefulWidget {
+  const _ProcessLogPane({required this.lines, this.isActive = true});
 
   final List<String> lines;
+
+  /// 当前页签是否处于前台；从后台切回前台时滚动到底部。
+  final bool isActive;
+
+  @override
+  State<_ProcessLogPane> createState() => _ProcessLogPaneState();
+}
+
+class _ProcessLogPaneState extends State<_ProcessLogPane> {
+  final ScrollController _scroll = ScrollController();
+
+  /// 是否"贴底"（距底部 48px 内）。贴底时新日志自动跟随；用户上翻即停。
+  bool _pinned = true;
+  int _lastLineCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastLineCount = widget.lines.length;
+    _scroll.addListener(_handleScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
+  }
+
+  @override
+  void didUpdateWidget(_ProcessLogPane oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final becameActive = widget.isActive && !oldWidget.isActive;
+    final grew = widget.lines.length > _lastLineCount;
+    _lastLineCount = widget.lines.length;
+    if (becameActive || (grew && _pinned)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToBottom());
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroll.removeListener(_handleScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scroll.hasClients) return;
+    final position = _scroll.position;
+    _pinned = position.pixels >= position.maxScrollExtent - 48;
+  }
+
+  void _jumpToBottom() {
+    if (!mounted || !_scroll.hasClients) return;
+    _scroll.jumpTo(_scroll.position.maxScrollExtent);
+    _pinned = true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -630,15 +719,16 @@ class _ProcessLogPane extends StatelessWidget {
     return Container(
       color: const Color(0xFF0D1117),
       padding: const EdgeInsets.all(12),
-      child: lines.isEmpty
+      child: widget.lines.isEmpty
           ? Text(
               '暂无日志',
               style: style?.copyWith(color: scheme.outlineVariant),
             )
           : ListView.builder(
-              itemCount: lines.length,
+              controller: _scroll,
+              itemCount: widget.lines.length,
               itemBuilder: (context, index) => AnsiColorText(
-                lines[index],
+                widget.lines[index],
                 style: style,
               ),
             ),
