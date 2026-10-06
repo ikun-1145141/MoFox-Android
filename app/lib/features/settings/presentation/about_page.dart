@@ -10,65 +10,48 @@ import 'package:url_launcher/url_launcher.dart';
 
 const _repositoryUrl = 'https://github.com/ikun-1145141/MoFox-Android';
 
+// 进程级状态：应用每次启动自然重置，不落盘、不跨启动。
+int _headerTapCount = 0;
+bool _easterEggUnlocked = false;
+const _easterEggVideoUrl =
+    'https://www.bilibili.com/video/BV1GJ411x7h7/?spm_id_from=333.337.search-card.all.click';
+
 final _packageInfoProvider = FutureProvider<PackageInfo>(
   (_) => PackageInfo.fromPlatform(),
 );
 
-class AboutPage extends ConsumerWidget {
+class AboutPage extends ConsumerStatefulWidget {
   const AboutPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final packageInfo = ref.watch(_packageInfoProvider);
+  ConsumerState<AboutPage> createState() => _AboutPageState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('关于')),
-      body: packageInfo.when(
-        loading: () => const AppLoadingState(label: '正在读取应用信息'),
-        error: (_, __) => AppErrorState(
-          title: '应用信息读取失败',
-          message: '无法读取当前版本信息，请重试。',
-          onRetry: () => ref.invalidate(_packageInfoProvider),
-        ),
-        data: (info) => AppPageList(
-          children: <Widget>[
-            _AppHeaderCard(version: '${info.version} (${info.buildNumber})'),
-            const SizedBox(height: AppSpacing.xl),
-            AppSectionCard(
-              title: '关于',
-              children: <Widget>[
-                AppSettingTile(
-                  leading: const Icon(Icons.code_outlined),
-                  title: '查看源代码',
-                  subtitle: '在 GitHub 上查看源代码',
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _openRepository(context),
-                ),
-                AppSettingTile(
-                  leading: const Icon(Icons.gavel_outlined),
-                  title: '第三方库许可',
-                  subtitle: '查看本应用使用的开源库及许可证信息',
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => context.push(AppRoute.thirdPartyLicenses),
-                ),
-                const AppSettingTile(
-                  leading: Icon(Icons.verified_user_outlined),
-                  title: '开放源代码许可',
-                  subtitle: 'GNU Affero General Public License v3.0',
-                ),
-                AppSettingTile(
-                  leading: const Icon(Icons.link_outlined),
-                  title: '项目链接',
-                  subtitle: '复制 GitHub 仓库链接',
-                  trailing: const Icon(Icons.content_copy),
-                  onTap: () => _copyRepositoryUrl(context),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
+class _AboutPageState extends ConsumerState<AboutPage> {
+  void _handleHeaderTap() {
+    if (_easterEggUnlocked) return;
+    _headerTapCount += 1;
+    if (_headerTapCount >= 10) {
+      setState(() => _easterEggUnlocked = true);
+    }
+  }
+
+  Future<void> _openEasterEggVideo(BuildContext context) async {
+    try {
+      final launched = await launchUrl(
+        Uri.parse(_easterEggVideoUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (launched || !context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开浏览器')),
+      );
+    } on Object {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无法打开浏览器，请稍后重试')),
+      );
+    }
   }
 
   Future<void> _copyRepositoryUrl(BuildContext context) async {
@@ -103,12 +86,77 @@ class AboutPage extends ConsumerWidget {
       );
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final packageInfo = ref.watch(_packageInfoProvider);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('关于')),
+      body: packageInfo.when(
+        loading: () => const AppLoadingState(label: '正在读取应用信息'),
+        error: (_, __) => AppErrorState(
+          title: '应用信息读取失败',
+          message: '无法读取当前版本信息，请重试。',
+          onRetry: () => ref.invalidate(_packageInfoProvider),
+        ),
+        data: (info) => AppPageList(
+          children: <Widget>[
+            _AppHeaderCard(
+              version: '${info.version} (${info.buildNumber})',
+              onTitleTap: _handleHeaderTap,
+            ),
+            const SizedBox(height: AppSpacing.xl),
+            AppSectionCard(
+              title: '关于',
+              children: <Widget>[
+                AppSettingTile(
+                  leading: const Icon(Icons.code_outlined),
+                  title: '查看源代码',
+                  subtitle: '在 GitHub 上查看源代码',
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _openRepository(context),
+                ),
+                AppSettingTile(
+                  leading: const Icon(Icons.gavel_outlined),
+                  title: '第三方库许可',
+                  subtitle: '查看本应用使用的开源库及许可证信息',
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push(AppRoute.thirdPartyLicenses),
+                ),
+                const AppSettingTile(
+                  leading: Icon(Icons.verified_user_outlined),
+                  title: '开放源代码许可',
+                  subtitle: 'GNU Affero General Public License v3.0',
+                ),
+                AppSettingTile(
+                  leading: const Icon(Icons.link_outlined),
+                  title: '项目链接',
+                  subtitle: '复制 GitHub 仓库链接',
+                  trailing: const Icon(Icons.content_copy),
+                  onTap: () => _copyRepositoryUrl(context),
+                ),
+                if (_easterEggUnlocked)
+                  AppSettingTile(
+                    leading: const Icon(Icons.auto_awesome_outlined),
+                    title: '点击查看一闪女装',
+                    trailing: const Icon(Icons.open_in_new),
+                    onTap: () => _openEasterEggVideo(context),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _AppHeaderCard extends StatelessWidget {
-  const _AppHeaderCard({required this.version});
+  const _AppHeaderCard({required this.version, this.onTitleTap});
 
   final String version;
+  final VoidCallback? onTitleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -141,11 +189,15 @@ class _AppHeaderCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 18),
-                Text(
-                  'MoFox Android',
-                  textAlign: TextAlign.center,
-                  style: textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onTitleTap,
+                  child: Text(
+                    'MoFox Android',
+                    textAlign: TextAlign.center,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
