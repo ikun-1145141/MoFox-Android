@@ -962,12 +962,22 @@ class RuntimeScripts(
             # --link2symlink ptrace shim transparently rewrites link() into
             # symlink() so extraction completes correctly.
             log_info "proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
-            "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
+            if ! "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
               TAR_RC=${'$'}?
-              log_error "tar 失败 (rc=${'$'}TAR_RC)，日志末尾："
-              "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
-              exit "${'$'}TAR_RC"
-            }
+              log_warn "tar 失败 (rc=${'$'}TAR_RC)，清场后以 PROOT_NO_SECCOMP=1 重试…"
+              # 兼容层环境（纯血鸿蒙经卓易通等转译运行 Android 应用）对
+              # seccomp/ptrace 的翻译缺口会让 tracee 收到 SIGSEGV；禁用
+              # proot 的 seccomp 优化是已知缓解项。真机 Linux 环境无副作用。
+              "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH"
+              mkdir -p "${'$'}UBUNTU_PATH"
+              if ! PROOT_NO_SECCOMP=1 "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
+                TAR_RC=${'$'}?
+                log_error "tar 重试仍失败 (rc=${'$'}TAR_RC)，日志末尾："
+                "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
+                log_error "若设备为纯血鸿蒙/鸿蒙NEXT 等经兼容层运行的环境，proot 可能不被兼容层支持，请附日志反馈设备型号与运行方式"
+                exit "${'$'}TAR_RC"
+              fi
+            fi
             log_info "tar 退出 0，验证 rootfs 完整性…"
             # busybox tar may exit 0 even when extraction is incomplete (e.g.
             # malformed entries silently skipped). Without this guard the

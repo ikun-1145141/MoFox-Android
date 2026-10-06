@@ -425,6 +425,15 @@ onebot.json 的 wsClients → 8095、登录检测照旧）——只换 bot 侧"�
   不再安装（其能力本就经 adapter_api 优先调用 onebot_adapter 也能覆盖
   大部分场景，如需可后续单独装回）。
 
+### 4.11 兼容层环境（纯血鸿蒙等）的 proot 崩溃缓解
+
+有用户反馈 Huawei Nova 16（纯血鸿蒙/HarmonyOS NEXT）上 extractRootfs 稳定
+`signal 11`。该环境原生不运行 Android 应用，实际经兼容层（卓易通等）转译，
+proot 的重 ptrace/seccomp 工作负载命中兼容层系统调用翻译缺口的可能性远大于
+16KB 页内核假设。缓解：解压失败后清场并以 `PROOT_NO_SECCOMP=1` 重试一次
+（真机 Linux 环境无副作用）；仍失败则输出针对性提示（附设备型号与运行方式
+反馈）。兼容层环境整体属"尽力而为"，不承诺支持。
+
 ## 5. 验证记录（真机 Android 16 / HyperOS，无 root）
 
 ```text
