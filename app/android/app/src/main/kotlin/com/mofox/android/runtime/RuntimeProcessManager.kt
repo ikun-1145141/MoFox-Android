@@ -43,7 +43,7 @@ class RuntimeProcessManager(
         if (!installer.isBootstrapped()) error("Runtime bootstrap is not installed")
         val existing = processes[name]
         if (existing?.process?.isAlive == true) return
-        // bot 启动前把 APK 内置的插件包铺进 plugin-cache，
+        // bot 启动前把 APK 内置的插件包（短信桥接等）铺进 plugin-cache，
         // 进程脚本会接着复制进实例并写适配器配置（自愈，旧实例同样生效）。
         if (name == "bot") {
             try {

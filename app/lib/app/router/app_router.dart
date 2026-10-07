@@ -16,6 +16,7 @@ import '../../features/settings/presentation/about_page.dart';
 import '../../features/settings/presentation/appearance_page.dart';
 import '../../features/settings/presentation/keepalive_status_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
+import '../../features/settings/presentation/sms_bridge_page.dart';
 import '../../features/settings/presentation/third_party_licenses_page.dart';
 import '../../features/shell/presentation/shell_page.dart';
 import '../../features/terminal/presentation/terminal_page.dart';
@@ -39,6 +40,7 @@ abstract final class AppRoute {
   static const String appearance = '/settings/appearance';
   static const String assistantSettings = '/settings/assistant';
   static const String keepaliveStatus = '/settings/keepalive';
+  static const String smsBridge = '/settings/sms-bridge';
   static const String about = '/settings/about';
   static const String thirdPartyLicenses = '/settings/about/licenses';
   static const String wizard = '/wizard';
@@ -91,6 +93,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.keepaliveStatus,
         builder: (_, __) => const KeepaliveStatusPage(),
+      ),
+      GoRoute(
+        path: AppRoute.smsBridge,
+        builder: (_, __) => const SmsBridgePage(),
       ),
       GoRoute(
         path: AppRoute.appearance,

@@ -1,0 +1,55 @@
+{
+  "name": "mofox_sms_bridge",
+  "api_version": {
+    "event_api": "1.0.0",
+    "log_api": "1.0.0",
+    "plugin_api": "1.0.0",
+    "send_api": "1.0.0",
+    "storage_api": "1.0.0"
+  },
+  "display_name": "手机短信桥接",
+  "version": "1.0.0",
+  "description": "读取 MoFox App 安卓层写入的短信桥接文件（/root/.mofox/sms_bridge/inbox.jsonl），识别快递/取件码、验证码、账单、日程等有用信息，主动私信主人开启话题。配套 App 设置页「手机信息桥接」使用。",
+  "author": "MoFox Team",
+  "license": "AGPL-3.0",
+  "categories": [
+    "information"
+  ],
+  "tags": [
+    "sms",
+    "bridge",
+    "proactive",
+    "express",
+    "mofox-android"
+  ],
+  "dependencies": {
+    "plugins": [],
+    "components": []
+  },
+  "include": [
+    {
+      "component_type": "config",
+      "component_name": "config",
+      "dependencies": []
+    },
+    {
+      "component_type": "action",
+      "component_name": "sms_status",
+      "dependencies": []
+    },
+    {
+      "component_type": "action",
+      "component_name": "sms_poll_now",
+      "dependencies": []
+    },
+    {
+      "component_type": "action",
+      "component_name": "sms_test",
+      "dependencies": []
+    }
+  ],
+  "entry_point": "plugin.py",
+  "min_core_version": "1.0.0",
+  "python_dependencies": [],
+  "dependencies_required": true
+}

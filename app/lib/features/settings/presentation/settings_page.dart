@@ -153,6 +153,19 @@ class SettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               AppSectionCard(
+                title: '手机信息桥接',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.sms_outlined),
+                    title: '短信桥接',
+                    subtitle: '快递取件码、账单、行程等短信转发给 Bot，主动提醒你',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.smsBridge),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
                 title: '保活体检',
                 children: <Widget>[
                   AppSettingTile(

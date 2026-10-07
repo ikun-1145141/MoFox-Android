@@ -66,14 +66,16 @@ class RootfsInstaller(private val context: Context) {
      * plugins/ 目录——每次启动都执行，旧实例无需重装即可获得插件，升级
      * APK 即可升级插件。文件不存在时静默跳过（兼容未打包的构建）。
      *
-     * 当前清单为空：QQ 适配器使用 bot 仓库自带的 onebot_adapter（无需
-     * 分发）；本函数保留铺发机制供未来插件使用。
+     * 当前清单仅含短信桥插件：QQ 适配器使用 bot 仓库自带的 onebot_adapter
+     * （无需分发）；本函数保留铺发机制供未来插件使用。
      */
     fun stageBundledPlugins() {
         ensureBaseDirectories()
         val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
         cacheDir.mkdirs()
-        val names = listOf<String>()
+        val names = listOf(
+            "mofox_sms_bridge-1.0.0.mfp",
+        )
         for (name in names) {
             try {
                 context.assets.open("flutter_assets/assets/plugins/$name").use { input ->

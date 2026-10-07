@@ -18,6 +18,9 @@
     <!-- 重启后自启（可选） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- 短信桥接：接收系统短信广播，写入 rootfs 供 Bot 插件识别（运行时权限，默认关闭） -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
     <application
         android:label="MoFox"
         android:name="${applicationName}"
@@ -63,6 +66,18 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 短信桥接收器：SMS_RECEIVED 是系统有序广播，BROADCAST_SMS 为系统级
+             广播权限（仅系统/电话进程持有），第三方应用无法向其伪造短信事件 -->
+        <receiver
+            android:name=".sms.SmsBridgeReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter android:priority="1">
+                <action android:name="android.provider.Telephony.Sms.Intents.SMS_RECEIVED_ACTION" />
             </intent-filter>
         </receiver>
 
