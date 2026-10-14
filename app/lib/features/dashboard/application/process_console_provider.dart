@@ -531,10 +531,12 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   Map<String, String> _botArgs(Instance instance) => <String, String>{
         'instanceId': instance.id,
         'repoPath': instance.repoPath,
-        // bot 进程脚本用这些写 snowluma_adapter 的 config.toml（自愈块）。
+        // bot 进程脚本用这些写适配器 config.toml（自愈块）并把核心
+        // 分支对齐到实例的 channel（修复 channel 被克隆忽略的历史 bug）。
         'botQq': instance.botQq,
         'botNickname': instance.botNickname,
         'wsPort': instance.wsPort.toString(),
+        'channel': instance.channel,
       };
 
   Map<String, String> _snowlumaArgs(Instance instance) => <String, String>{

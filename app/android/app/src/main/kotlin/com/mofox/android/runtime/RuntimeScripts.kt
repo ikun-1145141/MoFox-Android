@@ -51,6 +51,11 @@ class RuntimeScripts(
                 val botQq = args["botQq"].orEmpty()
                 val botNickname = args["botNickname"].orEmpty()
                 val wsPort = args["wsPort"] ?: "8095"
+                // 实例核心分支：跟随向导选择（main/dev），白名单防注入。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 // OneBot 适配器自愈：bot 侧适配器使用 bot 仓库自带的
                 // onebot_adapter（写入配置：reverse ws，等 SnowLuma 作为
                 // ws 客户端连入 wsPort——SnowLuma 协议端链路不变）。
@@ -68,12 +73,15 @@ class RuntimeScripts(
                 # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
-                # bot 核心自愈：跟随上游 dev 分支（插件生态与 WebUI 插件
-                # 依赖 dev 核心的新 API）。
+                # bot 核心自愈：跟随实例 channel（历史 bug：cloneRepo
+                # 从不读取 channel，选 dev 的实例也被克隆成 main，导致
+                # WebUI/市场插件因核心版本被拒载。插件生态依赖 dev 核心
+                # 新 API，建议实例使用 dev）。
                 cd ${shellQuote(repoPath)}
                 if [ -d .git ]; then
-                  git fetch origin dev --depth=1 >/dev/null 2>&1 || true
-                  git checkout -f -B dev FETCH_HEAD >/dev/null 2>&1 || true
+                  git fetch origin $channel --depth=1 >/dev/null 2>&1 || true
+                  git checkout -f -B $channel FETCH_HEAD >/dev/null 2>&1 || true
+                  echo "[bot] bot 核心分支: $channel"
                 fi
                 mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
                 # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
@@ -417,6 +425,13 @@ class RuntimeScripts(
                 val repoUrl = args["repoUrl"] ?: "https://github.com/MoFox-Studio/Neo-MoFox.git"
                 val installDir = args["installDir"] ?: "/root/instances/default"
                 val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
+                // 分支白名单：channel 进 shell 命令，只允许 main/dev（历史
+                // bug：向导传了 channel 但这里从不读取，选 dev 也会克隆成
+                // 默认分支 main，导致插件/WebUI 因核心版本被拒载）。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 loginBody(
                     """
                     mkdir -p ${shellQuote(installDir)}
@@ -425,7 +440,8 @@ class RuntimeScripts(
                       log_info "仓库已存在，拉取最新代码…"
                       cd ${shellQuote(repoPath)} && git pull --ff-only || true
                     else
-                      git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
+                      log_info "克隆 $channel 分支…"
+                      git clone --depth=1 -b $channel ${shellQuote(repoUrl)} Neo-MoFox
                       cd ${shellQuote(repoPath)}
                     fi
                     """.trimIndent(),
