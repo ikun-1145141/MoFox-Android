@@ -15,6 +15,7 @@ class SnowlumaQrSheet extends ConsumerStatefulWidget {
     this.onCancel,
     this.onClose,
     this.onQuickLogin,
+    this.manual = false,
     super.key,
   });
 
@@ -27,6 +28,10 @@ class SnowlumaQrSheet extends ConsumerStatefulWidget {
 
   /// 快捷登录：向虚拟屏幕的 QQ 窗口发送回车。
   final VoidCallback? onQuickLogin;
+
+  /// 手动登录面板模式：展示实时远程画面而非等待扫码，提示用户可触屏
+  /// 退出当前账号后重新扫码登录其他账号。
+  final bool manual;
 
   @override
   ConsumerState<SnowlumaQrSheet> createState() => _SnowlumaQrSheetState();
@@ -44,6 +49,7 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
     final onCancel = widget.onCancel;
     final onClose = widget.onClose;
     final onQuickLogin = widget.onQuickLogin;
+    final manual = widget.manual;
     // 实时跟随 provider：SnowLuma 覆盖 screen.png 后 payload 版本号变化，
     // 这里重建时 _QrFileImage 通过 cacheKey 变化重新读文件，无需关闭重开弹窗。
     final livePayload = ref.watch(
@@ -136,10 +142,12 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
                               ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      const AppStatusBadge(
-                        label: '等待扫描',
+                      AppStatusBadge(
+                        label: manual ? '远程画面' : '等待扫描',
                         tone: AppStatusTone.info,
-                        icon: Icons.hourglass_top,
+                        icon: manual
+                            ? Icons.travel_explore
+                            : Icons.hourglass_top,
                       ),
                       if (imagePath != null) ...<Widget>[
                         const SizedBox(height: AppSpacing.md),

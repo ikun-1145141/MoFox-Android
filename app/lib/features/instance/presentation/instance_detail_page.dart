@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +37,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
   int _logTabIndex = 0;
   TabController? _observedTabController;
 
+  /// 手动登录面板的截图周期刷新（触屏操作虚拟屏幕后画面跟随）。
+  Timer? _manualScreenTimer;
+
   Instance get instance => widget.instance;
 
   @override
@@ -52,6 +57,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
 
   @override
   void dispose() {
+    _manualScreenTimer?.cancel();
     _observedTabController?.removeListener(_handleTabChange);
     super.dispose();
   }
@@ -89,8 +95,48 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
         qrPayload != null &&
         !_loginCancelled &&
         !_panelDismissed;
+    // 手动面板：SnowLuma 运行中点「SnowLuma」按钮调出，用于重新扫码 /
+    // 切换 QQ 账号。payload 由 provider 周期抓取的虚拟屏幕截图提供。
+    final manualPanel = console.snowlumaManualPanel && snowlumaRunning;
+    final manualPayload = console.snowlumaManualPayload;
+    final showManualPanel = manualPanel && manualPayload != null;
     final showQrRestorePill =
-        snowlumaRunning && qrPayload != null && _panelDismissed;
+        snowlumaRunning &&
+            qrPayload != null &&
+            _panelDismissed &&
+            !manualPanel;
+    // 手动面板打开期间每 4 秒刷新一次虚拟屏幕截图（跟随触屏操作）；
+    // SnowLuma 停止则自动关闭面板。
+    ref.listen(
+      processConsoleProvider.select(
+        (s) => (s.snowlumaManualPanel, s.snowlumaStatusFor(instance.id)),
+      ),
+      (previous, next) {
+        final wasOpen = previous?.$1 == true &&
+            previous?.$2 == 'running';
+        final isOpen = next.$1 == true && next.$2 == 'running';
+        if (isOpen && !wasOpen) {
+          _manualScreenTimer?.cancel();
+          _manualScreenTimer = Timer.periodic(
+            const Duration(seconds: 4),
+            (_) {
+              final consoleNow = ref.read(processConsoleProvider);
+              if (consoleNow.snowlumaStatusFor(instance.id) != 'running' ||
+                  !consoleNow.snowlumaManualPanel) {
+                _manualScreenTimer?.cancel();
+                ref
+                    .read(processConsoleProvider.notifier)
+                    .closeManualLoginPanel();
+                return;
+              }
+              ref.read(processConsoleProvider.notifier).refreshManualScreen();
+            },
+          );
+        } else if (!isOpen) {
+          _manualScreenTimer?.cancel();
+        }
+      },
+    );
 
     return Stack(
       children: <Widget>[
@@ -250,14 +296,20 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                             child: OutlinedButton.icon(
                               onPressed: !installed ||
                                       console.isBusy ||
-                                      anotherInstanceActive ||
-                                      snowlumaStatus == 'running'
+                                      anotherInstanceActive
                                   ? null
                                   : () {
                                       _loginCancelled = false;
-                                      ref
-                                          .read(processConsoleProvider.notifier)
-                                          .startSnowluma(instance);
+                                      final notifier = ref.read(
+                                        processConsoleProvider.notifier,
+                                      );
+                                      if (snowlumaStatus == 'running') {
+                                        // 已在运行：调出登录面板，可触屏操作
+                                        // 退出当前账号 / 扫码登录其他账号。
+                                        notifier.openManualLoginPanel();
+                                      } else {
+                                        notifier.startSnowluma(instance);
+                                      }
                                     },
                               icon: const Icon(Icons.qr_code_2),
                               label: const Text('SnowLuma'),
@@ -388,6 +440,20 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
             payload: qrPayload,
             onCancel: _cancelLogin,
             onDismiss: () => _setPanelDismissed(true),
+            onQuickLogin: () => ref
+                .read(processConsoleProvider.notifier)
+                .quickLoginQq(),
+          ),
+        if (showManualPanel)
+          _QrLoginOverlay(
+            payload: manualPayload,
+            manual: true,
+            onCancel: () {
+              ref.read(processConsoleProvider.notifier).closeManualLoginPanel();
+            },
+            onDismiss: () {
+              ref.read(processConsoleProvider.notifier).closeManualLoginPanel();
+            },
             onQuickLogin: () => ref
                 .read(processConsoleProvider.notifier)
                 .quickLoginQq(),
@@ -889,12 +955,16 @@ class _QrLoginOverlay extends StatelessWidget {
     required this.onCancel,
     required this.onDismiss,
     required this.onQuickLogin,
+    this.manual = false,
   });
 
   final String payload;
   final VoidCallback onCancel;
   final VoidCallback onDismiss;
   final VoidCallback onQuickLogin;
+
+  /// 手动登录面板模式（见 SnowlumaQrSheet.manual）。
+  final bool manual;
 
   @override
   Widget build(BuildContext context) {
@@ -922,6 +992,7 @@ class _QrLoginOverlay extends StatelessWidget {
               ),
               child: SnowlumaQrSheet(
                 payload: payload,
+                manual: manual,
                 onCancel: onCancel,
                 onClose: onDismiss,
                 onQuickLogin: onQuickLogin,

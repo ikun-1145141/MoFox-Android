@@ -608,6 +608,20 @@ class RuntimeScripts(
                     """.trimIndent(),
                 )
             }
+            // 手动登录面板：抓一张虚拟屏幕截图。install 通道会把
+            // MOFOX_QR_IMAGE=<guest_path> 翻译为 MOFOX_QR_PAYLOAD=file:<host_path>
+            // 返回给 Dart（与扫码流程同一机制）。
+            "snowlumaScreenshot" -> loginBody(
+                """
+                mkdir -p /root/snowluma/cache
+                if DISPLAY=:1 ffmpeg -y -loglevel error -f x11grab -video_size 800x600 -i :1 -frames:v 1 /root/snowluma/cache/screen.png 2>/dev/null; then
+                  echo "MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png"
+                else
+                  log_error "截屏失败（Xvfb 未就绪或已停止）"
+                  exit 33
+                fi
+                """.trimIndent(),
+            )
             "registerInstance" -> {
                 val instanceName = args["instanceName"].orEmpty()
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"

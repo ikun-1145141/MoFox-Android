@@ -17,6 +17,8 @@ class ProcessConsoleState {
     this.errorMessage,
     this.snowlumaQrPayload,
     this.snowlumaWebuiUrl,
+    this.snowlumaManualPanel = false,
+    this.snowlumaManualPayload,
   });
 
   factory ProcessConsoleState.initial() => const ProcessConsoleState(
@@ -43,6 +45,13 @@ class ProcessConsoleState {
   /// 形如 `http://127.0.0.1:5099/?token=xxx`。
   final String? snowlumaWebuiUrl;
 
+  /// 手动打开的登录面板（SnowLuma 运行中点击「SnowLuma」按钮触发）。
+  /// 用于已登录后重新扫码 / 切换 QQ 账号；与自动弹出的扫码流程互不影响。
+  final bool snowlumaManualPanel;
+
+  /// 手动面板的实时虚拟屏幕截图（file:hostPath#version）。
+  final String? snowlumaManualPayload;
+
   bool get isBusy => busyAction != null;
   String get botStatus => status['bot'] ?? 'stopped';
   String get snowlumaStatus => status['snowluma'] ?? 'stopped';
@@ -68,6 +77,8 @@ class ProcessConsoleState {
     Object? errorMessage = _sentinel,
     Object? snowlumaQrPayload = _sentinel,
     Object? snowlumaWebuiUrl = _sentinel,
+    bool? snowlumaManualPanel,
+    Object? snowlumaManualPayload = _sentinel,
   }) =>
       ProcessConsoleState(
         status: status ?? this.status,
@@ -88,6 +99,10 @@ class ProcessConsoleState {
         snowlumaWebuiUrl: identical(snowlumaWebuiUrl, _sentinel)
             ? this.snowlumaWebuiUrl
             : snowlumaWebuiUrl as String?,
+        snowlumaManualPanel: snowlumaManualPanel ?? this.snowlumaManualPanel,
+        snowlumaManualPayload: identical(snowlumaManualPayload, _sentinel)
+            ? this.snowlumaManualPayload
+            : snowlumaManualPayload as String?,
       );
 }
 
@@ -456,6 +471,39 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
       _appendSnowlumaLog('[touch] 点击异常: $error');
     }
     unawaited(refreshStatus());
+  }
+
+  /// 手动打开登录面板（SnowLuma 运行中）：抓取一张虚拟屏幕截图用于展示。
+  Future<void> openManualLoginPanel() async {
+    state = state.copyWith(snowlumaManualPanel: true);
+    await refreshManualScreen();
+  }
+
+  /// 关闭手动登录面板。
+  void closeManualLoginPanel() {
+    state = state.copyWith(
+      snowlumaManualPanel: false,
+      snowlumaManualPayload: null,
+    );
+  }
+
+  /// 抓取一张虚拟屏幕截图并更新手动面板画面。
+  Future<void> refreshManualScreen() async {
+    final runtime = ref.read(runtimeBridgeProvider);
+    try {
+      final result = await runtime.runInstallTask('snowlumaScreenshot');
+      final payload = result.qrPayload;
+      if (result.success && payload != null && payload.isNotEmpty) {
+        final version = DateTime.now().microsecondsSinceEpoch;
+        state = state.copyWith(
+          snowlumaManualPayload: '$payload#$version',
+        );
+      } else {
+        _appendSnowlumaLog('[control] 截屏失败: ${result.error}');
+      }
+    } on Object catch (error) {
+      _appendSnowlumaLog('[control] 截屏异常: $error');
+    }
   }
 
   void _onProcessEvent(ProcessEvent event) {
