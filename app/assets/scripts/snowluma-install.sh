@@ -263,17 +263,35 @@ function install_node() {
     log "目标 Node.js 版本: ${node_version} (${node_arch})"
 
     local tarball="${node_version}-linux-${node_arch}.tar.xz"
+    # 已有包先做完整性校验：下载中断留下的截断包会让重试永远解压同一个坏包
+    if [ -f "${tarball}" ]; then
+        if xz -t "${tarball}" 2>/dev/null; then
+            log "检测到完整的 Node.js 安装包, 跳过下载..."
+        else
+            log "警告: 已有的 Node.js 安装包不完整, 删除后重新下载..."
+            rm -f "${tarball}"
+        fi
+    fi
     if [ ! -f "${tarball}" ]; then
         log "正在从 npmmirror 下载 Node.js..."
-        if ! curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}"; then
+        if ! curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}.tmp"; then
             log "npmmirror 下载失败，尝试 nodejs.org..."
-            curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}" || fail "Node.js 下载失败 (curl 退出码: $?)"
+            curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}.tmp" || fail "Node.js 下载失败 (curl 退出码: $?)"
         fi
+        # xz 整流校验通过才落位：截断包不进主文件名
+        if ! xz -t "${tarball}.tmp" 2>/dev/null; then
+            rm -f "${tarball}.tmp"
+            fail "Node.js 安装包下载不完整 (xz 校验失败)，请点重试重新下载"
+        fi
+        mv "${tarball}.tmp" "${tarball}"
     fi
 
     log "正在解压 Node.js 到 /opt/node ..."
     mkdir -p /opt/node
-    tar xJf "${tarball}" -C /opt/node --strip-components=1 || fail "Node.js 解压失败"
+    tar xJf "${tarball}" -C /opt/node --strip-components=1 || {
+        rm -f "${tarball}"
+        fail "Node.js 解压失败 (安装包已删除, 重试将重新下载)"
+    }
     rm -f "${tarball}"
 
     ln -sf /opt/node/bin/node /usr/local/bin/node
@@ -364,7 +382,10 @@ function download_snowluma() {
     fi
 
     log "正在验证 ${default_file}..."
-    tar tzf "${default_file}" >/dev/null 2>&1 || fail "文件验证失败, 压缩包可能损坏"
+    tar tzf "${default_file}" >/dev/null 2>&1 || {
+        rm -f "${default_file}"
+        fail "文件验证失败, 压缩包可能损坏 (已删除, 重试将重新下载)"
+    }
 
     log "正在解压 ${default_file}..."
     tar xzf "${default_file}" -C ./SnowLuma || fail "SnowLuma 解压失败"

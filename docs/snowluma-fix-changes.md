@@ -425,6 +425,30 @@ onebot.json 的 wsClients → 8095、登录检测照旧）——只换 bot 侧"�
   不再安装（其能力本就经 adapter_api 优先调用 onebot_adapter 也能覆盖
   大部分场景，如需可后续单独装回）。
 
+### 4.11 兼容层环境（纯血鸿蒙等）的 proot 崩溃缓解
+
+有用户反馈 Huawei Nova 16（纯血鸿蒙/HarmonyOS NEXT）上 extractRootfs 稳定
+`signal 11`。该环境原生不运行 Android 应用，实际经兼容层（卓易通等）转译，
+proot 的重 ptrace/seccomp 工作负载命中兼容层系统调用翻译缺口的可能性远大于
+16KB 页内核假设。缓解：解压失败后清场并以 `PROOT_NO_SECCOMP=1` 重试一次
+（真机 Linux 环境无副作用）；仍失败则输出针对性提示（附设备型号与运行方式
+反馈）。兼容层环境整体属"尽力而为"，不承诺支持。
+
+### 4.12 移除短信桥功能；bot 核心恢复跟随 dev 分支
+
+- **短信桥功能整体移除**（应用户要求）：删除 App 侧短信网关（权限、
+  广播接收器、PlatformGateway 方法、设置页）、插件分发链（.mfp 资产、
+  plugin-cache 铺发、bot 自愈复制），bot 自愈增加对既有实例
+  `mofox_sms_bridge-*.mfp` 的遗留清理；插件源码 plugins-src 与文档一并移除。
+- **bot 核心恢复跟随 dev 分支**：此前"自愈不管理分支"的方案被实测证伪——
+  插件市场生态与 WebUI 插件均依赖 dev 核心新 API：
+  - main 1.2.0 拒载 WebUI 1.1+（需核心 1.3.0-alpha.0）→ WebUI 按钮打开
+    `127.0.0.1:8000/webui/frontend` 返回 404（路由未挂载）；
+  - main 1.2.0 缺 `create_llm_request` 的 `stream_id` 参数 → 市场插件
+    Chatter 全部报错。
+  恢复每次启动 fetch dev + checkout（config/plugins/data 为未跟踪文件，
+  不影响用户数据）。
+
 ## 5. 验证记录（真机 Android 16 / HyperOS，无 root）
 
 ```text

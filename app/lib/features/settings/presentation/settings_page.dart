@@ -153,6 +153,12 @@ class SettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               AppSectionCard(
+                title: '手机信息桥接',
+                children: <Widget>[
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
                 title: '保活体检',
                 children: <Widget>[
                   AppSettingTile(

@@ -51,32 +51,42 @@ class RuntimeScripts(
                 val botQq = args["botQq"].orEmpty()
                 val botNickname = args["botNickname"].orEmpty()
                 val wsPort = args["wsPort"] ?: "8095"
+                // 实例核心分支：跟随向导选择（main/dev），白名单防注入。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 // OneBot 适配器自愈：bot 侧适配器使用 bot 仓库自带的
                 // onebot_adapter（写入配置：reverse ws，等 SnowLuma 作为
                 // ws 客户端连入 wsPort——SnowLuma 协议端链路不变）。
                 // 历史上曾随 APK 分发 snowluma_adapter/snowluma_extension
                 // 并停用 onebot_adapter，现全部反转：清理遗留 .mfp 分发
-                // 包、停用其残留配置。不管理 bot 仓库分支（插件市场生态
-                // 常依赖 dev 分支核心的新 API，实例分支由其已装插件决定）。
+                // 包、停用其残留配置。
+                // bot 核心跟随上游 dev 分支：插件市场生态与 WebUI 插件均
+                // 依赖 dev 核心的新 API（实测 main 1.2.0 会拒载 WebUI
+                // 1.1+ 并使市场插件报 create_llm_request stream_id 错误）。
+                // config/plugins/data 均为未跟踪文件，force checkout 不影响
+                // 用户数据。
                 // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
                 // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
                 val cmd = """
                 # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
-                # 注意：不管理 bot 仓库分支（既不强推 dev 也不迁回 main）——
-                # 插件市场生态的插件常依赖 dev 分支核心的新 API（如
-                # create_llm_request 的 stream_id 参数），实例停留在哪个分支
-                # 由其已装插件决定，这里保持现状。
-                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
-                # 短信桥接插件（独立于 SnowLuma，单独就位以免 snowluma 缺失时被跳过）
-                if ls /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp >/dev/null 2>&1; then
-                  cp -f /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '\n' ' ')"
+                # bot 核心自愈：跟随实例 channel（历史 bug：cloneRepo
+                # 从不读取 channel，选 dev 的实例也被克隆成 main，导致
+                # WebUI/市场插件因核心版本被拒载。插件生态依赖 dev 核心
+                # 新 API，建议实例使用 dev）。
+                cd ${shellQuote(repoPath)}
+                if [ -d .git ]; then
+                  git fetch origin $channel --depth=1 >/dev/null 2>&1 || true
+                  git checkout -f -B $channel FETCH_HEAD >/dev/null 2>&1 || true
+                  echo "[bot] bot 核心分支: $channel"
                 fi
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
                 # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
                 # 以及更早的跳板插件分发包（跳板已整合进 App 本体）。
-                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
+                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp "${'$'}PLUGINS_DIR/mofox_sms_bridge-"*.mfp 2>/dev/null || true
                 cat > "${'$'}OB_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true
@@ -415,6 +425,13 @@ class RuntimeScripts(
                 val repoUrl = args["repoUrl"] ?: "https://github.com/MoFox-Studio/Neo-MoFox.git"
                 val installDir = args["installDir"] ?: "/root/instances/default"
                 val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
+                // 分支白名单：channel 进 shell 命令，只允许 main/dev（历史
+                // bug：向导传了 channel 但这里从不读取，选 dev 也会克隆成
+                // 默认分支 main，导致插件/WebUI 因核心版本被拒载）。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 loginBody(
                     """
                     mkdir -p ${shellQuote(installDir)}
@@ -423,7 +440,8 @@ class RuntimeScripts(
                       log_info "仓库已存在，拉取最新代码…"
                       cd ${shellQuote(repoPath)} && git pull --ff-only || true
                     else
-                      git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
+                      log_info "克隆 $channel 分支…"
+                      git clone --depth=1 -b $channel ${shellQuote(repoUrl)} Neo-MoFox
                       cd ${shellQuote(repoPath)}
                     fi
                     """.trimIndent(),
@@ -590,6 +608,20 @@ class RuntimeScripts(
                     """.trimIndent(),
                 )
             }
+            // 手动登录面板：抓一张虚拟屏幕截图。install 通道会把
+            // MOFOX_QR_IMAGE=<guest_path> 翻译为 MOFOX_QR_PAYLOAD=file:<host_path>
+            // 返回给 Dart（与扫码流程同一机制）。
+            "snowlumaScreenshot" -> loginBody(
+                """
+                mkdir -p /root/snowluma/cache
+                if DISPLAY=:1 ffmpeg -y -loglevel error -f x11grab -video_size 800x600 -i :1 -frames:v 1 /root/snowluma/cache/screen.png 2>/dev/null; then
+                  echo "MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png"
+                else
+                  log_error "截屏失败（Xvfb 未就绪或已停止）"
+                  exit 33
+                fi
+                """.trimIndent(),
+            )
             "registerInstance" -> {
                 val instanceName = args["instanceName"].orEmpty()
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
@@ -962,12 +994,22 @@ class RuntimeScripts(
             # --link2symlink ptrace shim transparently rewrites link() into
             # symlink() so extraction completes correctly.
             log_info "proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
-            "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
+            if ! "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
               TAR_RC=${'$'}?
-              log_error "tar 失败 (rc=${'$'}TAR_RC)，日志末尾："
-              "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
-              exit "${'$'}TAR_RC"
-            }
+              log_warn "tar 失败 (rc=${'$'}TAR_RC)，清场后以 PROOT_NO_SECCOMP=1 重试…"
+              # 兼容层环境（纯血鸿蒙经卓易通等转译运行 Android 应用）对
+              # seccomp/ptrace 的翻译缺口会让 tracee 收到 SIGSEGV；禁用
+              # proot 的 seccomp 优化是已知缓解项。真机 Linux 环境无副作用。
+              "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH"
+              mkdir -p "${'$'}UBUNTU_PATH"
+              if ! PROOT_NO_SECCOMP=1 "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
+                TAR_RC=${'$'}?
+                log_error "tar 重试仍失败 (rc=${'$'}TAR_RC)，日志末尾："
+                "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
+                log_error "若设备为纯血鸿蒙/鸿蒙NEXT 等经兼容层运行的环境，proot 可能不被兼容层支持，请附日志反馈设备型号与运行方式"
+                exit "${'$'}TAR_RC"
+              fi
+            fi
             log_info "tar 退出 0，验证 rootfs 完整性…"
             # busybox tar may exit 0 even when extraction is incomplete (e.g.
             # malformed entries silently skipped). Without this guard the

@@ -54,6 +54,7 @@ class PlatformGateway {
       _channel.invokeMethod<void>('setKeepScreenOn', <String, Object>{
         'enabled': enabled,
       });
+
 }
 
 final platformGatewayProvider =
@@ -84,3 +85,4 @@ class KeepaliveStatus {
   final bool bootReceiverDeclared;
   final bool vendorAutostartInspectable;
 }
+
