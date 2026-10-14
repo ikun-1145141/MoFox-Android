@@ -176,7 +176,9 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
                       ],
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        copyableLoginInfo == null
+                        manual
+                            ? '开启「触屏操控」后可直接点按画面操作虚拟屏幕：在已登录的 QQ 里退出当前账号，此处会出现新的登录窗口，扫码或点击登录即可切换账号。'
+                            : copyableLoginInfo == null
                             ? '当前二维码由 SnowLuma 以图片生成，无法提取可复制的登录信息。可使用另一台设备扫码，或请可信任的人协助。'
                             : '无法使用视觉扫码时，可复制一次性登录信息到受信任的 QQ 登录流程。复制内容可能包含敏感凭据，请勿分享。',
                         textAlign: TextAlign.center,
