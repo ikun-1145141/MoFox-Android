@@ -56,27 +56,29 @@ class RuntimeScripts(
                 // ws 客户端连入 wsPort——SnowLuma 协议端链路不变）。
                 // 历史上曾随 APK 分发 snowluma_adapter/snowluma_extension
                 // 并停用 onebot_adapter，现全部反转：清理遗留 .mfp 分发
-                // 包、停用其残留配置。不管理 bot 仓库分支（插件市场生态
-                // 常依赖 dev 分支核心的新 API，实例分支由其已装插件决定）。
+                // 包、停用其残留配置。
+                // bot 核心跟随上游 dev 分支：插件市场生态与 WebUI 插件均
+                // 依赖 dev 核心的新 API（实测 main 1.2.0 会拒载 WebUI
+                // 1.1+ 并使市场插件报 create_llm_request stream_id 错误）。
+                // config/plugins/data 均为未跟踪文件，force checkout 不影响
+                // 用户数据。
                 // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
                 // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
                 val cmd = """
                 # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
-                # 注意：不管理 bot 仓库分支（既不强推 dev 也不迁回 main）——
-                # 插件市场生态的插件常依赖 dev 分支核心的新 API（如
-                # create_llm_request 的 stream_id 参数），实例停留在哪个分支
-                # 由其已装插件决定，这里保持现状。
-                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
-                # 短信桥接插件（独立于 SnowLuma，单独就位以免 snowluma 缺失时被跳过）
-                if ls /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp >/dev/null 2>&1; then
-                  cp -f /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '\n' ' ')"
+                # bot 核心自愈：跟随上游 dev 分支（插件生态与 WebUI 插件
+                # 依赖 dev 核心的新 API）。
+                cd ${shellQuote(repoPath)}
+                if [ -d .git ]; then
+                  git fetch origin dev --depth=1 >/dev/null 2>&1 || true
+                  git checkout -f -B dev FETCH_HEAD >/dev/null 2>&1 || true
                 fi
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
                 # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
                 # 以及更早的跳板插件分发包（跳板已整合进 App 本体）。
-                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
+                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp "${'$'}PLUGINS_DIR/mofox_sms_bridge-"*.mfp 2>/dev/null || true
                 cat > "${'$'}OB_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true

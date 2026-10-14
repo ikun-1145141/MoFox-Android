@@ -3,7 +3,6 @@ package com.mofox.android.platform
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.Manifest
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
@@ -11,7 +10,6 @@ import android.view.WindowManager
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.mofox.android.keepalive.MoFoxForegroundService
-import com.mofox.android.sms.SmsBridge
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
@@ -98,16 +96,6 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
                         ctx.stopService(Intent(ctx, MoFoxForegroundService::class.java))
                         result.success(null)
                     }
-                    "getSmsBridgeStatus" -> {
-                        result.success(getSmsBridgeStatus(activity))
-                    }
-                    "setSmsBridgeEnabled" -> {
-                        SmsBridge.setEnabled(ctx, call.argument<Boolean>("enabled") == true)
-                        result.success(null)
-                    }
-                    "sendSmsBridgeTest" -> {
-                        result.success(SmsBridge.appendTestEvent(ctx))
-                    }
                     else -> result.notImplemented()
                 }
             }
@@ -185,23 +173,6 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
             "foregroundServiceEnabled" to MoFoxForegroundService.isKeepaliveEnabled(activity.applicationContext),
             "bootReceiverDeclared" to true,
             "vendorAutostartInspectable" to false,
-        )
-    }
-
-    private fun getSmsBridgeStatus(activity: Activity): Map<String, Any> {
-        val ctx = activity.applicationContext
-        val smsGranted =
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECEIVE_SMS) ==
-                android.content.pm.PackageManager.PERMISSION_GRANTED
-        val rootfsReady = SmsBridge.isRootfsReady(ctx)
-        val inbox = SmsBridge.inboxFile(ctx)
-        return mapOf(
-            "enabled" to SmsBridge.isEnabled(ctx),
-            "smsPermissionGranted" to smsGranted,
-            "rootfsReady" to rootfsReady,
-            "bridgeFileExists" to inbox.isFile,
-            "bridgeFileSize" to SmsBridge.inboxSize(ctx),
-            "usable" to (smsGranted && rootfsReady),
         )
     }
 

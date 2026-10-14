@@ -73,9 +73,7 @@ class RootfsInstaller(private val context: Context) {
         ensureBaseDirectories()
         val cacheDir = File(ubuntuPath, "root/.mofox/plugin-cache")
         cacheDir.mkdirs()
-        val names = listOf(
-            "mofox_sms_bridge-1.0.0.mfp",
-        )
+        val names = listOf<String>()
         for (name in names) {
             try {
                 context.assets.open("flutter_assets/assets/plugins/$name").use { input ->
