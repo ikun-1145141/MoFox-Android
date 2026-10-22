@@ -27,7 +27,7 @@ SECRETS_DIR="$INSTALL_BASE_DIR/secrets"
 WEBUI_PASSWORD_FILE="$SECRETS_DIR/webui_password"
 # SnowLuma 发布仓库与版本回退
 SNOWLUMA_REPO="SnowLuma/SnowLuma"
-SNOWLUMA_FALLBACK_TAG="v1.14.20"
+SNOWLUMA_FALLBACK_TAG="v2.1.1"
 # QQ Linux 官方包归档镜像（Rodert/qq-versions），官方 CDN 403/404 时回退。
 # 与 installSnowluma 幂等检查配合：目标版本跟随实际安装的版本，避免每次全量重装。
 QQ_MIRROR_VERSION="3.2.32-260812"
@@ -242,7 +242,12 @@ function node_arch_suffix() {
 }
 
 function node_already_installed() {
-    command -v node >/dev/null 2>&1 && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null
+    # v2.1.1 Lite 基线：^24.22.1 || >=26.12.1（旧 24.x 会被 launcher 硬拒）
+    command -v node >/dev/null 2>&1 && node -e '
+const p = process.versions.node.split(".").map(Number);
+const ok = (p[0] === 24 && (p[1] > 22 || (p[1] === 22 && p[2] >= 1))) || p[0] >= 26;
+process.exit(ok ? 0 : 1);
+' 2>/dev/null
 }
 
 function install_node() {
@@ -712,11 +717,25 @@ log "=== SnowLuma 本地安装脚本启动 ==="
 log "安装目录: ${INSTALL_BASE_DIR}"
 
 get_system_arch
-install_dependency
-install_node
-download_snowluma
-check_linuxqq
-install_snowluma_app
+# 幂等与升级判定（本脚本是唯一判定点）：
+# - 标记存在 + 核心文件齐全 + node 达标 → 秒回，避免每次启动重装；
+# - 无标记（存量设备首次跑到本脚本）→ 完整安装并落标记，顺带升级到
+#   当前最新 release（fetch_snowluma_release 优先取 latest，离线回退 pin）。
+# 标记记录实际安装的解析版本，仅作存在性判据、不做版本比较：升级由
+# "删除标记重装"触发；标记存在还能在上游发坏版本时保护存量设备。
+SL_VERSION_MARKER="$INSTALL_BASE_DIR/.sl_version"
+if [ -s "${APP_DIR}/index.mjs" ] && [ -s "${APP_DIR}/launcher.sh" ] &&
+   [ -f "${SL_VERSION_MARKER}" ] && node_already_installed; then
+    log "SnowLuma 已安装 ($(cat "${SL_VERSION_MARKER}" 2>/dev/null)), 跳过重装。"
+else
+    install_dependency
+    install_node
+    download_snowluma
+    check_linuxqq
+    rm -f "${SL_VERSION_MARKER}"
+    install_snowluma_app
+    echo "${snowluma_tag:-${SNOWLUMA_FALLBACK_TAG}}" > "${SL_VERSION_MARKER}"
+fi
 freeze_qq_hot_update
 ensure_webui_password
 clean
