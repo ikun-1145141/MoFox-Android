@@ -70,6 +70,15 @@ class RuntimeScripts(
                 // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
                 // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
                 val cmd = """
+                # --- 清场：杀掉本实例上次运行遗留的 bot 进程 ---
+                # uv run python 的 cmdline 不含实例路径，pgrep -f 匹配不到；
+                # 遍历 /proc 对比工作目录，精确限定本实例、不影响其他实例。
+                # 本脚本此刻 cwd=/root，不会误伤自己。
+                for d in /proc/[0-9]*; do
+                  if [ "${'$'}(readlink "${'$'}d/cwd" 2>/dev/null)" = ${shellQuote(repoPath)} ]; then
+                    kill -9 "${'$'}{d##*/}" 2>/dev/null || true
+                  fi
+                done
                 # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
@@ -126,16 +135,29 @@ class RuntimeScripts(
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
-                # 兜底清理上次崩溃残留的显示服务
-                pgrep -f 'Xvfb :1' >/dev/null 2>&1 && pkill -f 'Xvfb :1' || true
-                pgrep -x fluxbox >/dev/null 2>&1 && pkill -x fluxbox || true
+                # 清场：杀掉上次运行遗留的全部相关进程（TERM → 等待 → KILL）。
+                # 关键是 QQ——它一直不在清理名单里：上次运行崩溃/被强杀后，
+                # 孤儿 QQ 带着旧 hook pipe 存活，SnowLuma 重启时直接附着上去，
+                # 而那次登录事件早已错过，OneBot 永远不会启动（bot 假死根因，
+                # 日志表现为 "PID=xxx already has SnowLuma pipe"）。杀干净后
+                # 每次启动都是全新 QQ，登录事件必然发生在 hook 连接之后。
+                for pat in 'snowluma/opt/QQ/qq' 'index\.mjs' 'Xvfb :1' 'x11grab'; do
+                  pgrep -f "${'$'}pat" >/dev/null 2>&1 && pkill -f "${'$'}pat" || true
+                done
+                pkill -x qq 2>/dev/null || true
+                pkill -x fluxbox 2>/dev/null || true
+                for i in 1 2 3 4 5; do
+                  pgrep -f 'snowluma/opt/QQ/qq|index\.mjs|Xvfb :1' >/dev/null 2>&1 || break
+                  sleep 1
+                done
+                for pat in 'snowluma/opt/QQ/qq' 'index\.mjs' 'Xvfb :1'; do
+                  pgrep -f "${'$'}pat" >/dev/null 2>&1 && pkill -9 -f "${'$'}pat" || true
+                done
+                pkill -9 -x qq 2>/dev/null || true
                 sleep 1
                 # 停止流程对 Xvfb 用 SIGKILL 会留下显示锁，残留的 /tmp/.X1-lock
                 # 会让下一次 Xvfb 立即退出（"Server is already active"）。
                 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
-                # 重启时旧 node 可能没被进程树销毁带死（占住 5099）。
-                pgrep -f 'index\.mjs' >/dev/null 2>&1 && pkill -f 'index\.mjs' || true
-                sleep 1
                 # 启动时版本对齐：安装脚本内有幂等判定（.sl_version 标记 +
                 # node 基线）。标记缺失（存量设备升完 APK 后首次启动）或缺
                 # node 时先跑一次安装器——有网时顺带升级到最新 release；安
@@ -256,7 +278,7 @@ class RuntimeScripts(
                       DIAG_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
                       echo "[control] === hook 预加载诊断 (pid=${'$'}DIAG_PID) ==="
                       echo "[control] runtime dir: $slRuntimeDir"
-                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep -a SNOWLUMA | tr '\\n' ';' || echo 未检出)"
+                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\0' '\n' | grep -aE '^(SNOWLUMA_|LD_PRELOAD=)' | tr '\n' ';' || echo 未检出)"
                       echo "[control] hook 已映射页数: ${'$'}(grep -ac snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
                       echo "[control] runtime dir 内容:"
                       ls -la "$slRuntimeDir" 2>/dev/null | tail -n +2 || echo "(目录不存在)"
