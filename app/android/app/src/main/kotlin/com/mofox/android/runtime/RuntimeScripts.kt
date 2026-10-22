@@ -114,7 +114,6 @@ class RuntimeScripts(
             "snowluma" -> {
               val botQq = args["botQq"].orEmpty()
               val qqArgs = if (botQq.isNotBlank()) " -q ${shellQuote(botQq)}" else ""
-              val autoLoginAllowed = if (botQq.isNotBlank()) "1" else "0"
               // hook 管道（AF_UNIX socket）的 runtime 目录不能用 rootfs 内的
               // /tmp：proot 把 guest 路径翻译成宿主真实路径后约 125 字节，超过
               // AF_UNIX sun_path 的 108 字节上限，bind() 会静默失败（组件无任何
@@ -123,10 +122,7 @@ class RuntimeScripts(
               val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
               val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                # 绑定了账号才允许代按快捷登录（未绑定时 QQ 停在扫码界面，
-                # 代按回车会干扰扫码登录）。
-                AUTO_LOGIN_ALLOWED=$autoLoginAllowed
-                echo "[control] MoFox SnowLuma 脚本构建 20261023-1 (确定性快捷登录+版本对齐+QQ回收自愈)"
+                echo "[control] MoFox SnowLuma 脚本构建 20261023-2 (启动时版本对齐)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
@@ -218,41 +214,6 @@ class RuntimeScripts(
                           QQ_DEAD_REPORTED=1
                           echo "[control] LinuxQQ 进程已退出 (pid=${'$'}QQ_PID)，启动日志尾部："
                           tail -n 8 /tmp/snowluma-qq.log 2>/dev/null || echo "(无启动日志)"
-                        fi
-                      fi
-                    fi
-                    # 自动快捷登录 + QQ 回收自愈（仅绑定账号的实例）：
-                    # OneBot 只在 hook 上报登录事件后才启动，而事件必须发生在
-                    # hook 连接之后——QQ 重启后快捷登录窗口没人点（无人值守场
-                    # 景）是 bot 假死的主因。绑定账号时本机 token 可用，代按一
-                    # 次回车即可完成快捷登录；若约 3 分钟仍未上线（登录事件在
-                    # hook 就绪前已被错过的另一种情况），回收 QQ 重走一遍确定
-                    # 性登录流程。未绑定账号（扫码登录）不介入。
-                    if [ "${'$'}AUTO_LOGIN_ALLOWED" = "1" ] && [ "${'$'}QQ_ALIVE_REPORTED" = "1" ] && [ -f /tmp/snowluma-qq.pid ]; then
-                      QPID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
-                      if [ -n "${'$'}QPID" ] && kill -0 "${'$'}QPID" 2>/dev/null; then
-                        if [ -z "${'$'}QQ_BIRTH" ]; then QQ_BIRTH=${'$'}i; fi
-                        QQ_AGE=${'$'}((i - QQ_BIRTH))
-                        if [ "${'$'}QQ_AGE" = "9" ] || [ "${'$'}QQ_AGE" = "25" ]; then
-                          AL_WID=${'$'}(DISPLAY=:1 xdotool search --onlyvisible --name "QQ" 2>/dev/null | tail -n 1)
-                          if [ -n "${'$'}AL_WID" ]; then
-                            DISPLAY=:1 xdotool windowactivate --sync "${'$'}AL_WID" >/dev/null 2>&1 || true
-                            sleep 1
-                            DISPLAY=:1 xdotool key --clearmodifiers Return
-                            echo "[control] 已代按快捷登录回车 (QQ 启动后第 ${'$'}QQ_AGE 轮)"
-                          fi
-                        fi
-                        if [ "${'$'}QQ_AGE" = "48" ]; then
-                          echo "[control] 约 3 分钟未上线，回收 LinuxQQ 重走确定性登录流程"
-                          kill "${'$'}QPID" 2>/dev/null || true
-                          sleep 2
-                          kill -9 "${'$'}QPID" 2>/dev/null || true
-                          sleep 1
-                          DISPLAY=:1 env ${'$'}QQ_HOOK_ENV /root/snowluma/opt/QQ/qq --no-sandbox --disable-gpu --disable-software-rasterizer --disable-gpu-compositing$qqArgs >/dev/null 2>/tmp/snowluma-qq.log &
-                          echo ${'$'}! > /tmp/snowluma-qq.pid
-                          QQ_BIRTH=${'$'}i
-                          QQ_ALIVE_REPORTED=0
-                          QQ_DEAD_REPORTED=0
                         fi
                       fi
                     fi
