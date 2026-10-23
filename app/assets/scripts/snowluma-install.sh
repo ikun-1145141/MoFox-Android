@@ -258,12 +258,13 @@ function install_node() {
 
     local node_arch=$(node_arch_suffix)
     local node_version
-    # 注意：npmmirror 的 latest-v24.x/ 目录列的是全部 v24 版本（字母序
-    # 24.0.0 在最前），head -1 会抓到旧版本（真机踩坑：装出 24.0.0 被
-    # launcher 硬拒）。必须全量抓取后按版本排序取最高。
-    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
+    # 版本解析必须用 nodejs.org：官方 latest 目录只含真最新版本。
+    # npmmirror 的 latest-v24.x/ 目录同步不全（真机踩坑：列表最高只到
+    # 24.9.0 且 24.22.1 文件 404，字母序还会让 head -1 抓到 24.0.0），
+    # 因此仅作下载源，解析一律走官方。
+    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
     if [ -z "${node_version}" ]; then
-        node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
+        fail "无法获取 Node.js v${NODE_MAJOR} 最新版本号 (nodejs.org 不可达)"
     fi
     if [ -z "${node_version}" ]; then
         fail "无法获取 Node.js v${NODE_MAJOR} 最新版本号"
