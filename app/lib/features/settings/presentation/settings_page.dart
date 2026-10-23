@@ -198,6 +198,19 @@ class SettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               AppSectionCard(
+                title: 'SnowLuma',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.handyman_outlined),
+                    title: 'SnowLuma 管理目录',
+                    subtitle: '检查修复运行时、重启应用更新',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.snowlumaManage),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
                 title: '关于',
                 children: <Widget>[
                   AppSettingTile(

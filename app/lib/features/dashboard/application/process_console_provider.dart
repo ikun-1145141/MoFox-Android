@@ -168,7 +168,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
             busyLabel: 'SnowLuma 启动中',
             instance: instance,
             run: (runtime) async {
-              await _ensureSnowlumaReady(runtime);
               final args = _snowlumaArgs(instance);
               appLogger.i('process: starting snowluma process');
               await runtime.startProcess('snowluma', args: args);
@@ -217,7 +216,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
             busyLabel: 'SnowLuma 重启中',
             instance: instance,
             run: (runtime) async {
-              await _ensureSnowlumaReady(runtime);
               await runtime.restartProcess(
                 'snowluma',
                 args: _snowlumaArgs(instance),
@@ -267,41 +265,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     } finally {
       state = state.copyWith(busyAction: null);
       _actionInProgress = false;
-    }
-  }
-
-  /// OOBE 允许跳过 SnowLuma，因此第一次真正使用它时在这里做幂等安装。
-  /// 原生安装任务会检测已有文件；已安装设备只做快速校验，不会重复下载。
-  Future<void> _ensureSnowlumaReady(RuntimeBridge runtime) async {
-    const taskNames = <String>['installSnowluma', 'verifySnowluma'];
-    final streamedTasks = <String>{};
-    final subscription = runtime
-        .installEvents()
-        .where(
-          (event) => taskNames.contains(event.task),
-        )
-        .listen((event) {
-      streamedTasks.add(event.task);
-      _appendSnowlumaLog(event.line);
-    });
-
-    try {
-      for (final task in taskNames) {
-        final label = task == 'installSnowluma' ? '准备 SnowLuma' : '校验 SnowLuma';
-        _appendSnowlumaLog('[control] $label…');
-        final result = await runtime.runInstallTask(task);
-        if (!streamedTasks.contains(task)) {
-          for (final line in result.logs) {
-            _appendSnowlumaLog(line);
-          }
-        }
-        if (!result.success) {
-          throw _SnowlumaSetupException(result.error ?? '$label失败');
-        }
-        _appendSnowlumaLog('[control] $label完成');
-      }
-    } finally {
-      await subscription.cancel();
     }
   }
 
@@ -631,15 +594,6 @@ String _redactSensitiveLogLine(String line) {
 }
 
 const int _maxLogs = 400;
-
-class _SnowlumaSetupException implements Exception {
-  const _SnowlumaSetupException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
 
 final processConsoleProvider =
     NotifierProvider<ProcessConsoleNotifier, ProcessConsoleState>(

@@ -169,7 +169,7 @@ class RuntimeScripts(
                 if [ -f /usr/local/bin/snowluma-install.sh ]; then
                   if [ ! -f /root/snowluma/.sl_version ] || ! command -v node >/dev/null 2>&1; then
                     echo "[control] SnowLuma 标记缺失或 node 不可用，先执行安装器（自动安装/升级）…"
-                    bash /usr/local/bin/snowluma-install.sh || echo "[control] SnowLuma 安装器失败，继续用现有版本启动"
+                    bash /usr/local/bin/snowluma-install.sh || echo "[control] SnowLuma 安装器失败，继续用现有版本启动；如 SnowLuma 未安装，可到 设置 → SnowLuma 管理目录 手动安装"
                   fi
                 fi
                 # ptrace 注入在 proot 下不可用（QQ 进程已被 proot 占为唯一 tracee，
@@ -595,6 +595,7 @@ class RuntimeScripts(
                   log_error "SnowLuma 复查失败：缺少 launcher.sh"
                   exit 26
                 }
+                echo "MOFOX_SL_VERSION=${'$'}(cat /root/snowluma/.sl_version 2>/dev/null || echo 未安装)"
                 log_ok "SnowLuma 安装复查通过"
                 """.trimIndent(),
             )
