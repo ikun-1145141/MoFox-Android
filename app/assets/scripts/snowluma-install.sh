@@ -258,9 +258,12 @@ function install_node() {
 
     local node_arch=$(node_arch_suffix)
     local node_version
-    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | head -1 | sed "s/-linux-${node_arch}.tar.xz//")
+    # 注意：npmmirror 的 latest-v24.x/ 目录列的是全部 v24 版本（字母序
+    # 24.0.0 在最前），head -1 会抓到旧版本（真机踩坑：装出 24.0.0 被
+    # launcher 硬拒）。必须全量抓取后按版本排序取最高。
+    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
     if [ -z "${node_version}" ]; then
-        node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | head -1 | sed "s/-linux-${node_arch}.tar.xz//")
+        node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
     fi
     if [ -z "${node_version}" ]; then
         fail "无法获取 Node.js v${NODE_MAJOR} 最新版本号"
