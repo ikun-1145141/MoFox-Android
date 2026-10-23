@@ -55,6 +55,13 @@ class PlatformGateway {
         'enabled': enabled,
       });
 
+  /// CPU partial wake lock（锁屏保活）：持有期间锁屏不进深度休眠，
+  /// 实例进程持续运行。由「锁屏保活」设置 + 实例运行状态驱动。
+  Future<void> setCpuWakeLock({required bool enabled}) =>
+      _channel.invokeMethod<void>('setCpuWakeLock', <String, Object>{
+        'enabled': enabled,
+      });
+
 }
 
 final platformGatewayProvider =

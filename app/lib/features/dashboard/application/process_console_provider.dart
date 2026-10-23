@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:mofox_android/core/platform/platform_gateway.dart';
 import 'package:mofox_android/core/platform/screen_wake_lock.dart';
 import 'package:mofox_android/core/runtime/runtime_bridge.dart';
 import 'package:mofox_android/core/utils/app_logger.dart';
 import 'package:mofox_android/features/instance/domain/instance.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
 
 class ProcessConsoleState {
   const ProcessConsoleState({
@@ -114,6 +116,9 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
 
   /// 同步忙标志：防止快速点击在 Riverpod 状态传播前绕过 isBusy 守卫。
   bool _actionInProgress = false;
+
+  /// 锁屏保活当前是否已持有（本地缓存，避免每 3 秒重复走平台通道）。
+  bool _cpuWakeLockHeld = false;
 
   @override
   ProcessConsoleState build() {
@@ -268,6 +273,25 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     }
   }
 
+  /// 锁屏保活同步：设置开启 + 任一实例运行 → 持有 CPU partial wake lock，
+  /// 否则释放。refreshStatus 每 3 秒跑一次，天然覆盖开关切换、进程启停
+  /// 和 app 被杀拉活后的状态恢复；本地标志保证平台调用只在边沿触发。
+  Future<void> _syncCpuWakeLock() async {
+    final enabled =
+        ref.read(appSettingsProvider).valueOrNull?.lockScreenKeepAlive ?? false;
+    final shouldHold = enabled && state.hasRunningProcess;
+    if (shouldHold == _cpuWakeLockHeld) return;
+    _cpuWakeLockHeld = shouldHold;
+    try {
+      await ref
+          .read(platformGatewayProvider)
+          .setCpuWakeLock(enabled: shouldHold);
+    } on Object catch (error) {
+      _cpuWakeLockHeld = false;
+      appLogger.w('cpu-wake-lock: set enabled=$shouldHold failed: $error');
+    }
+  }
+
   Future<void> refreshStatus() async {
     try {
       final snapshot = await ref.read(runtimeBridgeProvider).processStatus();
@@ -289,6 +313,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         activeInstanceId: activeInstanceId,
         errorMessage: null,
       );
+      await _syncCpuWakeLock();
     } catch (error) {
       appLogger.w('process: refreshStatus failed: $error');
       state = state.copyWith(errorMessage: '刷新进程状态失败：$error');
