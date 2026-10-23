@@ -135,25 +135,29 @@ class RuntimeScripts(
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
-                # 清场：杀掉上次运行遗留的全部相关进程（TERM → 等待 → KILL）。
-                # 关键是 QQ——它一直不在清理名单里：上次运行崩溃/被强杀后，
-                # 孤儿 QQ 带着旧 hook pipe 存活，SnowLuma 重启时直接附着上去，
-                # 而那次登录事件早已错过，OneBot 永远不会启动（bot 假死根因，
-                # 日志表现为 "PID=xxx already has SnowLuma pipe"）。杀干净后
-                # 每次启动都是全新 QQ，登录事件必然发生在 hook 连接之后。
-                for pat in 'snowluma/opt/QQ/qq' 'index\.mjs' 'Xvfb :1' 'x11grab'; do
-                  pgrep -f "${'$'}pat" >/dev/null 2>&1 && pkill -f "${'$'}pat" || true
-                done
+                # 清场：按进程名杀掉上次运行遗留的全部相关进程（TERM → 等待
+                # → KILL）。关键是 QQ——孤儿 QQ 带着旧 hook pipe 存活时，
+                # SnowLuma 重启会直接附着上去，而那次登录事件早已错过，
+                # OneBot 永不启动（bot 假死根因，日志表现为 "PID=xxx already
+                # has SnowLuma pipe"）。杀干净后每次启动都是全新 QQ。
+                # 注意：绝不能用 pkill -f 按路径/参数匹配——本脚本文本经
+                # COMMAND_TO_EXEC 进入 proot 的 cmdline（真机探针实证），
+                # 任何出现在源码里的 -f 模式都会匹配到 proot 自杀；进程名
+                # 匹配（comm）不受影响：proot 的 comm 是 libproot.so。
                 pkill -x qq 2>/dev/null || true
+                pkill -x node 2>/dev/null || true
+                pkill -x Xvfb 2>/dev/null || true
                 pkill -x fluxbox 2>/dev/null || true
+                pkill -x ffmpeg 2>/dev/null || true
                 for i in 1 2 3 4 5; do
-                  pgrep -f 'snowluma/opt/QQ/qq|index\.mjs|Xvfb :1' >/dev/null 2>&1 || break
+                  pgrep -x qq >/dev/null 2>&1 || pgrep -x node >/dev/null 2>&1 || pgrep -x Xvfb >/dev/null 2>&1 || break
                   sleep 1
                 done
-                for pat in 'snowluma/opt/QQ/qq' 'index\.mjs' 'Xvfb :1'; do
-                  pgrep -f "${'$'}pat" >/dev/null 2>&1 && pkill -9 -f "${'$'}pat" || true
-                done
                 pkill -9 -x qq 2>/dev/null || true
+                pkill -9 -x node 2>/dev/null || true
+                pkill -9 -x Xvfb 2>/dev/null || true
+                pkill -9 -x fluxbox 2>/dev/null || true
+                pkill -9 -x ffmpeg 2>/dev/null || true
                 sleep 1
                 # 停止流程对 Xvfb 用 SIGKILL 会留下显示锁，残留的 /tmp/.X1-lock
                 # 会让下一次 Xvfb 立即退出（"Server is already active"）。
