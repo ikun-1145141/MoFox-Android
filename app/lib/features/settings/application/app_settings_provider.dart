@@ -5,6 +5,7 @@ const String _themeModeKey = 'theme_mode';
 const String _dynamicColorKey = 'dynamic_color_enabled';
 const String _mainImageModeKey = 'main_image_mode';
 const String _terminalHapticsKey = 'terminal_haptics_enabled';
+const String _lockScreenKeepAliveKey = 'lockScreenKeepAlive';
 
 enum AppThemeMode {
   system,
@@ -42,6 +43,7 @@ class AppSettings {
     required this.dynamicColorEnabled,
     required this.mainImageMode,
     required this.terminalHapticsEnabled,
+    required this.lockScreenKeepAlive,
   });
 
   final AppThemeMode themeMode;
@@ -49,11 +51,15 @@ class AppSettings {
   final MainImageMode mainImageMode;
   final bool terminalHapticsEnabled;
 
+  /// 锁屏保活：实例运行期间持有 CPU partial wake lock，锁屏不进深度休眠。
+  final bool lockScreenKeepAlive;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     bool? dynamicColorEnabled,
     MainImageMode? mainImageMode,
     bool? terminalHapticsEnabled,
+    bool? lockScreenKeepAlive,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -61,6 +67,8 @@ class AppSettings {
       mainImageMode: mainImageMode ?? this.mainImageMode,
       terminalHapticsEnabled:
           terminalHapticsEnabled ?? this.terminalHapticsEnabled,
+      lockScreenKeepAlive:
+          lockScreenKeepAlive ?? this.lockScreenKeepAlive,
     );
   }
 }
@@ -82,6 +90,7 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
         MainImageMode.expressive,
       ),
       terminalHapticsEnabled: prefs.getBool(_terminalHapticsKey) ?? true,
+      lockScreenKeepAlive: prefs.getBool(_lockScreenKeepAliveKey) ?? false,
     );
   }
 
@@ -107,6 +116,12 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_terminalHapticsKey, enabled);
     _update((settings) => settings.copyWith(terminalHapticsEnabled: enabled));
+  }
+
+  Future<void> setLockScreenKeepAlive(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_lockScreenKeepAliveKey, enabled);
+    _update((settings) => settings.copyWith(lockScreenKeepAlive: enabled));
   }
 
   void _update(AppSettings Function(AppSettings settings) update) {

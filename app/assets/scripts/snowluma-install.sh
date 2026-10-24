@@ -27,7 +27,7 @@ SECRETS_DIR="$INSTALL_BASE_DIR/secrets"
 WEBUI_PASSWORD_FILE="$SECRETS_DIR/webui_password"
 # SnowLuma 发布仓库与版本回退
 SNOWLUMA_REPO="SnowLuma/SnowLuma"
-SNOWLUMA_FALLBACK_TAG="v1.14.20"
+SNOWLUMA_FALLBACK_TAG="v2.1.1"
 # QQ Linux 官方包归档镜像（Rodert/qq-versions），官方 CDN 403/404 时回退。
 # 与 installSnowluma 幂等检查配合：目标版本跟随实际安装的版本，避免每次全量重装。
 QQ_MIRROR_VERSION="3.2.32-260812"
@@ -242,7 +242,12 @@ function node_arch_suffix() {
 }
 
 function node_already_installed() {
-    command -v node >/dev/null 2>&1 && node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' 2>/dev/null
+    # v2.1.1 Lite 基线：^24.22.1 || >=26.12.1（旧 24.x 会被 launcher 硬拒）
+    command -v node >/dev/null 2>&1 && node -e '
+const p = process.versions.node.split(".").map(Number);
+const ok = (p[0] === 24 && (p[1] > 22 || (p[1] === 22 && p[2] >= 1))) || p[0] >= 26;
+process.exit(ok ? 0 : 1);
+' 2>/dev/null
 }
 
 function install_node() {
@@ -253,9 +258,13 @@ function install_node() {
 
     local node_arch=$(node_arch_suffix)
     local node_version
-    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | head -1 | sed "s/-linux-${node_arch}.tar.xz//")
+    # 版本解析必须用 nodejs.org：官方 latest 目录只含真最新版本。
+    # npmmirror 的 latest-v24.x/ 目录同步不全（真机踩坑：列表最高只到
+    # 24.9.0 且 24.22.1 文件 404，字母序还会让 head -1 抓到 24.0.0），
+    # 因此仅作下载源，解析一律走官方。
+    node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | sort -uV | tail -1 | sed "s/-linux-${node_arch}.tar.xz//")
     if [ -z "${node_version}" ]; then
-        node_version=$(curl -fsSL --connect-timeout 10 --max-time 20 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/" | grep -oE "node-v${NODE_MAJOR}\.[0-9]+\.[0-9]+-linux-${node_arch}\.tar\.xz" | head -1 | sed "s/-linux-${node_arch}.tar.xz//")
+        fail "无法获取 Node.js v${NODE_MAJOR} 最新版本号 (nodejs.org 不可达)"
     fi
     if [ -z "${node_version}" ]; then
         fail "无法获取 Node.js v${NODE_MAJOR} 最新版本号"
@@ -263,17 +272,35 @@ function install_node() {
     log "目标 Node.js 版本: ${node_version} (${node_arch})"
 
     local tarball="${node_version}-linux-${node_arch}.tar.xz"
+    # 已有包先做完整性校验：下载中断留下的截断包会让重试永远解压同一个坏包
+    if [ -f "${tarball}" ]; then
+        if xz -t "${tarball}" 2>/dev/null; then
+            log "检测到完整的 Node.js 安装包, 跳过下载..."
+        else
+            log "警告: 已有的 Node.js 安装包不完整, 删除后重新下载..."
+            rm -f "${tarball}"
+        fi
+    fi
     if [ ! -f "${tarball}" ]; then
         log "正在从 npmmirror 下载 Node.js..."
-        if ! curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}"; then
+        if ! curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_MIRROR_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}.tmp"; then
             log "npmmirror 下载失败，尝试 nodejs.org..."
-            curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}" || fail "Node.js 下载失败 (curl 退出码: $?)"
+            curl -fL --connect-timeout 10 --max-time 600 -sS --retry 2 --retry-delay 2 "${NODE_OFFICIAL_BASE}/latest-v${NODE_MAJOR}.x/${tarball}" -o "${tarball}.tmp" || fail "Node.js 下载失败 (curl 退出码: $?)"
         fi
+        # xz 整流校验通过才落位：截断包不进主文件名
+        if ! xz -t "${tarball}.tmp" 2>/dev/null; then
+            rm -f "${tarball}.tmp"
+            fail "Node.js 安装包下载不完整 (xz 校验失败)，请点重试重新下载"
+        fi
+        mv "${tarball}.tmp" "${tarball}"
     fi
 
     log "正在解压 Node.js 到 /opt/node ..."
     mkdir -p /opt/node
-    tar xJf "${tarball}" -C /opt/node --strip-components=1 || fail "Node.js 解压失败"
+    tar xJf "${tarball}" -C /opt/node --strip-components=1 || {
+        rm -f "${tarball}"
+        fail "Node.js 解压失败 (安装包已删除, 重试将重新下载)"
+    }
     rm -f "${tarball}"
 
     ln -sf /opt/node/bin/node /usr/local/bin/node
@@ -364,7 +391,10 @@ function download_snowluma() {
     fi
 
     log "正在验证 ${default_file}..."
-    tar tzf "${default_file}" >/dev/null 2>&1 || fail "文件验证失败, 压缩包可能损坏"
+    tar tzf "${default_file}" >/dev/null 2>&1 || {
+        rm -f "${default_file}"
+        fail "文件验证失败, 压缩包可能损坏 (已删除, 重试将重新下载)"
+    }
 
     log "正在解压 ${default_file}..."
     tar xzf "${default_file}" -C ./SnowLuma || fail "SnowLuma 解压失败"
@@ -691,11 +721,25 @@ log "=== SnowLuma 本地安装脚本启动 ==="
 log "安装目录: ${INSTALL_BASE_DIR}"
 
 get_system_arch
-install_dependency
-install_node
-download_snowluma
-check_linuxqq
-install_snowluma_app
+# 幂等与升级判定（本脚本是唯一判定点）：
+# - 标记存在 + 核心文件齐全 + node 达标 → 秒回，避免每次启动重装；
+# - 无标记（存量设备首次跑到本脚本）→ 完整安装并落标记，顺带升级到
+#   当前最新 release（fetch_snowluma_release 优先取 latest，离线回退 pin）。
+# 标记记录实际安装的解析版本，仅作存在性判据、不做版本比较：升级由
+# "删除标记重装"触发；标记存在还能在上游发坏版本时保护存量设备。
+SL_VERSION_MARKER="$INSTALL_BASE_DIR/.sl_version"
+if [ -s "${APP_DIR}/index.mjs" ] && [ -s "${APP_DIR}/launcher.sh" ] &&
+   [ -f "${SL_VERSION_MARKER}" ] && node_already_installed; then
+    log "SnowLuma 已安装 ($(cat "${SL_VERSION_MARKER}" 2>/dev/null)), 跳过重装。"
+else
+    install_dependency
+    install_node
+    download_snowluma
+    check_linuxqq
+    rm -f "${SL_VERSION_MARKER}"
+    install_snowluma_app
+    echo "${snowluma_tag:-${SNOWLUMA_FALLBACK_TAG}}" > "${SL_VERSION_MARKER}"
+fi
 freeze_qq_hot_update
 ensure_webui_password
 clean

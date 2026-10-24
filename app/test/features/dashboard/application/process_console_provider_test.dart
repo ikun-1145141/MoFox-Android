@@ -13,7 +13,6 @@ void main() {
   late List<String> actions;
   late List<bool> keepScreenOnValues;
   late Map<String, String> processStatus;
-  var failSnowlumaInstall = false;
 
   void emitProcessEvent(String name, String line) {
     messenger.handlePlatformMessage(
@@ -36,7 +35,6 @@ void main() {
       'snowluma': 'stopped',
       'activeInstanceId': '',
     };
-    failSnowlumaInstall = false;
 
     messenger.setMockMethodCallHandler(
       const MethodChannel('mofox/runtime'),
@@ -48,13 +46,6 @@ void main() {
             final arguments = call.arguments! as Map<Object?, Object?>;
             final task = arguments['task']! as String;
             actions.add(task);
-            if (failSnowlumaInstall && task == 'installSnowluma') {
-              return <String, Object?>{
-                'success': false,
-                'logs': <String>[],
-                'error': '下载失败',
-              };
-            }
             return <String, Object?>{
               'success': true,
               'logs': <String>[],
@@ -115,35 +106,29 @@ void main() {
       ..setMockMessageHandler('mofox/runtime/events', null);
   });
 
-  test('first SnowLuma start lazily installs, verifies, then starts', () async {
+  test('SnowLuma start goes straight to the process (no install tasks)', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(processConsoleProvider.notifier);
 
     await notifier.startSnowluma(_instance);
 
-    expect(
-      actions,
-      <String>['installSnowluma', 'verifySnowluma', 'start:snowluma'],
-    );
+    // 方案 C：启动不再每次跑 install/verify；首次安装由 OOBE 承接，
+    // 升级由启动脚本内的版本对齐承接，手动维护走设置页管理目录。
+    expect(actions, <String>['start:snowluma']);
     expect(container.read(processConsoleProvider).errorMessage, isNull);
     expect(keepScreenOnValues, <bool>[true, false]);
   });
 
-  test('SnowLuma install failure prevents process start', () async {
-    failSnowlumaInstall = true;
+  test('SnowLuma restart also skips install tasks', () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
     final notifier = container.read(processConsoleProvider.notifier);
 
-    await notifier.startSnowluma(_instance);
+    await notifier.restartSnowluma(_instance);
 
-    expect(actions, <String>['installSnowluma']);
-    expect(
-      container.read(processConsoleProvider).errorMessage,
-      contains('下载失败'),
-    );
-    expect(keepScreenOnValues, <bool>[true, false]);
+    expect(actions, <String>['restart:snowluma']);
+    expect(container.read(processConsoleProvider).errorMessage, isNull);
   });
 
   test('cancelSnowlumaLogin stops the snowluma process', () async {

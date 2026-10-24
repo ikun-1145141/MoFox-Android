@@ -15,6 +15,7 @@ class SnowlumaQrSheet extends ConsumerStatefulWidget {
     this.onCancel,
     this.onClose,
     this.onQuickLogin,
+    this.manual = false,
     super.key,
   });
 
@@ -27,6 +28,10 @@ class SnowlumaQrSheet extends ConsumerStatefulWidget {
 
   /// 快捷登录：向虚拟屏幕的 QQ 窗口发送回车。
   final VoidCallback? onQuickLogin;
+
+  /// 手动登录面板模式：展示实时远程画面而非等待扫码，提示用户可触屏
+  /// 退出当前账号后重新扫码登录其他账号。
+  final bool manual;
 
   @override
   ConsumerState<SnowlumaQrSheet> createState() => _SnowlumaQrSheetState();
@@ -44,6 +49,7 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
     final onCancel = widget.onCancel;
     final onClose = widget.onClose;
     final onQuickLogin = widget.onQuickLogin;
+    final manual = widget.manual;
     // 实时跟随 provider：SnowLuma 覆盖 screen.png 后 payload 版本号变化，
     // 这里重建时 _QrFileImage 通过 cacheKey 变化重新读文件，无需关闭重开弹窗。
     final livePayload = ref.watch(
@@ -136,10 +142,12 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
                               ),
                       ),
                       const SizedBox(height: AppSpacing.lg),
-                      const AppStatusBadge(
-                        label: '等待扫描',
+                      AppStatusBadge(
+                        label: manual ? '远程画面' : '等待扫描',
                         tone: AppStatusTone.info,
-                        icon: Icons.hourglass_top,
+                        icon: manual
+                            ? Icons.travel_explore
+                            : Icons.hourglass_top,
                       ),
                       if (imagePath != null) ...<Widget>[
                         const SizedBox(height: AppSpacing.md),
@@ -168,7 +176,9 @@ class _SnowlumaQrSheetState extends ConsumerState<SnowlumaQrSheet> {
                       ],
                       const SizedBox(height: AppSpacing.md),
                       Text(
-                        copyableLoginInfo == null
+                        manual
+                            ? '开启「触屏操控」后可直接点按画面操作虚拟屏幕：在已登录的 QQ 里退出当前账号，此处会出现新的登录窗口，扫码或点击登录即可切换账号。'
+                            : copyableLoginInfo == null
                             ? '当前二维码由 SnowLuma 以图片生成，无法提取可复制的登录信息。可使用另一台设备扫码，或请可信任的人协助。'
                             : '无法使用视觉扫码时，可复制一次性登录信息到受信任的 QQ 登录流程。复制内容可能包含敏感凭据，请勿分享。',
                         textAlign: TextAlign.center,
