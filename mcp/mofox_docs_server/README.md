@@ -1,7 +1,7 @@
 # Neo-MoFox official docs MCP
 
 Dependency-free stdio MCP server that searches the official site's live Algolia
-index and fetches current pages from <https://docs.mofox-sama.com>. It contains
+index and fetches current pages from <https://docs.mofox.chat>. It contains
 no bundled documentation snapshot, so site updates are immediately available.
 
 ```json

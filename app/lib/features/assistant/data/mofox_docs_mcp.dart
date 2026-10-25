@@ -177,7 +177,7 @@ class MofoxDocsMcpClient {
             break;
           }
         }
-        final url = raw['url']?.toString() ?? 'https://docs.mofox-sama.com';
+        final url = raw['url']?.toString() ?? 'https://docs.mofox.chat';
         final pageKey = _canonicalPageKey(url);
         if (!seenPages.add(pageKey)) continue;
         final content = raw['content']?.toString().trim() ?? '';
@@ -197,8 +197,8 @@ class MofoxDocsMcpClient {
     final uri = Uri.tryParse(cleaned);
     if (uri == null ||
         uri.scheme != 'https' ||
-        uri.host != 'docs.mofox-sama.com') {
-      throw const FormatException('只允许读取 docs.mofox-sama.com 的 HTTPS 页面');
+        uri.host != 'docs.mofox.chat') {
+      throw const FormatException('只允许读取 docs.mofox.chat 的 HTTPS 页面');
     }
     return _cached('read:${uri.replace(fragment: '')}:$maximum', () async {
       final response = await _withRetry(
@@ -297,7 +297,7 @@ const List<Map<String, Object?>> _tools = <Map<String, Object?>>[
   },
   <String, Object?>{
     'name': 'read_mofox_doc',
-    'description': '实时读取 docs.mofox-sama.com 的官方文档页面正文。',
+    'description': '实时读取 docs.mofox.chat 的官方文档页面正文。',
     'inputSchema': <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{

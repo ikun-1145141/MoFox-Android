@@ -728,7 +728,7 @@ assistantCommandEvents
 - 回复支持流式展示、停止、失败重试。
 - 用户可主动附加选中终端文本、当前状态或最近日志。
 - 助手可输出结构化命令卡片。
-- 助手可通过 MCP 实时检索官方站的 Algolia DocSearch，并读取 `docs.mofox-sama.com` 当前页面正文；APK 不包含会过期的文档快照。
+- 助手可通过 MCP 实时检索官方站的 Algolia DocSearch，并读取 `docs.mofox.chat` 当前页面正文；APK 不包含会过期的文档快照。
 - “填入终端”不附加回车，不接受多行或控制字符。
 - YOLO 模式可不受命令白名单限制地自动执行动作，用户可随时停止，且不会恢复旧任务。
 

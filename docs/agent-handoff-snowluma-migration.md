@@ -328,4 +328,4 @@ SnowLuma 通过读取 QQ `/proc/<pid>/environ` 的 `SNOWLUMA_HOOK_RUNTIME_DIR` �
 deploy/linux-manual.mdx 确认官方唯一注入方式是 ptrace + setcap cap_sys_ptrace）；
 PC 端（D:\STELA，v1.14.15 Windows）走 CreateRemoteThread DLL 注入，无本问题。
 LD_PRELOAD/stub 模式为逆向发现的内部接口，无公开文档；如仍有异常，联系作者
-（QQ 群 qm.qq.com/q/g3UMLpWALe / motricseven@foxmail.com）确认 stub 语义。
+（QQ群号 [1130433589](https://qm.qq.com/q/LOxRpyzMoa) / motricseven@foxmail.com）确认 stub 语义。

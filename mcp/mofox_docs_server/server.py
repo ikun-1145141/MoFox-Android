@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live stdio MCP server for https://docs.mofox-sama.com."""
+"""Live stdio MCP server for https://docs.mofox.chat."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ ALGOLIA_HEADERS = {
     "content-type": "application/json",
     "user-agent": "MoFox-Docs-MCP/1.0",
 }
-DOCS_ORIGIN = "https://docs.mofox-sama.com"
+DOCS_ORIGIN = "https://docs.mofox.chat"
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -36,7 +36,7 @@ TOOLS = [
     },
     {
         "name": "read_mofox_doc",
-        "description": "Fetch and read a current page from docs.mofox-sama.com.",
+        "description": "Fetch and read a current page from docs.mofox.chat.",
         "inputSchema": {
             "type": "object",
             "properties": {"url": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 500, "maximum": 16000}},
@@ -106,8 +106,8 @@ def search(query: str, limit: int) -> str:
 
 def read_page(url: str, maximum: int) -> str:
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.netloc != "docs.mofox-sama.com":
-        raise ValueError("Only docs.mofox-sama.com HTTPS URLs are allowed")
+    if parsed.scheme != "https" or parsed.netloc != "docs.mofox.chat":
+        raise ValueError("Only docs.mofox.chat HTTPS URLs are allowed")
     request = urllib.request.Request(url, headers={"user-agent": "MoFox-Docs-MCP/1.0"})
     with urllib.request.urlopen(request, timeout=15) as response:
         body = response.read(2_000_000).decode("utf-8", errors="replace")

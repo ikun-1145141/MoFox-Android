@@ -33,15 +33,15 @@ void main() {
           'search_mofox_docs',
           <String, Object?>{'query': query, 'limit': 2},
         );
-        expect(search, contains('docs.mofox-sama.com'));
-        final url = RegExp(r'https://docs\.mofox-sama\.com/\S+')
+        expect(search, contains('docs.mofox.chat'));
+        final url = RegExp(r'https://docs\.mofox\.chat/\S+')
             .firstMatch(search)!
             .group(0)!;
         final page = await client.callTool(
           'read_mofox_doc',
           <String, Object?>{'url': url, 'max_chars': 1200},
         );
-        expect(page, contains('来源：https://docs.mofox-sama.com'));
+        expect(page, contains('来源：https://docs.mofox.chat'));
         expect(page.length, greaterThan(100));
       }
     },
