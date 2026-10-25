@@ -8,6 +8,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -26,6 +27,12 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
     companion object {
         private const val REQ_EXPORT = 10001
         private const val REQ_IMPORT = 10002
+
+        // CPU partial wake lock：锁屏保活用。必须挂应用级单例——plugin 实例
+        // 会随 Activity 重建，锁若挂在实例上会泄漏或重复 acquire。
+        @Volatile
+        private var cpuWakeLock: PowerManager.WakeLock? = null
+        private val cpuWakeLockMutex = Any()
     }
 
     private var activity: Activity? = null
@@ -82,6 +89,13 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
                     }
                     "setKeepScreenOn" -> {
                         setKeepScreenOn(activity, call.argument<Boolean>("enabled") == true)
+                        result.success(null)
+                    }
+                    "setCpuWakeLock" -> {
+                        setCpuWakeLock(
+                            activity?.applicationContext ?: ctx,
+                            call.argument<Boolean>("enabled") == true,
+                        )
                         result.success(null)
                     }
                     "startForegroundService" -> {
@@ -181,6 +195,32 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
                 activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             } else {
                 activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        }
+    }
+
+    /**
+     * CPU partial wake lock：锁屏保活。持有期间 SoC 不进深度休眠，proot 里的
+     * QQ/node/python 在锁屏时继续运行。代价是整机耗电上升，由用户显式开关。
+     */
+    private fun setCpuWakeLock(ctx: Context, enabled: Boolean) {
+        val pm = ctx.getSystemService(Context.POWER_SERVICE) as PowerManager
+        synchronized(cpuWakeLockMutex) {
+            if (enabled) {
+                if (cpuWakeLock?.isHeld != true) {
+                    cpuWakeLock = pm.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        "mofox:runtime-keepalive",
+                    ).apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
+                }
+            } else {
+                cpuWakeLock?.let { lock ->
+                    if (lock.isHeld) lock.release()
+                }
+                cpuWakeLock = null
             }
         }
     }

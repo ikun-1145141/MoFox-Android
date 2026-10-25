@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:mofox_android/core/platform/platform_gateway.dart';
 import 'package:mofox_android/core/platform/screen_wake_lock.dart';
 import 'package:mofox_android/core/runtime/runtime_bridge.dart';
 import 'package:mofox_android/core/utils/app_logger.dart';
 import 'package:mofox_android/features/instance/domain/instance.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
 
 class ProcessConsoleState {
   const ProcessConsoleState({
@@ -17,6 +19,8 @@ class ProcessConsoleState {
     this.errorMessage,
     this.snowlumaQrPayload,
     this.snowlumaWebuiUrl,
+    this.snowlumaManualPanel = false,
+    this.snowlumaManualPayload,
   });
 
   factory ProcessConsoleState.initial() => const ProcessConsoleState(
@@ -43,6 +47,13 @@ class ProcessConsoleState {
   /// 形如 `http://127.0.0.1:5099/?token=xxx`。
   final String? snowlumaWebuiUrl;
 
+  /// 手动打开的登录面板（SnowLuma 运行中点击「SnowLuma」按钮触发）。
+  /// 用于已登录后重新扫码 / 切换 QQ 账号；与自动弹出的扫码流程互不影响。
+  final bool snowlumaManualPanel;
+
+  /// 手动面板的实时虚拟屏幕截图（file:hostPath#version）。
+  final String? snowlumaManualPayload;
+
   bool get isBusy => busyAction != null;
   String get botStatus => status['bot'] ?? 'stopped';
   String get snowlumaStatus => status['snowluma'] ?? 'stopped';
@@ -68,6 +79,8 @@ class ProcessConsoleState {
     Object? errorMessage = _sentinel,
     Object? snowlumaQrPayload = _sentinel,
     Object? snowlumaWebuiUrl = _sentinel,
+    bool? snowlumaManualPanel,
+    Object? snowlumaManualPayload = _sentinel,
   }) =>
       ProcessConsoleState(
         status: status ?? this.status,
@@ -88,6 +101,10 @@ class ProcessConsoleState {
         snowlumaWebuiUrl: identical(snowlumaWebuiUrl, _sentinel)
             ? this.snowlumaWebuiUrl
             : snowlumaWebuiUrl as String?,
+        snowlumaManualPanel: snowlumaManualPanel ?? this.snowlumaManualPanel,
+        snowlumaManualPayload: identical(snowlumaManualPayload, _sentinel)
+            ? this.snowlumaManualPayload
+            : snowlumaManualPayload as String?,
       );
 }
 
@@ -99,6 +116,9 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
 
   /// 同步忙标志：防止快速点击在 Riverpod 状态传播前绕过 isBusy 守卫。
   bool _actionInProgress = false;
+
+  /// 锁屏保活当前是否已持有（本地缓存，避免每 3 秒重复走平台通道）。
+  bool _cpuWakeLockHeld = false;
 
   @override
   ProcessConsoleState build() {
@@ -153,7 +173,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
             busyLabel: 'SnowLuma 启动中',
             instance: instance,
             run: (runtime) async {
-              await _ensureSnowlumaReady(runtime);
               final args = _snowlumaArgs(instance);
               appLogger.i('process: starting snowluma process');
               await runtime.startProcess('snowluma', args: args);
@@ -202,7 +221,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
             busyLabel: 'SnowLuma 重启中',
             instance: instance,
             run: (runtime) async {
-              await _ensureSnowlumaReady(runtime);
               await runtime.restartProcess(
                 'snowluma',
                 args: _snowlumaArgs(instance),
@@ -255,38 +273,22 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     }
   }
 
-  /// OOBE 允许跳过 SnowLuma，因此第一次真正使用它时在这里做幂等安装。
-  /// 原生安装任务会检测已有文件；已安装设备只做快速校验，不会重复下载。
-  Future<void> _ensureSnowlumaReady(RuntimeBridge runtime) async {
-    const taskNames = <String>['installSnowluma', 'verifySnowluma'];
-    final streamedTasks = <String>{};
-    final subscription = runtime
-        .installEvents()
-        .where(
-          (event) => taskNames.contains(event.task),
-        )
-        .listen((event) {
-      streamedTasks.add(event.task);
-      _appendSnowlumaLog(event.line);
-    });
-
+  /// 锁屏保活同步：设置开启 + 任一实例运行 → 持有 CPU partial wake lock，
+  /// 否则释放。refreshStatus 每 3 秒跑一次，天然覆盖开关切换、进程启停
+  /// 和 app 被杀拉活后的状态恢复；本地标志保证平台调用只在边沿触发。
+  Future<void> _syncCpuWakeLock() async {
+    final enabled =
+        ref.read(appSettingsProvider).valueOrNull?.lockScreenKeepAlive ?? false;
+    final shouldHold = enabled && state.hasRunningProcess;
+    if (shouldHold == _cpuWakeLockHeld) return;
+    _cpuWakeLockHeld = shouldHold;
     try {
-      for (final task in taskNames) {
-        final label = task == 'installSnowluma' ? '准备 SnowLuma' : '校验 SnowLuma';
-        _appendSnowlumaLog('[control] $label…');
-        final result = await runtime.runInstallTask(task);
-        if (!streamedTasks.contains(task)) {
-          for (final line in result.logs) {
-            _appendSnowlumaLog(line);
-          }
-        }
-        if (!result.success) {
-          throw _SnowlumaSetupException(result.error ?? '$label失败');
-        }
-        _appendSnowlumaLog('[control] $label完成');
-      }
-    } finally {
-      await subscription.cancel();
+      await ref
+          .read(platformGatewayProvider)
+          .setCpuWakeLock(enabled: shouldHold);
+    } on Object catch (error) {
+      _cpuWakeLockHeld = false;
+      appLogger.w('cpu-wake-lock: set enabled=$shouldHold failed: $error');
     }
   }
 
@@ -311,6 +313,7 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         activeInstanceId: activeInstanceId,
         errorMessage: null,
       );
+      await _syncCpuWakeLock();
     } catch (error) {
       appLogger.w('process: refreshStatus failed: $error');
       state = state.copyWith(errorMessage: '刷新进程状态失败：$error');
@@ -458,6 +461,39 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     unawaited(refreshStatus());
   }
 
+  /// 手动打开登录面板（SnowLuma 运行中）：抓取一张虚拟屏幕截图用于展示。
+  Future<void> openManualLoginPanel() async {
+    state = state.copyWith(snowlumaManualPanel: true);
+    await refreshManualScreen();
+  }
+
+  /// 关闭手动登录面板。
+  void closeManualLoginPanel() {
+    state = state.copyWith(
+      snowlumaManualPanel: false,
+      snowlumaManualPayload: null,
+    );
+  }
+
+  /// 抓取一张虚拟屏幕截图并更新手动面板画面。
+  Future<void> refreshManualScreen() async {
+    final runtime = ref.read(runtimeBridgeProvider);
+    try {
+      final result = await runtime.runInstallTask('snowlumaScreenshot');
+      final payload = result.qrPayload;
+      if (result.success && payload != null && payload.isNotEmpty) {
+        final version = DateTime.now().microsecondsSinceEpoch;
+        state = state.copyWith(
+          snowlumaManualPayload: '$payload#$version',
+        );
+      } else {
+        _appendSnowlumaLog('[control] 截屏失败: ${result.error}');
+      }
+    } on Object catch (error) {
+      _appendSnowlumaLog('[control] 截屏异常: $error');
+    }
+  }
+
   void _onProcessEvent(ProcessEvent event) {
     if (event.name == 'bot') {
       _appendBotLog(event.line);
@@ -531,10 +567,12 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   Map<String, String> _botArgs(Instance instance) => <String, String>{
         'instanceId': instance.id,
         'repoPath': instance.repoPath,
-        // bot 进程脚本用这些写 snowluma_adapter 的 config.toml（自愈块）。
+        // bot 进程脚本用这些写适配器 config.toml（自愈块）并把核心
+        // 分支对齐到实例的 channel（修复 channel 被克隆忽略的历史 bug）。
         'botQq': instance.botQq,
         'botNickname': instance.botNickname,
         'wsPort': instance.wsPort.toString(),
+        'channel': instance.channel,
       };
 
   Map<String, String> _snowlumaArgs(Instance instance) => <String, String>{
@@ -581,15 +619,6 @@ String _redactSensitiveLogLine(String line) {
 }
 
 const int _maxLogs = 400;
-
-class _SnowlumaSetupException implements Exception {
-  const _SnowlumaSetupException(this.message);
-
-  final String message;
-
-  @override
-  String toString() => message;
-}
 
 final processConsoleProvider =
     NotifierProvider<ProcessConsoleNotifier, ProcessConsoleState>(

@@ -51,32 +51,51 @@ class RuntimeScripts(
                 val botQq = args["botQq"].orEmpty()
                 val botNickname = args["botNickname"].orEmpty()
                 val wsPort = args["wsPort"] ?: "8095"
+                // 实例核心分支：跟随向导选择（main/dev），白名单防注入。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 // OneBot 适配器自愈：bot 侧适配器使用 bot 仓库自带的
                 // onebot_adapter（写入配置：reverse ws，等 SnowLuma 作为
                 // ws 客户端连入 wsPort——SnowLuma 协议端链路不变）。
                 // 历史上曾随 APK 分发 snowluma_adapter/snowluma_extension
                 // 并停用 onebot_adapter，现全部反转：清理遗留 .mfp 分发
-                // 包、停用其残留配置。不管理 bot 仓库分支（插件市场生态
-                // 常依赖 dev 分支核心的新 API，实例分支由其已装插件决定）。
+                // 包、停用其残留配置。
+                // bot 核心跟随上游 dev 分支：插件市场生态与 WebUI 插件均
+                // 依赖 dev 核心的新 API（实测 main 1.2.0 会拒载 WebUI
+                // 1.1+ 并使市场插件报 create_llm_request stream_id 错误）。
+                // config/plugins/data 均为未跟踪文件，force checkout 不影响
+                // 用户数据。
                 // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离缩进，
                 // 否则 heredoc 结束符 MOFOX_EOF 带缩进不被识别，会吞掉启动命令。
                 val cmd = """
+                # --- 清场：杀掉本实例上次运行遗留的 bot 进程 ---
+                # uv run python 的 cmdline 不含实例路径，pgrep -f 匹配不到；
+                # 遍历 /proc 对比工作目录，精确限定本实例、不影响其他实例。
+                # 本脚本此刻 cwd=/root，不会误伤自己。
+                for d in /proc/[0-9]*; do
+                  if [ "${'$'}(readlink "${'$'}d/cwd" 2>/dev/null)" = ${shellQuote(repoPath)} ]; then
+                    kill -9 "${'$'}{d##*/}" 2>/dev/null || true
+                  fi
+                done
                 # --- OneBot 适配器自愈 ---
                 PLUGINS_DIR=${shellQuote(repoPath)}/plugins
                 OB_DIR=${shellQuote(repoPath)}/config/plugins/onebot_adapter
-                # 注意：不管理 bot 仓库分支（既不强推 dev 也不迁回 main）——
-                # 插件市场生态的插件常依赖 dev 分支核心的新 API（如
-                # create_llm_request 的 stream_id 参数），实例停留在哪个分支
-                # 由其已装插件决定，这里保持现状。
-                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
-                # 短信桥接插件（独立于 SnowLuma，单独就位以免 snowluma 缺失时被跳过）
-                if ls /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp >/dev/null 2>&1; then
-                  cp -f /root/.mofox/plugin-cache/mofox_sms_bridge-*.mfp "${'$'}PLUGINS_DIR/" 2>/dev/null || true
-                  echo "[bot] 短信桥接插件已就位: ${'$'}(ls "${'$'}PLUGINS_DIR" | grep mofox_sms_bridge | tr '\n' ' ')"
+                # bot 核心自愈：跟随实例 channel（历史 bug：cloneRepo
+                # 从不读取 channel，选 dev 的实例也被克隆成 main，导致
+                # WebUI/市场插件因核心版本被拒载。插件生态依赖 dev 核心
+                # 新 API，建议实例使用 dev）。
+                cd ${shellQuote(repoPath)}
+                if [ -d .git ]; then
+                  git fetch origin $channel --depth=1 >/dev/null 2>&1 || true
+                  git checkout -f -B $channel FETCH_HEAD >/dev/null 2>&1 || true
+                  echo "[bot] bot 核心分支: $channel"
                 fi
+                mkdir -p "${'$'}PLUGINS_DIR" "${'$'}OB_DIR"
                 # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
                 # 以及更早的跳板插件分发包（跳板已整合进 App 本体）。
-                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp 2>/dev/null || true
+                rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp "${'$'}PLUGINS_DIR/mofox_sms_bridge-"*.mfp 2>/dev/null || true
                 cat > "${'$'}OB_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true
@@ -112,20 +131,47 @@ class RuntimeScripts(
               val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
               val cmd = """set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                echo "[control] MoFox SnowLuma 脚本构建 20261002-1 (影子路径+引擎启动跳板)"
+                echo "[control] MoFox SnowLuma 脚本构建 20261023-2 (启动时版本对齐)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
-                # 兜底清理上次崩溃残留的显示服务
-                pgrep -f 'Xvfb :1' >/dev/null 2>&1 && pkill -f 'Xvfb :1' || true
-                pgrep -x fluxbox >/dev/null 2>&1 && pkill -x fluxbox || true
+                # 清场：按进程名杀掉上次运行遗留的全部相关进程（TERM → 等待
+                # → KILL）。关键是 QQ——孤儿 QQ 带着旧 hook pipe 存活时，
+                # SnowLuma 重启会直接附着上去，而那次登录事件早已错过，
+                # OneBot 永不启动（bot 假死根因，日志表现为 "PID=xxx already
+                # has SnowLuma pipe"）。杀干净后每次启动都是全新 QQ。
+                # 注意：绝不能用 pkill -f 按路径/参数匹配——本脚本文本经
+                # COMMAND_TO_EXEC 进入 proot 的 cmdline（真机探针实证），
+                # 任何出现在源码里的 -f 模式都会匹配到 proot 自杀；进程名
+                # 匹配（comm）不受影响：proot 的 comm 是 libproot.so。
+                pkill -x qq 2>/dev/null || true
+                pkill -x node 2>/dev/null || true
+                pkill -x Xvfb 2>/dev/null || true
+                pkill -x fluxbox 2>/dev/null || true
+                pkill -x ffmpeg 2>/dev/null || true
+                for i in 1 2 3 4 5; do
+                  pgrep -x qq >/dev/null 2>&1 || pgrep -x node >/dev/null 2>&1 || pgrep -x Xvfb >/dev/null 2>&1 || break
+                  sleep 1
+                done
+                pkill -9 -x qq 2>/dev/null || true
+                pkill -9 -x node 2>/dev/null || true
+                pkill -9 -x Xvfb 2>/dev/null || true
+                pkill -9 -x fluxbox 2>/dev/null || true
+                pkill -9 -x ffmpeg 2>/dev/null || true
                 sleep 1
                 # 停止流程对 Xvfb 用 SIGKILL 会留下显示锁，残留的 /tmp/.X1-lock
                 # 会让下一次 Xvfb 立即退出（"Server is already active"）。
                 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
-                # 重启时旧 node 可能没被进程树销毁带死（占住 5099）。
-                pgrep -f 'index\.mjs' >/dev/null 2>&1 && pkill -f 'index\.mjs' || true
-                sleep 1
+                # 启动时版本对齐：安装脚本内有幂等判定（.sl_version 标记 +
+                # node 基线）。标记缺失（存量设备升完 APK 后首次启动）或缺
+                # node 时先跑一次安装器——有网时顺带升级到最新 release；安
+                # 装器失败不阻塞启动，沿用现有版本继续。
+                if [ -f /usr/local/bin/snowluma-install.sh ]; then
+                  if [ ! -f /root/snowluma/.sl_version ] || ! command -v node >/dev/null 2>&1; then
+                    echo "[control] SnowLuma 标记缺失或 node 不可用，先执行安装器（自动安装/升级）…"
+                    bash /usr/local/bin/snowluma-install.sh || echo "[control] SnowLuma 安装器失败，继续用现有版本启动；如 SnowLuma 未安装，可到 设置 → SnowLuma 管理目录 手动安装"
+                  fi
+                fi
                 # ptrace 注入在 proot 下不可用（QQ 进程已被 proot 占为唯一 tracee，
                 # 第二个 tracer 无法 attach）。改用 hook 组件自带的 LD_PRELOAD 模式，
                 # 需要同时设两个开关（反汇编确认）：
@@ -236,7 +282,7 @@ class RuntimeScripts(
                       DIAG_PID=${'$'}(cat /tmp/snowluma-qq.pid 2>/dev/null)
                       echo "[control] === hook 预加载诊断 (pid=${'$'}DIAG_PID) ==="
                       echo "[control] runtime dir: $slRuntimeDir"
-                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep -a SNOWLUMA | tr '\\n' ';' || echo 未检出)"
+                      echo "[control] QQ 环境变量: ${'$'}(cat /proc/${'$'}DIAG_PID/environ 2>/dev/null | tr '\0' '\n' | grep -aE '^(SNOWLUMA_|LD_PRELOAD=)' | tr '\n' ';' || echo 未检出)"
                       echo "[control] hook 已映射页数: ${'$'}(grep -ac snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
                       echo "[control] runtime dir 内容:"
                       ls -la "$slRuntimeDir" 2>/dev/null | tail -n +2 || echo "(目录不存在)"
@@ -415,6 +461,13 @@ class RuntimeScripts(
                 val repoUrl = args["repoUrl"] ?: "https://github.com/MoFox-Studio/Neo-MoFox.git"
                 val installDir = args["installDir"] ?: "/root/instances/default"
                 val repoPath = args["repoPath"] ?: "$installDir/Neo-MoFox"
+                // 分支白名单：channel 进 shell 命令，只允许 main/dev（历史
+                // bug：向导传了 channel 但这里从不读取，选 dev 也会克隆成
+                // 默认分支 main，导致插件/WebUI 因核心版本被拒载）。
+                val channel = when (args["channel"]) {
+                    "dev" -> "dev"
+                    else -> "main"
+                }
                 loginBody(
                     """
                     mkdir -p ${shellQuote(installDir)}
@@ -423,7 +476,8 @@ class RuntimeScripts(
                       log_info "仓库已存在，拉取最新代码…"
                       cd ${shellQuote(repoPath)} && git pull --ff-only || true
                     else
-                      git clone --depth=1 ${shellQuote(repoUrl)} Neo-MoFox
+                      log_info "克隆 $channel 分支…"
+                      git clone --depth=1 -b $channel ${shellQuote(repoUrl)} Neo-MoFox
                       cd ${shellQuote(repoPath)}
                     fi
                     """.trimIndent(),
@@ -504,19 +558,15 @@ class RuntimeScripts(
             "installSnowluma" -> loginBody(
                 """
                 set -e
-                if [ ! -x /root/snowluma/opt/QQ/qq ] ||
-                   [ ! -s /root/snowluma/app/index.mjs ] ||
-                   [ ! -s /root/snowluma/app/launcher.sh ] ||
-                  ! command -v node >/dev/null 2>&1; then
-                  log_info "执行本地 SnowLuma 安装脚本…"
-                  bash /usr/local/bin/snowluma-install.sh || {
-                    code=${'$'}?
-                    log_error "SnowLuma 安装脚本失败（退出码 ${'$'}code）"
-                    exit "${'$'}code"
-                  }
-                else
-                  log_info "SnowLuma 已安装，跳过"
-                fi
+                # 幂等/升级判定都在安装脚本内（.sl_version 标记 + node 基线）：
+                # 已装一致 → 秒回；存量设备无标记 → 完整安装升级到最新 release。
+                # 这里不再按文件存在与否拦截，版本判定逻辑只留脚本一处。
+                log_info "执行本地 SnowLuma 安装脚本…"
+                bash /usr/local/bin/snowluma-install.sh || {
+                  code=${'$'}?
+                  log_error "SnowLuma 安装脚本失败（退出码 ${'$'}code）"
+                  exit "${'$'}code"
+                }
                 """.trimIndent(),
             )
             "verifySnowluma" -> loginBody(
@@ -545,6 +595,7 @@ class RuntimeScripts(
                   log_error "SnowLuma 复查失败：缺少 launcher.sh"
                   exit 26
                 }
+                echo "MOFOX_SL_VERSION=${'$'}(cat /root/snowluma/.sl_version 2>/dev/null || echo 未安装)"
                 log_ok "SnowLuma 安装复查通过"
                 """.trimIndent(),
             )
@@ -590,6 +641,20 @@ class RuntimeScripts(
                     """.trimIndent(),
                 )
             }
+            // 手动登录面板：抓一张虚拟屏幕截图。install 通道会把
+            // MOFOX_QR_IMAGE=<guest_path> 翻译为 MOFOX_QR_PAYLOAD=file:<host_path>
+            // 返回给 Dart（与扫码流程同一机制）。
+            "snowlumaScreenshot" -> loginBody(
+                """
+                mkdir -p /root/snowluma/cache
+                if DISPLAY=:1 ffmpeg -y -loglevel error -f x11grab -video_size 800x600 -i :1 -frames:v 1 /root/snowluma/cache/screen.png 2>/dev/null; then
+                  echo "MOFOX_QR_IMAGE=/root/snowluma/cache/screen.png"
+                else
+                  log_error "截屏失败（Xvfb 未就绪或已停止）"
+                  exit 33
+                fi
+                """.trimIndent(),
+            )
             "registerInstance" -> {
                 val instanceName = args["instanceName"].orEmpty()
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
@@ -962,12 +1027,22 @@ class RuntimeScripts(
             # --link2symlink ptrace shim transparently rewrites link() into
             # symlink() so extraction completes correctly.
             log_info "proot --link2symlink busybox tar xJf ${'$'}HOME_PATH/${'$'}UBUNTU -> ${'$'}UBUNTU_PATH"
-            "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1 || {
+            if ! "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
               TAR_RC=${'$'}?
-              log_error "tar 失败 (rc=${'$'}TAR_RC)，日志末尾："
-              "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
-              exit "${'$'}TAR_RC"
-            }
+              log_warn "tar 失败 (rc=${'$'}TAR_RC)，清场后以 PROOT_NO_SECCOMP=1 重试…"
+              # 兼容层环境（纯血鸿蒙经卓易通等转译运行 Android 应用）对
+              # seccomp/ptrace 的翻译缺口会让 tracee 收到 SIGSEGV；禁用
+              # proot 的 seccomp 优化是已知缓解项。真机 Linux 环境无副作用。
+              "${'$'}BB/rm" -rf "${'$'}UBUNTU_PATH"
+              mkdir -p "${'$'}UBUNTU_PATH"
+              if ! PROOT_NO_SECCOMP=1 "${'$'}BIN/libproot.so" --link2symlink "${'$'}BB/tar" xJf "${'$'}HOME_PATH/${'$'}UBUNTU" -C "${'$'}UBUNTU_PATH/" > "${'$'}TAR_LOG" 2>&1; then
+                TAR_RC=${'$'}?
+                log_error "tar 重试仍失败 (rc=${'$'}TAR_RC)，日志末尾："
+                "${'$'}BB/tail" -n 40 "${'$'}TAR_LOG" 2>/dev/null || cat "${'$'}TAR_LOG"
+                log_error "若设备为纯血鸿蒙/鸿蒙NEXT 等经兼容层运行的环境，proot 可能不被兼容层支持，请附日志反馈设备型号与运行方式"
+                exit "${'$'}TAR_RC"
+              fi
+            fi
             log_info "tar 退出 0，验证 rootfs 完整性…"
             # busybox tar may exit 0 even when extraction is incomplete (e.g.
             # malformed entries silently skipped). Without this guard the

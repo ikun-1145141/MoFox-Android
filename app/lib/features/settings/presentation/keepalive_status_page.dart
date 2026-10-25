@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mofox_android/core/platform/platform_gateway.dart';
+import 'package:mofox_android/features/dashboard/application/process_console_provider.dart';
+import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
 import 'package:mofox_android/core/theme/app_theme.dart';
 import 'package:mofox_android/core/ui/app_components.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -106,6 +108,14 @@ class KeepaliveStatusPage extends ConsumerWidget {
                     actionLabel: '打开设置',
                     onPressed: () => _openVendorSettings(context, ref),
                   ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '锁屏保活',
+                addDividers: false,
+                children: <Widget>[
+                  const _LockScreenKeepAliveTile(),
                 ],
               ),
             ],
@@ -335,6 +345,37 @@ class _KeepaliveItem extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 「锁屏保活」开关：开启后实例运行期间持有 CPU partial wake lock，
+/// 锁屏不进深度休眠、运行时持续工作；代价是整机耗电上升。
+class _LockScreenKeepAliveTile extends ConsumerWidget {
+  const _LockScreenKeepAliveTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled =
+        ref.watch(appSettingsProvider).valueOrNull?.lockScreenKeepAlive ??
+            false;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.screen_lock_portrait_outlined),
+      title: const Text('锁屏后保持运行'),
+      subtitle: const Text(
+        '实例运行期间保持 CPU 唤醒，锁屏时 Bot 继续收发消息；会增加耗电。',
+      ),
+      trailing: Switch(
+        value: enabled,
+        onChanged: (value) async {
+          await ref
+              .read(appSettingsProvider.notifier)
+              .setLockScreenKeepAlive(value);
+          // 立即同步一次，不等 3 秒的定时刷新。
+          await ref.read(processConsoleProvider.notifier).refreshStatus();
+        },
       ),
     );
   }
