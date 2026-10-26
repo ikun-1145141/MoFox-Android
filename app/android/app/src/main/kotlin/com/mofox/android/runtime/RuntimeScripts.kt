@@ -49,7 +49,7 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val instanceId = args["instanceId"]
                 val botQq = args["botQq"].orEmpty()
-                val botNickname = args["botNickname"].orEmpty()
+                val botNickname = args["botNickname"].orEmpty().ifBlank { args["botQq"].orEmpty() }
                 val wsPort = args["wsPort"] ?: "8095"
                 // 实例核心分支：跟随向导选择（main/dev），白名单防注入。
                 val channel = when (args["channel"]) {
