@@ -49,7 +49,7 @@ class RuntimeScripts(
                 val repoPath = args["repoPath"] ?: "/root/Neo-MoFox"
                 val instanceId = args["instanceId"]
                 val botQq = args["botQq"].orEmpty()
-                val botNickname = args["botNickname"].orEmpty().ifBlank { args["botQq"].orEmpty() }
+                val botNickname = args["botNickname"].orEmpty().ifBlank { args["botQq"].orEmpty() }.ifBlank { args["botQq"].orEmpty() }
                 val wsPort = args["wsPort"] ?: "8095"
                 // 实例核心分支：跟随向导选择（main/dev），白名单防注入。
                 val channel = when (args["channel"]) {
@@ -96,6 +96,17 @@ class RuntimeScripts(
                 # 清理历史遗留：曾随 APK 分发的 SnowLuma 适配器/扩展插件包，
                 # 以及更早的跳板插件分发包（跳板已整合进 App 本体）。
                 rm -f "${'$'}PLUGINS_DIR/snowluma_adapter-"*.mfp "${'$'}PLUGINS_DIR/snowluma_extension-"*.mfp "${'$'}PLUGINS_DIR/snowluma_trampoline-"*.mfp "${'$'}PLUGINS_DIR/mofox_sms_bridge-"*.mfp 2>/dev/null || true
+                # 仅在 qq_id 或 port 变化时覆写 config.toml，避免覆盖用户手动
+                # 填写的昵称等配置。botNickname 为空时用 QQ 号兜底。
+                SHOULD_WRITE=1
+                if [ -s "${'$'}OB_DIR/config.toml" ]; then
+                  EXISTING_QQ=$(grep -oP '(?<=qq_id = ")[^"]*' "${'$'}OB_DIR/config.toml" 2>/dev/null || true)
+                  EXISTING_PORT=$(grep -oP '(?<=port = )[0-9]+' "${'$'}OB_DIR/config.toml" 2>/dev/null || true)
+                  if [ "${'$'}EXISTING_QQ" = "${shellQuote(botQq)}" ] && [ "${'$'}EXISTING_PORT" = "$wsPort" ]; then
+                    SHOULD_WRITE=0
+                  fi
+                fi
+                if [ "${'$'}SHOULD_WRITE" = "1" ]; then
                 cat > "${'$'}OB_DIR/config.toml" <<'MOFOX_EOF'
                 [plugin]
                 enabled = true
@@ -111,6 +122,7 @@ class RuntimeScripts(
                 port = $wsPort
                 access_token = ""
                 MOFOX_EOF
+                fi
                 # 停用历史遗留的 snowluma_adapter（仅当配置存在；不新建文件）
                 SL_DIR=${shellQuote(repoPath)}/config/plugins/snowluma_adapter
                 if [ -f "${'$'}SL_DIR/config.toml" ]; then
