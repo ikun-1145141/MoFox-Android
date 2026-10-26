@@ -10,6 +10,7 @@ import '../../features/file_manager/presentation/text_file_editor_page.dart';
 import '../../features/file_manager/presentation/toml_editor_page.dart';
 import '../../features/home/presentation/home_page.dart';
 import '../../features/instance/presentation/instance_detail_page.dart';
+import '../../features/instance/presentation/vnc_page.dart';
 import '../../features/oobe/application/oobe_status_provider.dart';
 import '../../features/oobe/presentation/oobe_page.dart';
 import '../../features/settings/presentation/about_page.dart';
@@ -31,6 +32,7 @@ abstract final class AppRoute {
   static const String home = '/home';
   static const String dashboard = '/dashboard';
   static const String instanceDetail = '/dashboard/instance';
+  static const String vncScreen = '/instance/vnc';
   static const String instanceFiles = '/instance-files';
   static const String instanceTerminal = '/instance-terminal';
   static const String tomlEditor = '/toml-editor';
@@ -132,6 +134,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             child: InstanceDetailPage(instance: instance),
           );
         },
+      ),
+      GoRoute(
+        path: AppRoute.vncScreen,
+        builder: (_, state) => VncPage(
+          instanceId: state.uri.queryParameters['instanceId'] ?? '',
+        ),
       ),
       GoRoute(
         path: AppRoute.instanceFiles,
