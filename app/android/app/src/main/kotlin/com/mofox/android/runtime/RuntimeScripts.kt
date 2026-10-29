@@ -102,7 +102,7 @@ class RuntimeScripts(
                 if [ -s "${'$'}OB_DIR/config.toml" ]; then
                   EXISTING_QQ=$(grep -oP '(?<=qq_id = ")[^"]*' "${'$'}OB_DIR/config.toml" 2>/dev/null || true)
                   EXISTING_PORT=$(grep -oP '(?<=port = )[0-9]+' "${'$'}OB_DIR/config.toml" 2>/dev/null || true)
-                  if [ "${'$'}EXISTING_QQ" = "${shellQuote(botQq)}" ] && [ "${'$'}EXISTING_PORT" = "$wsPort" ]; then
+                  if [ "${'$'}EXISTING_QQ" = "$botQq" ] && [ "${'$'}EXISTING_PORT" = "$wsPort" ]; then
                     SHOULD_WRITE=0
                   fi
                 fi
