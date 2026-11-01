@@ -1,7 +1,7 @@
 name: mofox_android
 description: Neo-MoFox 的安卓原生外壳 App。原生壳负责 OOBE / 内嵌 proot Linux 运行时 / 终端 / 保活与系统级设置。
 publish_to: "none"
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
