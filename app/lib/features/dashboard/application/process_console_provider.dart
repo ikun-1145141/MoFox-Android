@@ -578,6 +578,8 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   Map<String, String> _snowlumaArgs(Instance instance) => <String, String>{
         'instanceId': instance.id,
         'botQq': instance.botQq,
+        // wsPort 供原生脚本在 onebot.json 丢失时按当前实例端口自愈重建。
+        'wsPort': instance.wsPort.toString(),
       };
 
   bool _canActivate(String instanceId) {

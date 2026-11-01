@@ -134,6 +134,8 @@ class RuntimeScripts(
             }
             "snowluma" -> {
               val botQq = args["botQq"].orEmpty()
+              // 用于配置自愈：onebot.json 丢失重建时，wsClient 指向当前实例的端口。
+              val wsPort = args["wsPort"] ?: "8095"
               val qqArgs = if (botQq.isNotBlank()) " -q ${shellQuote(botQq)}" else ""
               // hook 管道（AF_UNIX socket）的 runtime 目录不能用 rootfs 内的
               // /tmp：proot 把 guest 路径翻译成宿主真实路径后约 125 字节，超过
@@ -141,9 +143,13 @@ class RuntimeScripts(
               // 输出）。改用 proot 已有的恒等挂载 -b $TMPDIR:$TMPDIR：host 的
               // files/tmp 在 guest 内同路径可见，socket 全长 ~76 字节。
               val slRuntimeDir = installer.tmpDir.absolutePath + "/snowluma-hook"
-              val cmd = """set -o pipefail || true
+              // 首行必须为空行：trimIndent 需要靠空行排除首行才能正确剥离公共
+              // 缩进（bot 脚本同款处理），否则 heredoc 结束符带缩进不被识别，
+              // 会把后续脚本整段吞进 heredoc。
+              val cmd = """
+                set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                echo "[control] MoFox SnowLuma 脚本构建 20261023-2 (启动时版本对齐)"
+                echo "[control] MoFox SnowLuma 脚本构建 20261101-2 (node基线自愈)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
@@ -175,14 +181,72 @@ class RuntimeScripts(
                 # 会让下一次 Xvfb 立即退出（"Server is already active"）。
                 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1
                 # 启动时版本对齐：安装脚本内有幂等判定（.sl_version 标记 +
-                # node 基线）。标记缺失（存量设备升完 APK 后首次启动）或缺
-                # node 时先跑一次安装器——有网时顺带升级到最新 release；安
+                # node 基线）。标记缺失（存量设备升完 APK 后首次启动）或 node
+                # 不达标时先跑一次安装器——有网时顺带升级到最新 release；安
                 # 装器失败不阻塞启动，沿用现有版本继续。
-                if [ -f /usr/local/bin/snowluma-install.sh ]; then
-                  if [ ! -f /root/snowluma/.sl_version ] || ! command -v node >/dev/null 2>&1; then
+                # node 基线判定须与 assets/scripts/snowluma-install.sh 的
+                # node_already_installed 保持一致：v2.1.1 Lite 要求
+                # ^24.22.1 || >=26.12.1，旧 24.x 会被 launcher 硬拒。
+                NODE_OK=0
+                if command -v node >/dev/null 2>&1 && node -e 'const p = process.versions.node.split(".").map(Number); const ok = (p[0] === 24 && (p[1] > 22 || (p[1] === 22 && p[2] >= 1))) || p[0] >= 26; process.exit(ok ? 0 : 1);' 2>/dev/null; then
+                  NODE_OK=1
+                fi
+                if [ -f /usr/local/bin/snowluma-install.sh ] && { [ ! -f /root/snowluma/.sl_version ] || [ "${'$'}NODE_OK" != "1" ]; }; then
+                  if [ "${'$'}NODE_OK" != "1" ] && command -v node >/dev/null 2>&1; then
+                    echo "[control] node 版本不达标 (${'$'}(node -v 2>/dev/null))，执行安装器自动升级到 Node 24 LTS…"
+                  else
                     echo "[control] SnowLuma 标记缺失或 node 不可用，先执行安装器（自动安装/升级）…"
-                    bash /usr/local/bin/snowluma-install.sh || echo "[control] SnowLuma 安装器失败，继续用现有版本启动；如 SnowLuma 未安装，可到 设置 → SnowLuma 管理目录 手动安装"
                   fi
+                  bash /usr/local/bin/snowluma-install.sh || echo "[control] SnowLuma 安装器失败，继续用现有版本启动；如 SnowLuma 未安装，可到 设置 → SnowLuma 管理目录 手动安装"
+                fi
+                # 配置自愈：升级路径（备份→删目录→恢复）恢复失败或误删会让
+                # onebot.json/runtime.json 丢失，表现为 3000/5099 均不监听、
+                # 登录检测与 WebUI 双双失效。缺哪份补哪份（wsPort 跟随当前实例）。
+                if [ ! -s /root/snowluma/app/config/onebot.json ] || [ ! -s /root/snowluma/app/config/runtime.json ]; then
+                  echo "[control] SnowLuma 配置缺失，自动重建 onebot.json/runtime.json (wsPort=$wsPort)…"
+                  mkdir -p /root/snowluma/app/config
+                  cat > /root/snowluma/app/config/onebot.json <<'MOFOX_OB_EOF'
+                {
+                  "networks": {
+                    "httpServers": [
+                      {
+                        "name": "http-local",
+                        "enabled": true,
+                        "host": "127.0.0.1",
+                        "port": 3000,
+                        "path": "/",
+                        "accessToken": "mofox",
+                        "messageFormat": "array",
+                        "reportSelfMessage": false
+                      }
+                    ],
+                    "httpClients": [],
+                    "wsServers": [],
+                    "wsClients": [
+                      {
+                        "name": "neo-mofox-ws-client",
+                        "enabled": true,
+                        "url": "ws://127.0.0.1:$wsPort",
+                        "role": "Universal",
+                        "accessToken": "",
+                        "messageFormat": "array",
+                        "reportSelfMessage": false,
+                        "reconnectIntervalMs": 3000
+                      }
+                    ]
+                  },
+                  "musicSignUrl": ""
+                }
+                MOFOX_OB_EOF
+                  cat > /root/snowluma/app/config/runtime.json <<'MOFOX_RT_EOF'
+                { "webuiPort": 5099, "hookAutoLoad": true }
+                MOFOX_RT_EOF
+                fi
+                if [ ! -s /root/snowluma/secrets/webui_password ]; then
+                  mkdir -p /root/snowluma/secrets
+                  (openssl rand -hex 16 2>/dev/null || date +%s%N | sha256sum | cut -c1-32) > /root/snowluma/secrets/webui_password
+                  chmod 600 /root/snowluma/secrets/webui_password
+                  echo "[control] 已重建 SnowLuma WebUI 密码"
                 fi
                 # ptrace 注入在 proot 下不可用（QQ 进程已被 proot 占为唯一 tracee，
                 # 第二个 tracer 无法 attach）。改用 hook 组件自带的 LD_PRELOAD 模式，
@@ -233,7 +297,13 @@ class RuntimeScripts(
                   QQ_ALIVE_REPORTED=0
                   ONLINE_WAIT_REPORTED=0
                   HOOK_DIAG_REPORTED=0
-                  for i in ${'$'}(seq 1 225); do
+                  i=0
+                  while :; do
+                    i=${'$'}((i + 1))
+                    # 宿主脚本（父进程）已退出（停止/崩溃/正常结束）时立即结束
+                    # 监控：本子 shell 持有 stdout 管道，多活一秒 Dart 端就晚一秒
+                    # 收到 "exited with"，二维码弹窗与进程状态会卡在上一轮。
+                    kill -0 "${'$'}PPID" 2>/dev/null || break
                     sleep 4
                     if [ "${'$'}LOGIN_DONE" = "1" ]; then
                       break
@@ -271,8 +341,29 @@ class RuntimeScripts(
                         QR_LAST_EMIT=${'$'}NOW
                       fi
                     fi
+                    # WebUI 就绪后只上报一次。不用 -f：任何 HTTP 响应（含
+                    # 404/重定向）都说明 5099 已监听；-f 会把 404 误判为未就绪，
+                    # 服务活着却永远不上报地址。
+                    if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -sS -m 3 -o /dev/null http://127.0.0.1:5099/ 2>/dev/null; then
+                      echo "MOFOX_WEBUI_URL=http://127.0.0.1:5099/?token=${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)"
+                      WEBUI_EMITTED=1
+                    fi
+                    # Node 侧自检：WebUI 迟迟未就绪时把最常见死因直接打进日志
+                    # （node 缺失/版本不达标、onebot.json/runtime.json 丢失、
+                    # 密码文件为空、launcher 启动报错），60 秒首报、之后每 5 分钟一次。
+                    if [ "${'$'}WEBUI_EMITTED" = "0" ] && { [ "${'$'}i" -eq 15 ] || [ "${'$'}((i % 75))" -eq 0 ]; }; then
+                      echo "[control] WebUI 未就绪自检 (t=${'$'}((i * 4))s): node=${'$'}(command -v node >/dev/null 2>&1 && node -v 2>/dev/null || echo 缺失) onebot.json=$([ -s /root/snowluma/app/config/onebot.json ] && echo 存在 || echo 缺失) runtime.json=$([ -s /root/snowluma/app/config/runtime.json ] && echo 存在 || echo 缺失) webui_password=$([ -s /root/snowluma/secrets/webui_password ] && echo 存在 || echo 缺失)"
+                      echo "[control] launcher 日志尾部:"
+                      tail -n 6 /tmp/snowluma-run.log 2>/dev/null || echo "(无 /tmp/snowluma-run.log)"
+                    fi
                     # 登录成功检测：SnowLuma OneBot http 上报在线状态
                     if curl -fsS -m 3 -H "Authorization: Bearer mofox" http://127.0.0.1:3000/get_status 2>/dev/null | grep -q '"online":true'; then
+                      # 登录成功前补最后一次 WebUI 探测：快捷登录秒登时 Node
+                      # 可能恰好在这轮才就绪，漏了它 WebUI 地址永远不会上报。
+                      if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -sS -m 3 -o /dev/null http://127.0.0.1:5099/ 2>/dev/null; then
+                        echo "MOFOX_WEBUI_URL=http://127.0.0.1:5099/?token=${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)"
+                        WEBUI_EMITTED=1
+                      fi
                       echo "MOFOX_LOGIN_OK=1"
                       LOGIN_DONE=1
                       break
@@ -284,6 +375,12 @@ class RuntimeScripts(
                       ONLINE_WAIT_REPORTED=1
                       ONLINE_BODY=${'$'}(curl -fsS -m 3 -H "Authorization: Bearer mofox" http://127.0.0.1:3000/get_status 2>/dev/null || echo "(HTTP 不可达)")
                       echo "[control] OneBot get_status: ${'$'}{ONLINE_BODY:0:200}"
+                      case "${'$'}ONLINE_BODY" in
+                        *'"online":false'*)
+                          echo "[control] OneBot HTTP 在线但 QQ 未登录 (online:false)——hook 引擎未接管 QQ，建议重启 SnowLuma 再试" ;;
+                        "(HTTP 不可达)")
+                          echo "[control] OneBot HTTP 不可达——node 未运行或 onebot.json 丢失（见 WebUI 自检）" ;;
+                      esac
                     fi
                     # hook 预加载链路诊断（QQ 起来约 20s 后一次性收集）：
                     # 1) SNOWLUMA_* 环境变量是否真的进了 QQ 进程
@@ -298,11 +395,6 @@ class RuntimeScripts(
                       echo "[control] hook 已映射页数: ${'$'}(grep -ac snowluma /proc/${'$'}DIAG_PID/maps 2>/dev/null || echo 0)"
                       echo "[control] runtime dir 内容:"
                       ls -la "$slRuntimeDir" 2>/dev/null | tail -n +2 || echo "(目录不存在)"
-                    fi
-                    # WebUI 就绪后只上报一次
-                    if [ "${'$'}WEBUI_EMITTED" = "0" ] && curl -fsS -m 3 http://127.0.0.1:5099/ >/dev/null 2>&1; then
-                      echo "MOFOX_WEBUI_URL=http://127.0.0.1:5099/?token=${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)"
-                      WEBUI_EMITTED=1
                     fi
                   done
                 ) &
