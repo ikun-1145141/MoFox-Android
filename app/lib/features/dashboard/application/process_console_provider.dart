@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show Uint8List, listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:mofox_android/core/platform/platform_gateway.dart';
@@ -113,6 +114,16 @@ class ProcessConsoleState {
 const Object _sentinel = Object();
 
 class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
+  /// SnowLuma 监控循环与补拍共用的虚拟屏幕截图（rootfs 内路径）。
+  /// 手动面板的常规刷新直接读这个文件，不再自起 ffmpeg 管线。
+  static const String _snowlumaScreenGuestPath =
+      '/root/snowluma/cache/screen.png';
+
+  /// 上次刷新面板时的画面内容，用于廉价轮询的变更检测。
+  Uint8List? _lastManualScreenBytes;
+
+  /// screen.png 的宿主侧路径，由首次抓拍的任务结果建立。
+  String? _manualScreenHostPath;
   StreamSubscription<ProcessEvent>? _events;
   Timer? _statusTimer;
 
@@ -434,6 +445,10 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     } on Object catch (error) {
       _appendSnowlumaLog('[control] 快捷登录指令异常: $error');
     }
+    // 回车后 QQ 界面即将切换：立即补拍一帧，不等周期轮询。
+    if (state.snowlumaManualPanel) {
+      unawaited(refreshManualScreen());
+    }
     unawaited(refreshStatus());
   }
 
@@ -460,6 +475,10 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
     } on Object catch (error) {
       _appendSnowlumaLog('[touch] 点击异常: $error');
     }
+    // 触屏后画面即将变化：立即补拍一帧，不等周期轮询。
+    if (state.snowlumaManualPanel) {
+      unawaited(refreshManualScreen());
+    }
     unawaited(refreshStatus());
   }
 
@@ -478,6 +497,8 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   }
 
   /// 抓取一张虚拟屏幕截图并更新手动面板画面。
+  /// 面板常规刷新已改走 [pollManualScreen] 的文件读取；本方法只在
+  /// 首次打开、触屏/快捷登录后补拍、screen.png 缺失时按需起 ffmpeg。
   Future<void> refreshManualScreen() async {
     final runtime = ref.read(runtimeBridgeProvider);
     try {
@@ -488,11 +509,40 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
         state = state.copyWith(
           snowlumaManualPayload: '$payload#$version',
         );
+        if (payload.startsWith('file:')) {
+          _manualScreenHostPath = payload.substring('file:'.length);
+        }
+        // 同步变更检测基线，避免下一条轮询把同一帧再发一次。
+        _lastManualScreenBytes =
+            await runtime.readFileBytes(_snowlumaScreenGuestPath);
       } else {
         _appendSnowlumaLog('[control] 截屏失败: ${result.error}');
       }
     } on Object catch (error) {
       _appendSnowlumaLog('[control] 截屏异常: $error');
+    }
+  }
+
+  /// 廉价刷新：直接读 screen.png（宿主侧普通文件，走 readFileBytes 通道，
+  /// 不起 proot）。画面未变不触发 UI 重建；文件还没产出时退回主动抓拍。
+  Future<void> pollManualScreen() async {
+    if (!state.snowlumaManualPanel) return;
+    final hostPath = _manualScreenHostPath;
+    if (hostPath == null) {
+      await refreshManualScreen();
+      return;
+    }
+    final runtime = ref.read(runtimeBridgeProvider);
+    try {
+      final bytes = await runtime.readFileBytes(_snowlumaScreenGuestPath);
+      if (bytes.isEmpty || listEquals(bytes, _lastManualScreenBytes)) return;
+      _lastManualScreenBytes = bytes;
+      final version = DateTime.now().microsecondsSinceEpoch;
+      state = state.copyWith(
+        snowlumaManualPayload: 'file:$hostPath#$version',
+      );
+    } on Object catch (error) {
+      _appendSnowlumaLog('[control] 面板画面刷新失败: $error');
     }
   }
 

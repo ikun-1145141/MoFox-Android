@@ -118,7 +118,9 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
         if (isOpen && !wasOpen) {
           _manualScreenTimer?.cancel();
           _manualScreenTimer = Timer.periodic(
-            const Duration(seconds: 4),
+            // 常规刷新只读 screen.png 文件（不起 proot），2s 也不构成负载；
+            // 画面跟随的即时性由触屏/快捷登录后的即时补拍保证。
+            const Duration(seconds: 2),
             (_) {
               final consoleNow = ref.read(processConsoleProvider);
               if (consoleNow.snowlumaStatusFor(instance.id) != 'running' ||
@@ -129,7 +131,7 @@ class _InstanceDetailPageState extends ConsumerState<InstanceDetailPage> {
                     .closeManualLoginPanel();
                 return;
               }
-              ref.read(processConsoleProvider.notifier).refreshManualScreen();
+              ref.read(processConsoleProvider.notifier).pollManualScreen();
             },
           );
         } else if (!isOpen) {
