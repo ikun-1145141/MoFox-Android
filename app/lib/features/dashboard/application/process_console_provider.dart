@@ -6,8 +6,10 @@ import 'package:mofox_android/core/platform/platform_gateway.dart';
 import 'package:mofox_android/core/platform/screen_wake_lock.dart';
 import 'package:mofox_android/core/runtime/runtime_bridge.dart';
 import 'package:mofox_android/core/utils/app_logger.dart';
+import 'package:mofox_android/core/utils/log_redaction.dart';
 import 'package:mofox_android/features/instance/domain/instance.dart';
 import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
+import 'package:mofox_android/features/troubleshooting/application/error_report_provider.dart';
 
 class ProcessConsoleState {
   const ProcessConsoleState({
@@ -551,14 +553,16 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
   }
 
   void _appendBotLog(String line) {
-    final safeLine = _redactSensitiveLogLine(line);
+    final safeLine = redactSensitiveLogLine(line);
+    errorReportNotifier.addProcessLine(source: 'Bot', line: safeLine);
     state = state.copyWith(
       botLogs: _tail(<String>[...state.botLogs, safeLine]),
     );
   }
 
   void _appendSnowlumaLog(String line) {
-    final safeLine = _redactSensitiveLogLine(line);
+    final safeLine = redactSensitiveLogLine(line);
+    errorReportNotifier.addProcessLine(source: 'SnowLuma', line: safeLine);
     state = state.copyWith(
       snowlumaLogs: _tail(<String>[...state.snowlumaLogs, safeLine]),
     );
@@ -599,25 +603,6 @@ class ProcessConsoleNotifier extends Notifier<ProcessConsoleState> {
 List<String> _tail(List<String> logs) {
   final start = logs.length > _maxLogs ? logs.length - _maxLogs : 0;
   return logs.sublist(start);
-}
-
-String _redactSensitiveLogLine(String line) {
-  final querySecret = RegExp(
-    r'([?&](?:token|access_token|api[_-]?key|secret)=)[^&\s]+',
-    caseSensitive: false,
-  );
-  final assignedSecret = RegExp(
-    r'(\b(?:token|access[_-]?token|api[_-]?key|password|secret)\s*[:=]\s*)\S+',
-    caseSensitive: false,
-  );
-  final bearerSecret = RegExp(r'(\bBearer\s+)\S+', caseSensitive: false);
-  return line
-      .replaceAllMapped(querySecret, (match) => '${match.group(1)}[REDACTED]')
-      .replaceAllMapped(
-        assignedSecret,
-        (match) => '${match.group(1)}[REDACTED]',
-      )
-      .replaceAllMapped(bearerSecret, (match) => '${match.group(1)}[REDACTED]');
 }
 
 const int _maxLogs = 400;

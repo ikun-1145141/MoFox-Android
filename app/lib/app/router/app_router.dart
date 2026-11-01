@@ -20,6 +20,8 @@ import '../../features/settings/presentation/keepalive_status_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 import '../../features/settings/presentation/snowluma_manage_page.dart';
 import '../../features/settings/presentation/third_party_licenses_page.dart';
+import '../../features/troubleshooting/presentation/error_report_page.dart';
+import '../../features/troubleshooting/presentation/troubleshooting_page.dart';
 import '../../features/shell/presentation/shell_page.dart';
 import '../../features/terminal/presentation/terminal_page.dart';
 import '../../features/instance/domain/instance.dart';
@@ -43,6 +45,8 @@ abstract final class AppRoute {
   static const String appearance = '/settings/appearance';
   static const String assistantSettings = '/settings/assistant';
   static const String keepaliveStatus = '/settings/keepalive';
+  static const String troubleshooting = '/settings/troubleshooting';
+  static const String errorReport = '/settings/error-report';
   static const String deviceCapability = '/settings/device-capability';
   static const String snowlumaManage = '/settings/snowluma';
   static const String about = '/settings/about';
@@ -101,6 +105,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.deviceCapability,
         builder: (_, __) => const DeviceCapabilityPage(),
+      ),
+      GoRoute(
+        path: AppRoute.troubleshooting,
+        builder: (_, __) => const TroubleshootingPage(),
+      ),
+      GoRoute(
+        path: AppRoute.errorReport,
+        builder: (_, __) => const ErrorReportPage(),
       ),
       GoRoute(
         path: AppRoute.snowlumaManage,
