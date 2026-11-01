@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:mofox_android/features/troubleshooting/application/error_report_provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -17,7 +18,6 @@ final Logger appLogger = Logger(
     methodCount: 0,
     lineLength: 100,
     colors: true,
-    printEmojis: false,
     dateTimeFormat: DateTimeFormat.onlyTimeAndSinceStart,
   ),
   output: _MoFoxLogOutput(),
@@ -37,6 +37,7 @@ class _MoFoxLogOutput extends LogOutput {
 
   @override
   void output(OutputEvent event) {
+    _feedErrorReport(event);
     // 控制台
     for (final line in event.lines) {
       // ignore: avoid_print
@@ -51,6 +52,26 @@ class _MoFoxLogOutput extends LogOutput {
     });
   }
 
+  /// error/warning 级日志进入「报错汇总」（本次启动的内存缓冲）。
+  /// 诊断上下文取 origin 原始字段，不解析 PrettyPrinter 的排版行。
+  void _feedErrorReport(OutputEvent event) {
+    final reportLevel = switch (event.level) {
+      Level.error => ErrorReportLevel.error,
+      Level.warning => ErrorReportLevel.warning,
+      _ => null,
+    };
+    if (reportLevel == null) return;
+    final origin = event.origin;
+    final base = origin.message?.toString() ?? '';
+    final error = origin.error;
+    errorReportNotifier.add(
+      level: reportLevel,
+      source: '应用',
+      message: error == null ? base : '$base: $error',
+      time: origin.time,
+    );
+  }
+
   Future<IOSink?> _ensureFileSink() async {
     if (_fileSink != null) return _fileSink;
     try {
@@ -61,7 +82,7 @@ class _MoFoxLogOutput extends LogOutput {
       final path = '${logDir.path}/mofox_$today.log';
       _fileSink = File(path).openWrite(mode: FileMode.append);
       // 启动分隔
-      _fileSink!.writeln('');
+      _fileSink!.writeln();
       _fileSink!.writeln(
         '=== MoFox log session ${DateTime.now().toIso8601String()} ===',
       );

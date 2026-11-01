@@ -10,6 +10,7 @@ import 'package:mofox_android/features/dashboard/application/process_console_pro
 import 'package:mofox_android/features/instance/application/instance_repository.dart';
 import 'package:mofox_android/features/instance/domain/instance.dart';
 import 'package:mofox_android/features/settings/application/app_settings_provider.dart';
+import 'package:mofox_android/features/troubleshooting/application/error_report_provider.dart';
 
 class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
@@ -20,6 +21,7 @@ class SettingsPage extends ConsumerWidget {
     final assistant = ref.watch(assistantSettingsProvider);
     final process = ref.watch(processConsoleProvider);
     final instances = ref.watch(instancesProvider);
+    final errorReport = ref.watch(errorReportProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -167,6 +169,28 @@ class SettingsPage extends ConsumerWidget {
                     subtitle: '前台服务 / 电池白名单 / 自启动',
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoute.keepaliveStatus),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.lg),
+              AppSectionCard(
+                title: '排查问题',
+                children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.quiz_outlined),
+                    title: '常见问题',
+                    subtitle: '登录、WebUI、bot 假死等自助排查',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.troubleshooting),
+                  ),
+                  AppSettingTile(
+                    leading: const Icon(Icons.bug_report_outlined),
+                    title: '报错汇总',
+                    subtitle: errorReport.isEmpty
+                        ? '本次启动暂无报错'
+                        : '本次启动 ${errorReport.length} 条报错/诊断',
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.errorReport),
                   ),
                 ],
               ),
