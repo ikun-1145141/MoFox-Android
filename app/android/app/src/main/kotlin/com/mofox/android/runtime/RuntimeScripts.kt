@@ -149,7 +149,7 @@ class RuntimeScripts(
               val cmd = """
                 set -o pipefail || true
                 export BOT_QQ=${shellQuote(botQq)}
-                echo "[control] MoFox SnowLuma 脚本构建 20261101-2 (node基线自愈)"
+                echo "[control] MoFox SnowLuma 脚本构建 20261101-3 (node先行防登录事件错过)"
                 mkdir -p /root/snowluma/cache $slRuntimeDir
                 # 清理旧截图与旧日志，避免监控线程读到上次登录留下的过期画面。
                 rm -f /root/snowluma/cache/screen.png /tmp/snowluma-run.log /tmp/snowluma-qq.pid /tmp/snowluma-qq.log
@@ -407,15 +407,31 @@ class RuntimeScripts(
                   log_warn "fluxbox 启动失败"
                   tail -n 5 /tmp/snowluma-fluxbox.log 2>/dev/null
                 } &
+                # 节点先行：先起 SnowLuma node，等 PipeWatcher 开始轮询 hook
+                # socket 后再启动 QQ。旧顺序（QQ 先行、node 晚 3 秒）里，QQ 若
+                # 在 node attach 之前完成自动登录/快捷登录（token 秒登），登录
+                # 事件在就绪间隙被错过，OneBot 永不启动——外部表现即「QQ 已
+                # 登录但探测不到登录」，get_status 恒 online:false/不可达。
                 # 注意：直接展开成 `VAR=v cmd` 形式时，bash 会把第一个 VAR=v
                 # 当成命令名（"未找到命令"），QQ 根本不会启动。必须经 env 命令
                 # 传递环境变量。
+                cd /root/snowluma/app && export DISPLAY=:1 SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir SNOWLUMA_ACCEPT_EULA=1 SNOWLUMA_ACCEPT_PRIVACY=1 SNOWLUMA_HOOK_AUTOLOAD=1 SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD="${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)" && ./launcher.sh 2>&1 | tee /tmp/snowluma-run.log &
+                NODE_PID=${'$'}!
+                READY=0
+                for i in 1 2 3 4 5 6 7 8; do
+                  if [ -s /tmp/snowluma-run.log ]; then READY=1; break; fi
+                  sleep 1
+                done
+                if [ "${'$'}READY" = "1" ]; then
+                  echo "[control] SnowLuma node 已就绪，启动 LinuxQQ"
+                else
+                  echo "[control] node 8s 内未输出日志，仍继续启动 QQ"
+                fi
                 DISPLAY=:1 env ${'$'}QQ_HOOK_ENV /root/snowluma/opt/QQ/qq --no-sandbox --disable-gpu --disable-software-rasterizer --disable-gpu-compositing$qqArgs >/dev/null 2>/tmp/snowluma-qq.log &
                 echo ${'$'}! > /tmp/snowluma-qq.pid
-                sleep 3
-                # 前台运行 SnowLuma，进程退出码即脚本退出码；pipefail 保证管道
-                # 退出码等于 launcher.sh 的退出码。
-                cd /root/snowluma/app && export DISPLAY=:1 SNOWLUMA_HOOK_RUNTIME_DIR=$slRuntimeDir SNOWLUMA_ACCEPT_EULA=1 SNOWLUMA_ACCEPT_PRIVACY=1 SNOWLUMA_HOOK_AUTOLOAD=1 SNOWLUMA_WEBUI_BOOTSTRAP_PASSWORD="${'$'}(cat /root/snowluma/secrets/webui_password 2>/dev/null)" && ./launcher.sh 2>&1 | tee /tmp/snowluma-run.log""".trimIndent()
+                # 前台等待 node（tee）退出：脚本生命周期跟随 node，Dart 端的
+                # "exited with" 语义不变。
+                wait ${'$'}NODE_PID""".trimIndent()
                 cmd to ""
             }
             else -> error("Unknown process: $name")
