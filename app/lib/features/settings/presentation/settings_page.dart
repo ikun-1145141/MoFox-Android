@@ -153,8 +153,15 @@ class SettingsPage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.lg),
               AppSectionCard(
-                title: '手机信息桥接',
+                title: '通知与短信检测',
                 children: <Widget>[
+                  AppSettingTile(
+                    leading: const Icon(Icons.notifications_active_outlined),
+                    title: '设备能力服务',
+                    subtitle: _deviceCapabilitySubtitle(appSettings),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoute.deviceCapability),
+                  ),
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
@@ -235,6 +242,15 @@ class _AssistantPresentation {
 
   final IconData icon;
   final String subtitle;
+}
+
+String _deviceCapabilitySubtitle(AppSettings settings) {
+  if (!settings.deviceCapabilityEnabled) return '未开启';
+  final sources = <String>[
+    if (settings.deviceCapabilityNotificationsEnabled) '通知源',
+    if (settings.deviceCapabilitySmsEnabled) '短信源',
+  ];
+  return sources.isEmpty ? '运行中 · 未选择数据源' : '运行中 · ${sources.join('、')}已启用';
 }
 
 String _processStatusLabel(

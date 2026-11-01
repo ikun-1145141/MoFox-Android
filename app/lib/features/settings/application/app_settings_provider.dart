@@ -6,6 +6,10 @@ const String _dynamicColorKey = 'dynamic_color_enabled';
 const String _mainImageModeKey = 'main_image_mode';
 const String _terminalHapticsKey = 'terminal_haptics_enabled';
 const String _lockScreenKeepAliveKey = 'lockScreenKeepAlive';
+const String _deviceCapabilityEnabledKey = 'device_capability_enabled';
+const String _deviceCapabilityNotificationsKey =
+    'device_capability_notifications_enabled';
+const String _deviceCapabilitySmsKey = 'device_capability_sms_enabled';
 
 enum AppThemeMode {
   system,
@@ -44,6 +48,9 @@ class AppSettings {
     required this.mainImageMode,
     required this.terminalHapticsEnabled,
     required this.lockScreenKeepAlive,
+    required this.deviceCapabilityEnabled,
+    required this.deviceCapabilityNotificationsEnabled,
+    required this.deviceCapabilitySmsEnabled,
   });
 
   final AppThemeMode themeMode;
@@ -54,12 +61,24 @@ class AppSettings {
   /// 锁屏保活：实例运行期间持有 CPU partial wake lock，锁屏不进深度休眠。
   final bool lockScreenKeepAlive;
 
+  /// 设备能力服务总开关：关闭时本机服务不启动，数据源一律不采集。
+  final bool deviceCapabilityEnabled;
+
+  /// 通知源：捕获应用通知供 bot 实例读取。仅总开关开启时生效。
+  final bool deviceCapabilityNotificationsEnabled;
+
+  /// 短信源：读取新短信供 bot 实例读取。仅总开关开启时生效。
+  final bool deviceCapabilitySmsEnabled;
+
   AppSettings copyWith({
     AppThemeMode? themeMode,
     bool? dynamicColorEnabled,
     MainImageMode? mainImageMode,
     bool? terminalHapticsEnabled,
     bool? lockScreenKeepAlive,
+    bool? deviceCapabilityEnabled,
+    bool? deviceCapabilityNotificationsEnabled,
+    bool? deviceCapabilitySmsEnabled,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -69,6 +88,13 @@ class AppSettings {
           terminalHapticsEnabled ?? this.terminalHapticsEnabled,
       lockScreenKeepAlive:
           lockScreenKeepAlive ?? this.lockScreenKeepAlive,
+      deviceCapabilityEnabled:
+          deviceCapabilityEnabled ?? this.deviceCapabilityEnabled,
+      deviceCapabilityNotificationsEnabled:
+          deviceCapabilityNotificationsEnabled ??
+              this.deviceCapabilityNotificationsEnabled,
+      deviceCapabilitySmsEnabled:
+          deviceCapabilitySmsEnabled ?? this.deviceCapabilitySmsEnabled,
     );
   }
 }
@@ -91,6 +117,12 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
       ),
       terminalHapticsEnabled: prefs.getBool(_terminalHapticsKey) ?? true,
       lockScreenKeepAlive: prefs.getBool(_lockScreenKeepAliveKey) ?? false,
+      deviceCapabilityEnabled:
+          prefs.getBool(_deviceCapabilityEnabledKey) ?? false,
+      deviceCapabilityNotificationsEnabled:
+          prefs.getBool(_deviceCapabilityNotificationsKey) ?? false,
+      deviceCapabilitySmsEnabled:
+          prefs.getBool(_deviceCapabilitySmsKey) ?? false,
     );
   }
 
@@ -122,6 +154,28 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_lockScreenKeepAliveKey, enabled);
     _update((settings) => settings.copyWith(lockScreenKeepAlive: enabled));
+  }
+
+  Future<void> setDeviceCapabilityEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_deviceCapabilityEnabledKey, enabled);
+    _update((settings) => settings.copyWith(deviceCapabilityEnabled: enabled));
+  }
+
+  Future<void> setDeviceCapabilityNotificationsEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_deviceCapabilityNotificationsKey, enabled);
+    _update(
+      (settings) => settings.copyWith(deviceCapabilityNotificationsEnabled: enabled),
+    );
+  }
+
+  Future<void> setDeviceCapabilitySmsEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_deviceCapabilitySmsKey, enabled);
+    _update(
+      (settings) => settings.copyWith(deviceCapabilitySmsEnabled: enabled),
+    );
   }
 
   void _update(AppSettings Function(AppSettings settings) update) {

@@ -15,6 +15,7 @@ import '../../features/oobe/application/oobe_status_provider.dart';
 import '../../features/oobe/presentation/oobe_page.dart';
 import '../../features/settings/presentation/about_page.dart';
 import '../../features/settings/presentation/appearance_page.dart';
+import '../../features/settings/presentation/device_capability_page.dart';
 import '../../features/settings/presentation/keepalive_status_page.dart';
 import '../../features/settings/presentation/settings_page.dart';
 import '../../features/settings/presentation/snowluma_manage_page.dart';
@@ -42,6 +43,7 @@ abstract final class AppRoute {
   static const String appearance = '/settings/appearance';
   static const String assistantSettings = '/settings/assistant';
   static const String keepaliveStatus = '/settings/keepalive';
+  static const String deviceCapability = '/settings/device-capability';
   static const String snowlumaManage = '/settings/snowluma';
   static const String about = '/settings/about';
   static const String thirdPartyLicenses = '/settings/about/licenses';
@@ -95,6 +97,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoute.keepaliveStatus,
         builder: (_, __) => const KeepaliveStatusPage(),
+      ),
+      GoRoute(
+        path: AppRoute.deviceCapability,
+        builder: (_, __) => const DeviceCapabilityPage(),
       ),
       GoRoute(
         path: AppRoute.snowlumaManage,
