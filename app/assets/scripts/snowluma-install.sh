@@ -678,6 +678,38 @@ function ensure_webui_password() {
     fi
 }
 
+# ============ 接收链路看门狗阈值修正 ============
+# 上游默认 105s 静默阈值低于 QQ 协议心跳（SsoHeartBeat）的真实间隔（分钟级），
+# 聊天静默期必然误报 good=false，触发消费者重连风暴（实测一天最高 136 次）。
+# 实测安静期真实包间隔最长 586s，阈值提到 11 分钟（660s）后误报归零；
+# 真实接收链路死亡的判定延迟从 ~105s 变为 ~11min，可接受（误报的快不如正确的慢）。
+# 幂等：已是新值、或上游已修正（旧模式缺失）时跳过。
+function patch_receive_threshold() {
+    local index_file="${APP_DIR}/index.mjs"
+    if [ ! -s "${index_file}" ]; then
+        log "index.mjs 不存在，跳过看门狗阈值修正。"
+        return 0
+    fi
+    if grep -q "silentForMs < 660e3" "${index_file}" 2>/dev/null; then
+        log "看门狗阈值已是修正值 (11min)，跳过。"
+        return 0
+    fi
+    if ! grep -q "105e3" "${index_file}" 2>/dev/null; then
+        log "未找到旧阈值模式（上游可能已修正），跳过看门狗阈值修正。"
+        return 0
+    fi
+    sed -i \
+        -e 's/RECEIVE_STALE_AFTER_MS = 9e4/RECEIVE_STALE_AFTER_MS = 6e5/' \
+        -e 's/RECEIVE_STALE_CONFIRM_MS = 15e3/RECEIVE_STALE_CONFIRM_MS = 60e3/' \
+        -e 's/105e3/660e3/' \
+        "${index_file}" || { log "警告: 看门狗阈值修正 sed 失败。"; return 0; }
+    if grep -q "silentForMs < 660e3" "${index_file}" 2>/dev/null; then
+        log "看门狗阈值修正完成: 105s -> 11min (660e3)。"
+    else
+        log "警告: 看门狗阈值修正未生效（上游格式可能已变化），请人工检查。"
+    fi
+}
+
 function install_snowluma_app() {
     local app_config_backup="/tmp/snowluma_config_backup_$(date +%s)"
     local backup_created=false
@@ -740,6 +772,9 @@ else
     install_snowluma_app
     echo "${snowluma_tag:-${SNOWLUMA_FALLBACK_TAG}}" > "${SL_VERSION_MARKER}"
 fi
+# 看门狗阈值修正：覆盖全新安装与存量安装两条路径（幂等）。
+# 修的是已知缺陷：上游 105s 静默阈值 < QQ 心跳间隔，静默期必误报 good=false。
+patch_receive_threshold
 freeze_qq_hot_update
 ensure_webui_password
 clean
