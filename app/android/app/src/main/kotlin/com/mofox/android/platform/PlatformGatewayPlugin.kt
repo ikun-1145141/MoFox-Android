@@ -13,7 +13,7 @@ import com.mofox.android.keepalive.MoFoxForegroundService
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry
-import java.io.ByteArrayOutputStream
+import java.io.File
 
 /**
  * Platform 总线。
@@ -27,6 +27,9 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
     companion object {
         private const val REQ_EXPORT = 10001
         private const val REQ_IMPORT = 10002
+
+        // SAF 导入的暂存文件：流式落盘后由 Dart 侧按需流式解压、用完即删。
+        private const val SAF_IMPORT_TMP = "saf_import.zip"
 
         // CPU partial wake lock：锁屏保活用。必须挂应用级单例——plugin 实例
         // 会随 Activity 重建，锁若挂在实例上会泄漏或重复 acquire。
@@ -142,18 +145,22 @@ class PlatformGatewayPlugin : PluginRegistry.ActivityResultListener {
             REQ_IMPORT -> {
                 val uri = data?.data
                 if (uri != null && resultCode == Activity.RESULT_OK) {
+                    // 流式落盘到应用缓存：内存占用恒定，备份再大也不会撞上
+                    // Java 堆上限（此前全量读堆，大备份 OOM 直接崩溃）。
+                    val tmp = File(ctx.cacheDir, SAF_IMPORT_TMP)
                     try {
-                        val bytes = ctx.contentResolver.openInputStream(uri)?.use { inp ->
-                            val buf = ByteArrayOutputStream()
-                            inp.copyTo(buf)
-                            buf.toByteArray()
+                        ctx.contentResolver.openInputStream(uri)?.use { inp ->
+                            tmp.outputStream().use { out ->
+                                inp.copyTo(out, 64 * 1024)
+                            }
                         }
-                        if (bytes != null) {
-                            res.success(bytes)
+                        if (tmp.length() > 0L) {
+                            res.success(tmp.absolutePath)
                         } else {
                             res.error("SAF_IMPORT_FAILED", "Cannot read file", null)
                         }
                     } catch (e: Exception) {
+                        tmp.delete()
                         res.error("SAF_IMPORT_FAILED", e.message, null)
                     }
                 } else {

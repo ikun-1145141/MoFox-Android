@@ -18,11 +18,10 @@ class PlatformGateway {
     });
   }
 
-  /// 通过 SAF 让用户选文件后读取内容。返回文件字节；用户取消返回 `null`。
-  Future<Uint8List?> importFromSaf() async {
-    final result = await _channel.invokeMethod<List<Object?>>('importFromSaf');
-    if (result == null) return null;
-    return Uint8List.fromList(result.cast<int>());
+  /// 通过 SAF 让用户选文件后流式写入应用缓存，返回缓存文件绝对路径；
+  /// 用户取消返回 `null`。大文件不再整体进入内存，调用方处理完负责删除该文件。
+  Future<String?> importFromSaf() async {
+    return _channel.invokeMethod<String>('importFromSaf');
   }
 
   /// 跳系统设置页（自启动 / 耗电管理 / 后台锁定），按厂商分发。
@@ -92,4 +91,3 @@ class KeepaliveStatus {
   final bool bootReceiverDeclared;
   final bool vendorAutostartInspectable;
 }
-

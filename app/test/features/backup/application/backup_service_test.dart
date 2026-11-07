@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -63,6 +64,57 @@ void main() {
       () => BackupService.decodeBackup(bytes: bytes, instance: instance),
       throwsFormatException,
     );
+  });
+
+  test('decodeBackupFromFile matches the bytes path for the same archive',
+      () async {
+    final bytes = _zip(<String, List<int>>{
+      'config/core.toml': utf8.encode('enabled = true'),
+      'logs/latest.log': utf8.encode('ok'),
+      'snowluma/config/onebot.json': utf8.encode('{}'),
+      'snowluma/login_state/session.bin': <int>[0, 255, 1],
+    });
+    final tmpDir = await Directory.systemTemp.createTemp('mofox_backup_test');
+    final zipPath = '${tmpDir.path}${Platform.pathSeparator}backup.zip';
+    try {
+      await File(zipPath).writeAsBytes(bytes);
+
+      final writes = await BackupService.decodeBackupFromFile(
+        zipPath,
+        instance: instance,
+      );
+
+      expect(
+        writes.map((write) => write.path),
+        <String>[
+          '/root/instances/test/Neo-MoFox/config/core.toml',
+          '/root/instances/test/Neo-MoFox/logs/latest.log',
+          '/root/snowluma/app/config/onebot.json',
+          '/root/.config/QQ/session.bin',
+        ],
+      );
+      expect(writes.last.bytes, Uint8List.fromList(<int>[0, 255, 1]));
+    } finally {
+      await tmpDir.delete(recursive: true);
+    }
+  });
+
+  test('decodeBackupFromFile rejects path traversal entries', () async {
+    final bytes = _zip(<String, List<int>>{
+      'config/../../etc/passwd': utf8.encode('bad'),
+    });
+    final tmpDir = await Directory.systemTemp.createTemp('mofox_backup_test');
+    final zipPath = '${tmpDir.path}${Platform.pathSeparator}backup.zip';
+    try {
+      await File(zipPath).writeAsBytes(bytes);
+
+      expect(
+        () => BackupService.decodeBackupFromFile(zipPath, instance: instance),
+        throwsFormatException,
+      );
+    } finally {
+      await tmpDir.delete(recursive: true);
+    }
   });
 }
 

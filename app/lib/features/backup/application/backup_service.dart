@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -149,27 +150,37 @@ class BackupService {
   Future<int> importBackup({required Instance instance}) async {
     appLogger.i('backup: importBackup instance=${instance.id}');
 
-    final bytes = await _platform.importFromSaf();
-    if (bytes == null) {
+    final tmpPath = await _platform.importFromSaf();
+    if (tmpPath == null) {
       return 0;
     }
 
-    final files = decodeBackup(bytes: bytes, instance: instance);
-    if (files.isEmpty) {
-      throw const FormatException('备份中没有可恢复的文件');
-    }
-    final count = await _runtime.writeFiles(files);
-    if (count != files.length) {
-      throw StateError('原生层只恢复了 $count/${files.length} 个文件');
-    }
+    try {
+      final files = decodeBackupFromFile(tmpPath, instance: instance);
+      if (files.isEmpty) {
+        throw const FormatException('备份中没有可恢复的文件');
+      }
+      final count = await _runtime.writeFiles(files);
+      if (count != files.length) {
+        throw StateError('原生层只恢复了 $count/${files.length} 个文件');
+      }
 
-    appLogger.i('backup: importBackup done, $count files');
-    return count;
+      appLogger.i('backup: importBackup done, $count files');
+      return count;
+    } finally {
+      // Kotlin 侧流式落在应用缓存里的 ZIP，处理完立即删除。
+      try {
+        File(tmpPath).deleteSync();
+      } on Object catch (error) {
+        appLogger.w('backup: 清理导入临时文件失败: $error');
+      }
+    }
   }
 
-  /// 校验 Android 备份并映射到允许恢复的 rootfs 目标。
+  /// 校验内存中的 Android 备份并映射到允许恢复的 rootfs 目标。
   ///
   /// 公开为静态方法，便于对 ZIP 路径穿越、格式版本和目标映射做单元测试。
+  /// 大备份请使用 [decodeBackupFromFile]，避免整体进入内存。
   static List<RootfsFileWrite> decodeBackup({
     required Uint8List bytes,
     required Instance instance,
@@ -180,7 +191,35 @@ class BackupService {
     } on Object catch (error) {
       throw FormatException('无法读取 ZIP 备份: $error');
     }
+    return _decodeArchive(archive, instance: instance);
+  }
 
+  /// 从磁盘上的 ZIP 文件流式解码并映射到允许恢复的 rootfs 目标。
+  ///
+  /// 按需从文件读取条目，内存占用只与单个条目相关，不随备份整体体积增长。
+  static List<RootfsFileWrite> decodeBackupFromFile(
+    String zipPath, {
+    required Instance instance,
+  }) {
+    final input = InputFileStream(zipPath);
+    try {
+      final Archive archive;
+      try {
+        archive = ZipDecoder().decodeStream(input, verify: true);
+      } on Object catch (error) {
+        throw FormatException('无法读取 ZIP 备份: $error');
+      }
+      return _decodeArchive(archive, instance: instance);
+    } finally {
+      input.close();
+    }
+  }
+
+  /// 将解码后的 ZIP 归档映射为允许恢复的 rootfs 写入列表。
+  static List<RootfsFileWrite> _decodeArchive(
+    Archive archive, {
+    required Instance instance,
+  }) {
     final manifestFile = archive.files
         .where((file) => file.isFile && file.name == 'manifest.json')
         .firstOrNull;
